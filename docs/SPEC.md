@@ -11,7 +11,7 @@
 
 Why it exists (knowledge base): `composer audit` only checks CVEs; laravelversions.com only shows EOL; Laravel Shift is paid per upgrade; laravel/vet reviews package code (complementary); LaraPlugins scores single packages, not your project; Enlightn is archived. Nothing combines EOL, CVEs, abandoned packages, upgrade order and a summary in one report.
 
-It is roadmap **Step 1, Phase A** of the qiick suite. Projects install only `qiick/excubia-core` with a normal `composer require` (not `--dev`): the package stays lightweight, with minimal dependencies and zero runtime cost while monitoring is disabled. It ships the CLI plus **opt-in** live/runtime monitoring enabled via config. There is no separate `qiick/excubia-probe` package. Phase B (uptime, connectors, and that opt-in monitoring, connected to the self-hosted multi-project dashboard `qiick-io/excubia-app` or later qiick Cloud) is roadmap Step 4 and is **not** part of this spec.
+It is roadmap **Step 1, Phase A** of the qiick suite. Projects install only `qiick/excubia-core` with a normal `composer require` (not `--dev`): the package stays lightweight, with minimal dependencies and zero runtime cost while monitoring is disabled. It ships the CLI plus **opt-in** live/runtime monitoring enabled via config. There is no separate `qiick/excubia-probe` package. Phase B (uptime, connectors, and that opt-in monitoring, connected to the self-hosted multi-project dashboard `qiick-io/excubia-app` or later qiick Cloud) is roadmap Step 4. It was **not** part of the v0.1.0 spec; it was approved on 2026-11-02 and is specified in sections 12 and 13.
 
 Branding: display name is **"Excubia"** alone (package `qiick/excubia-core`, repo `qiick-io/excubia-core`). Do not prefix the product name with "qiick" in headings, CLI banner, user-facing strings, or docs. Part of the qiick suite; suite affiliation stays in prose and package/repo ids. Never the q tile next to the qiick wordmark, Vigil Blue accent, tagline placeholder "Health checks for Laravel apps." (TBD).
 
@@ -129,7 +129,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 ## 7. Security & privacy
 
 - Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs listed in section 3. No file contents, no `.env`, no source code, no paths, no hostnames.
-- No telemetry, no analytics, no phone-home.
+- No telemetry, no analytics, no phone-home to qiick or any third party. The only exception is the opt-in push to the user's own `excubia-app` (section 13), which is off until the user configures an app URL and token.
 - `GITHUB_TOKEN` is optional, read from the environment only, never printed or written to the cache or report.
 - All HTTP over TLS with timeouts (connect 5 s, total 15 s) and limited retries with backoff; respects `HTTPS_PROXY`.
 - The tool never writes to the scanned project except `--output` and never executes project code (no app boot for `vendor/bin/excubia`).
@@ -146,7 +146,10 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 - Versioning: SemVer, Conventional Commits, tags `v0.1.0`, GitHub Releases with notes; Packagist `qiick/excubia-core` (D5: vendor `qiick` must be claimed on Packagist).
 - Branches: `main` (releases), `develop` (integration), feature branches `<type>/<issue>-<slug>`; squash merges only.
 
-## 9. Later milestone v0.2.0 — free zero-signup web scanner (NOT v0.1.0)
+## 9. Web scanner — postponed, no milestone (D14)
+
+The text below is kept as the idea of record. It is not planned for any version until Luca decides otherwise.
+
 
 Roadmap Step 1 includes "CLI + free zero-signup web scanner". Proposed as the next milestone, on the same core:
 - Page on `qiick.io/excubia` (or `qiick.io/tools/*`, D2) where users paste or drop `composer.lock` / `package-lock.json`.
@@ -180,3 +183,24 @@ These five answers are final.
 3. The next Laravel major is the locked `laravel/framework` major plus one. It is not a fixed `^13`.
 4. A broken or unparseable `composer.lock` is exit code 2, with a clear error message.
 5. `advisoryId` is a finding field so an ignore rule can match that advisory.
+
+## 12. Decisions (Luca, 2026-11-02)
+
+These decisions are final. They extend section 10 and replace D2 where they disagree.
+
+14. **D14 Web scanner:** the public zero-signup scanner (section 9, issues #7–#9) is postponed with no milestone. It is not needed for 1.0.0. `HealthCheckRunnerService::runForSnapshot()` stays as the core seam for it.
+15. **D15 Phase B approved:** projects send data to the user's own self-hosted `qiick-io/excubia-app`. Nothing goes to qiick or third parties. Each kind of data is a separate opt-in.
+16. **D16 Push, not pull:** projects push to the app with `excubia push` (section 13). The app never reads project directories and never polls projects. The push ships in v0.2.0 so `excubia-app` v0.1.0 can use it.
+17. **D17 Exceptions before 1.0.0:** opt-in exception capture (#77) ships before 1.0.0, with messages masked before sending.
+18. **D18 Health endpoint:** an opt-in endpoint compatible with the Oh Dear application health JSON (#74) is approved at low priority. It complements the push for external monitors; it is not the channel to `excubia-app`.
+
+## 13. Push protocol (approved 2026-11-02)
+
+- **Command:** `vendor/bin/excubia push [path]` and `php artisan excubia:push` run the checks and send the report. Reports are sent daily from the Laravel scheduler and from CI after deploy.
+- **Configuration:** app URL and project token from `excubia.json` or `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN`. The token is never printed, cached or written to a report.
+- **Transport:** HTTPS only (plain HTTP only for localhost), `Authorization: Bearer <token>`, the timeouts and retries of section 7.
+- **Envelope:** JSON with `protocolVersion` (1), a unique `batchId` so a retried send is stored once, `sentAt`, and the payload. The envelope is a public contract, frozen at 1.0.0 (#76).
+- **Runtime data and exceptions** (#75, #77, opt-in): written to a local buffer, never sent during a request, sent in batches by the scheduler about every minute. When the app is unreachable the buffer keeps data up to a size cap and drops the oldest entries; it never slows the project down.
+- **What is sent:** the report (package names and versions, runtime versions, findings); for runtime data route names, job and command names, durations and counts, SQL without bindings; for exceptions class, fingerprint, masked message, and stack frames with paths relative to the project root. Never request payloads, headers, cookies, users, IP addresses, `.env` values or absolute paths.
+- **Stale projects:** the app marks a project stale when no report arrives within a configurable window, which also reveals a stopped scheduler.
+

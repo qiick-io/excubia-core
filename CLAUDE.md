@@ -8,7 +8,7 @@ Excubia is the open-source (MIT) health check for Laravel apps in the qiick suit
 
 - Source of truth: `docs/SPEC.md` and `docs/ARCHITECTURE.md`. Roadmap: `docs/ROADMAP.md`. Decisions D1–D13 and A1–A2 are final.
 - Anything marked **[PROPOSAL]** or labelled `needs-decision` is not approved: do not build it.
-- Opt-in runtime monitoring (Phase B) will live in this package, enabled via config. There is no `excubia-probe`. The multi-project dashboard is the separate repo `qiick-io/excubia-app`, which consumes this package.
+- Opt-in runtime monitoring (Phase B, approved 2026-11-02) lives in this package, enabled via config, and reaches `excubia-app` only through the push protocol (`docs/SPEC.md` sections 12–13). There is no `excubia-probe`. The multi-project dashboard is the separate repo `qiick-io/excubia-app`, which consumes this package.
 - Display name is "Excubia" alone, never "qiick Excubia", in user-facing strings and docs.
 
 ## Stack
@@ -60,7 +60,7 @@ Also in `.cursor/rules/code-craftsmanship.mdc` and `.cursor/rules/testing.mdc`; 
 - English PHPDoc on classes and non-trivial methods: why, array shapes, side effects, `@throws`. No line-by-line noise.
 - No `dd`, `dump`, `var_dump` or `env()`.
 - Tests: behavior-focused Pest, no real network (fake `HttpClientContract` + recorded responses in `tests/Fixtures/Responses/`). Never delete or weaken a test; add coverage for each behavior change. Keep `NamingArchitectureTest` green.
-- Privacy is a feature: only package names and versions leave the machine. Never send file contents, paths, hostnames or `.env` values. No telemetry.
+- Privacy is a feature: only package names and versions leave the machine toward public data sources. The only other destination is the user's own `excubia-app`, through the opt-in push (`docs/SPEC.md` section 13). Never send file contents, absolute paths, hostnames or `.env` values. No telemetry to qiick or third parties.
 - Report JSON shape (`docs/report-schema.json`), check ids and exit codes are public contracts: change them only when the issue says so, and update schema, README and CHANGELOG together.
 
 ## Git and PR workflow
