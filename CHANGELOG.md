@@ -44,6 +44,10 @@ First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [
 
 - Laravel 11 is no longer supported for the Artisan integration (D19): it is past security support and Composer blocks its releases by default. The standalone CLI still scans Laravel 11 projects and reports them as end of life.
 
+### Fixed
+
+- The upgrade plan no longer repeats near-identical steps: one step per vulnerable package (`fixes N advisories`), one step naming every package that blocks the next Laravel major, one step per abandoned package, one step for all stale packages, and the Laravel end-of-life step no longer repeats "Upgrade to Laravel N". Identical steps are dropped. The `upgradePlan` JSON shape is unchanged; only step messages and count differ.
+
 ### Security
 
 - Private package names are no longer sent to Packagist, OSV.dev or GitHub (#108). A Composer package is checked only when its `composer.lock` entry has Packagist's `notification-url` and no `path` or `artifact` dist (path, artifact, VCS, Satis and Private Packagist packages are private); an npm package only when `resolved` is on `https://registry.npmjs.org/` and it is not a link (`file:`, VCS, workspace and other-registry packages are private). `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale` and `laravel-next-blocker` report them in one `skipped` row with subject `private packages`, `skipReason` `not-applicable` and the skipped names in the message, so such a check can show `skipped` instead of `pass`; the exit code and `--strict` are unchanged.
