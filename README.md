@@ -36,6 +36,7 @@
 - **Formats** — `table` (default), `json`, `markdown`
 - **CI-friendly** — `--fail-on`, exit codes, optional `--offline` cache
 - **Config** — project-root `excubia.json` with JSON Schema
+- **Push** — `excubia push` sends the report to your own self-hosted `excubia-app` (opt-in)
 
 **Non-goals (v0.1.x):** no web scanner yet (planned v0.2.0), no uptime or runtime monitoring yet (Phase B, planned as opt-in inside excubia-core), no auto-fix of the scanned project, no source-code analysis, no telemetry.
 
@@ -88,6 +89,37 @@ Key options: `--format=table|json|markdown`, `--output=FILE`, `--fail-on=critica
 | `2` | Usage or configuration error (missing/broken `composer.lock`, invalid config, unknown check id) |
 | `3` | Reserved for data-source failure; not returned in 0.1.x — an unavailable data source marks the affected check `skipped`. |
 
+## Push to excubia-app
+
+`excubia push` runs the same checks as `excubia check` and sends the JSON report to your own self-hosted [`excubia-app`](https://github.com/qiick-io/excubia-app). Nothing is sent until you configure an app URL and a project token.
+
+```bash
+export EXCUBIA_APP_URL=https://excubia.example.com   # base URL of your excubia-app
+export EXCUBIA_APP_TOKEN=…                            # project push token from the app
+vendor/bin/excubia push            # or: php artisan excubia:push
+```
+
+The URL and token can also go in `excubia.json` as `"app": {"url": "…", "token": "…"}`; the environment variables win. Keep the token in the environment or your CI secrets rather than a committed file. With `php artisan config:cache`, `.env` is not loaded, so set the variables in the real process environment.
+
+Run it daily from the Laravel scheduler and from CI after each deploy:
+
+```php
+// routes/console.php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('excubia:push')->daily();
+```
+
+```yaml
+# CI, after deploy
+- run: vendor/bin/excubia push
+  env:
+    EXCUBIA_APP_URL: ${{ vars.EXCUBIA_APP_URL }}
+    EXCUBIA_APP_TOKEN: ${{ secrets.EXCUBIA_APP_TOKEN }}
+```
+
+Protocol: `POST {url}/api/reports` over HTTPS (plain HTTP only to localhost) with `Authorization: Bearer <token>`, same timeouts and retries as the data sources. The body is an envelope with `protocolVersion` (`1`), a unique `batchId` (a retried send is stored once), `sentAt` and the `report`; see [`docs/push-schema.json`](./docs/push-schema.json) and SPEC §13. Exit codes: `0` sent (findings do not change it), `2` configuration error (missing URL or token, insecure URL), `3` the app rejected the token or could not be reached.
+
 ## Health checks
 
 | ID | Name |
@@ -137,7 +169,7 @@ JSON report schema: [`docs/report-schema.json`](./docs/report-schema.json).
 
 ## Privacy
 
-Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
+Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. The only other destination is your own `excubia-app`, and only when you run `excubia push`; the project token is never printed, cached or written to a report. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
 
 ## Contributing
 

@@ -30,19 +30,7 @@ final class ExcubiaCheckCommand extends Command
 
     public function handle(): int
     {
-        $laravel = $this->getLaravel();
-
-        if (! is_object($laravel) || ! method_exists($laravel, 'basePath')) {
-            throw new InvalidConfigurationException('The Artisan alias needs the Laravel application base path.');
-        }
-
-        $basePath = $laravel->basePath();
-
-        if (! is_string($basePath) || $basePath === '') {
-            throw new InvalidConfigurationException('The Laravel application base path is not a directory.');
-        }
-
-        return (new CheckCommand)->runWithOptions($basePath, [
+        return (new CheckCommand)->runWithOptions(self::applicationBasePath($this->getLaravel()), [
             'format' => $this->stringOption('format'),
             'output' => $this->stringOption('output'),
             'fail-on' => $this->stringOption('fail-on'),
@@ -54,6 +42,26 @@ final class ExcubiaCheckCommand extends Command
             'config' => $this->stringOption('config'),
             'no-banner' => (bool) $this->option('no-banner'),
         ], $this->output);
+    }
+
+    /**
+     * The scanned path for every Artisan alias.
+     *
+     * @throws InvalidConfigurationException
+     */
+    public static function applicationBasePath(mixed $laravel): string
+    {
+        if (! is_object($laravel) || ! method_exists($laravel, 'basePath')) {
+            throw new InvalidConfigurationException('The Artisan alias needs the Laravel application base path.');
+        }
+
+        $basePath = $laravel->basePath();
+
+        if (! is_string($basePath) || $basePath === '') {
+            throw new InvalidConfigurationException('The Laravel application base path is not a directory.');
+        }
+
+        return $basePath;
     }
 
     private function stringOption(string $name): ?string

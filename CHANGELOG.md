@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `HealthCheckRunnerService::runForSnapshot()` runs the checks on a `ProjectSnapshotData` built by the caller, without reading a project directory.
+- `vendor/bin/excubia push [path]` and `php artisan excubia:push` run the checks and send the report to your own `excubia-app` (`POST {url}/api/reports`, `Authorization: Bearer`). Envelope `protocolVersion: 1` with a unique `batchId` and `sentAt`, documented in `docs/push-schema.json`. Exit codes: `0` sent, `2` configuration error, `3` token rejected or app unreachable.
+- `excubia.json` key `app` (`url`, `token`); `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` override it. HTTPS only, plain HTTP allowed for localhost.
 
 ## [0.1.1] - 2026-11-01
 

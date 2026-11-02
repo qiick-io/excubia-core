@@ -85,6 +85,9 @@ Options:
 
 vendor/bin/excubia cache:clear
 vendor/bin/excubia --version
+
+vendor/bin/excubia push [path] [--config=FILE]   # run the checks, send the report to excubia-app (section 13)
+php artisan excubia:push [--config=FILE]
 ```
 
 Exit codes:
@@ -197,9 +200,11 @@ These decisions are final. They extend section 10 and replace D2 where they disa
 ## 13. Push protocol (approved 2026-11-02)
 
 - **Command:** `vendor/bin/excubia push [path]` and `php artisan excubia:push` run the checks and send the report. Reports are sent daily from the Laravel scheduler and from CI after deploy.
-- **Configuration:** app URL and project token from `excubia.json` or `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN`. The token is never printed, cached or written to a report.
+- **Configuration:** app URL and project token from `excubia.json` (`"app": {"url": "…", "token": "…"}`) or `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN`; the environment wins over the file. The URL is the app's base URL. The token is never printed, cached or written to a report.
+- **Endpoint:** `POST {url}/api/reports` with the envelope as JSON. The app answers 2xx with a JSON body when it stored the report (or already had that `batchId`), 401/403 for a wrong or revoked token.
+- **Exit codes of `push`:** `0` sent (findings do not change it), `2` configuration error (missing URL or token, plain HTTP to a host other than localhost, missing `composer.lock`, invalid config), `3` the app rejected the token, answered an error, or could not be reached. Each case prints a message saying which.
 - **Transport:** HTTPS only (plain HTTP only for localhost), `Authorization: Bearer <token>`, the timeouts and retries of section 7.
-- **Envelope:** JSON with `protocolVersion` (1), a unique `batchId` so a retried send is stored once, `sentAt`, and the payload. The envelope is a public contract, frozen at 1.0.0 (#76).
+- **Envelope:** JSON with `protocolVersion` (1), a unique `batchId` (UUID v4, new per run, kept across HTTP retries) so a retried send is stored once, `sentAt` (UTC, `Y-m-d\TH:i:s\Z`), and the payload (`report`, following `docs/report-schema.json`). Documented in `docs/push-schema.json`. The envelope is a public contract, frozen at 1.0.0 (#76).
 - **Runtime data and exceptions** (#75, #77, opt-in): written to a local buffer, never sent during a request, sent in batches by the scheduler about every minute. When the app is unreachable the buffer keeps data up to a size cap and drops the oldest entries; it never slows the project down.
 - **What is sent:** the report (package names and versions, runtime versions, findings); for runtime data route names, job and command names, durations and counts, SQL without bindings; for exceptions class, fingerprint, masked message, and stack frames with paths relative to the project root. Never request payloads, headers, cookies, users, IP addresses, `.env` values or absolute paths.
 - **Stale projects:** the app marks a project stale when no report arrives within a configurable window, which also reveals a stopped scheduler.

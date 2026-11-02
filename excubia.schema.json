@@ -100,6 +100,23 @@
                     "minimum": 0
                 }
             }
+        },
+        "app": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Target of excubia push. EXCUBIA_APP_URL and EXCUBIA_APP_TOKEN override these keys. Prefer the environment for the token so it is not committed.",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Base URL of your excubia-app. HTTPS, or plain HTTP to localhost only."
+                },
+                "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Project push token from excubia-app."
+                }
+            }
         }
     }
 }

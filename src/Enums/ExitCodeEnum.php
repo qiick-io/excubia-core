@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Enums;
 
 /**
- * Process status for `vendor/bin/excubia`. Data-source failure (3) exists
- * because the architecture names it. v0.1.0 does not return it: `--strict`
- * is still a proposal, and a data-source miss becomes a skipped check.
+ * Process status for `vendor/bin/excubia`. `check` does not return 3:
+ * `--strict` is still a proposal, and a data-source miss becomes a skipped
+ * check. `push` returns 3 when excubia-app rejects the token or does not
+ * accept the report.
  */
 enum ExitCodeEnum: int
 {

@@ -41,7 +41,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -50,6 +50,7 @@ final class ExcubiaConfigurationLoader
 
         $checks = $this->checks($document['checks'] ?? [], $defaults);
         $cache = $this->cache($document['cache'] ?? []);
+        $app = $this->app($document['app'] ?? []);
 
         return new ExcubiaConfigurationData(
             failOnSeverity: array_key_exists('failOn', $document) ? $this->failOn($document['failOn']) : $defaults->failOnSeverity,
@@ -61,7 +62,29 @@ final class ExcubiaConfigurationLoader
             ignoreRules: $this->ignoreRules($document['ignore'] ?? []),
             cacheDirectory: $cache['directory'],
             cacheTtlHours: $cache['ttlHours'],
+            appUrl: $app['url'],
+            appToken: $app['token'],
         );
+    }
+
+    /**
+     * `excubia push` target. Both keys are optional here; the push command
+     * reports what is missing after the environment variables are applied.
+     *
+     * @return array{url: string|null, token: string|null}
+     */
+    private function app(mixed $app): array
+    {
+        if (! is_array($app)) {
+            throw new InvalidConfigurationException('app must be an object.');
+        }
+
+        $this->rejectUnknownKeys($app, ['url', 'token'], 'app');
+
+        return [
+            'url' => array_key_exists('url', $app) ? $this->requiredString($app['url'], 'app.url') : null,
+            'token' => array_key_exists('token', $app) ? $this->requiredString($app['token'], 'app.token') : null,
+        ];
     }
 
     /**
