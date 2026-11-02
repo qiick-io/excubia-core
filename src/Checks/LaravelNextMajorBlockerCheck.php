@@ -64,10 +64,10 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
             }
 
             $stable = $this->latestStable($versions);
-            $stableAllows = $stable !== null && $this->allows($stable, $target);
+            $doesStableAllowTarget = $stable !== null && $this->isCompatibleWith($stable, $target);
             $preReleaseAllows = $this->preReleaseAllows($versions, $target);
 
-            if ($stableAllows) {
+            if ($doesStableAllowTarget) {
                 continue;
             }
 
@@ -97,6 +97,8 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
     }
 
     /**
+     * True when any published version requires laravel/framework or illuminate/*.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function dependsOnLaravel(array $versions): bool
@@ -113,6 +115,8 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
     }
 
     /**
+     * Newest stable (non pre-release) Packagist version, or null when none.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function latestStable(array $versions): ?PackagistVersionData
@@ -133,6 +137,8 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
     }
 
     /**
+     * True when any pre-release version's Laravel constraints accept `$target`.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function preReleaseAllows(array $versions, string $target): bool
@@ -142,7 +148,7 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
                 continue;
             }
 
-            if ($this->allows($version, $target)) {
+            if ($this->isCompatibleWith($version, $target)) {
                 return true;
             }
         }
@@ -150,14 +156,18 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
         return false;
     }
 
-    private function allows(PackagistVersionData $version, string $target): bool
+    /**
+     * True when every laravel/framework and illuminate/* requirement on the
+     * version is satisfied by `$target`.
+     */
+    private function isCompatibleWith(PackagistVersionData $version, string $target): bool
     {
         foreach ($version->requirements as $name => $constraint) {
             if ($name !== 'laravel/framework' && ! str_starts_with($name, 'illuminate/')) {
                 continue;
             }
 
-            if (! $this->composerConstraint->matches($target, $constraint)) {
+            if (! $this->composerConstraint->isSatisfiedBy($target, $constraint)) {
                 return false;
             }
         }
@@ -165,6 +175,9 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
         return true;
     }
 
+    /**
+     * Packagist pre-release or branch alias (`dev-*` or any `-` stability suffix).
+     */
     private function isPreRelease(string $version): bool
     {
         return str_starts_with($version, 'dev-') || str_contains($version, '-');

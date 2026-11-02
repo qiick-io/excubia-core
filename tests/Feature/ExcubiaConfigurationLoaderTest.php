@@ -47,8 +47,8 @@ JSON,
         ->and($configuration->laravelWarnDaysBeforeEndOfLife)->toBe(30)
         ->and($configuration->isNodeEndOfLifeCheckEnabled)->toBeFalse()
         ->and($configuration->cacheTtlHours)->toBe(12)
-        ->and($configuration->ignores($matched, $today))->toBeTrue()
-        ->and($configuration->ignores($other, $today))->toBeFalse();
+        ->and($configuration->isIgnored($matched, $today))->toBeTrue()
+        ->and($configuration->isIgnored($other, $today))->toBeFalse();
 });
 
 it('rejects an unknown key', function () {
@@ -77,7 +77,7 @@ it('reactivates an expired ignore and returns a warning', function () {
     $finding = advisoryFinding('GHSA-xxxx');
     $today = new DateTimeImmutable('2026-10-31', new DateTimeZone('UTC'));
 
-    expect($configuration->ignores($finding, $today))->toBeFalse()
+    expect($configuration->isIgnored($finding, $today))->toBeFalse()
         ->and($configuration->expiredIgnoreWarnings([$finding], $today)[0])->toContain('expired on 2026-01-01');
 });
 

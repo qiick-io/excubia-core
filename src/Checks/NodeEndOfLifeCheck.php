@@ -14,6 +14,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 
 /**
@@ -31,6 +32,7 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
     public function __construct(
         private readonly EndOfLifeApiService $endOfLifeApi,
         private readonly DateTimeImmutable $today,
+        private readonly CalendarDateService $calendarDate = new CalendarDateService,
     ) {}
 
     public function id(): string
@@ -55,9 +57,9 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'node', 'Node version is not declared.');
         }
 
-        $major = $this->major($declaration);
+        $majorVersion = $this->majorVersion($declaration);
 
-        if ($major === null) {
+        if ($majorVersion === null) {
             return CheckResultData::skipped($this->id(), $this->name(), 'node', 'The declared Node version could not be read as a major version.');
         }
 
@@ -67,42 +69,41 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'node', 'endoflife.date did not respond.');
         }
 
-        $cycle = null;
-
-        foreach ($cycles as $candidate) {
-            if ($candidate->cycle === $major) {
-                $cycle = $candidate;
-                break;
-            }
-        }
+        $cycle = $this->calendarDate->matchingCycle($majorVersion, $cycles);
 
         if ($cycle === null) {
             return CheckResultData::skipped($this->id(), $this->name(), 'node', 'No end-of-life cycle matches the declared Node version.');
         }
 
         $today = $this->today->setTimezone(new DateTimeZone('UTC'))->setTime(0, 0);
-        $ends = $this->date($cycle->securitySupportEndsOn);
+        $ends = $cycle->securitySupportEndDate();
         $fixHint = 'Move to Node LTS '.$this->recommendedLts($cycles, $today).'.';
 
         if ($ends !== null && $today > $ends) {
-            return $this->one(FindingStatusEnum::Fail, SeverityEnum::High, 'Node '.$major.' is end of life.', $fixHint);
+            return $this->singleFindingResult(FindingStatusEnum::Fail, SeverityEnum::High, 'Node '.$majorVersion.' is end of life.', $fixHint);
         }
 
-        if ($ends !== null && (int) $today->diff($ends)->days <= self::WARN_DAYS) {
-            return $this->one(FindingStatusEnum::Warn, SeverityEnum::Low, 'Maintenance for Node '.$major.' ends on '.$ends->format('Y-m-d').'.', $fixHint);
+        if ($ends !== null && $this->calendarDate->daysUntil($today, $ends) <= self::WARN_DAYS) {
+            return $this->singleFindingResult(FindingStatusEnum::Warn, SeverityEnum::Low, 'Maintenance for Node '.$majorVersion.' ends on '.$ends->format('Y-m-d').'.', $fixHint);
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), []);
     }
 
-    private function one(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
+    /**
+     * One finding for the `node` subject.
+     */
+    private function singleFindingResult(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             new FindingData($this->id(), $severity, $status, 'node', $message, $fixHint, 'https://endoflife.date/nodejs'),
         ]);
     }
 
-    private function major(string $declaration): ?string
+    /**
+     * First digit group in a Node declaration (`.nvmrc`, engines, etc.).
+     */
+    private function majorVersion(string $declaration): ?string
     {
         if (preg_match('/(\d+)/', $declaration, $matches) !== 1) {
             return null;
@@ -112,6 +113,8 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
     }
 
     /**
+     * Newest LTS cycle that still has security support on `$today`.
+     *
      * @param  list<EndOfLifeCycleData>  $cycles
      */
     private function recommendedLts(array $cycles, DateTimeImmutable $today): string
@@ -123,7 +126,7 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
                 continue;
             }
 
-            $ends = $this->date($cycle->securitySupportEndsOn);
+            $ends = $cycle->securitySupportEndDate();
 
             if ($ends !== null && $today > $ends) {
                 continue;
@@ -135,16 +138,5 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
         }
 
         return $recommended ?? 'a current LTS';
-    }
-
-    private function date(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value, new DateTimeZone('UTC'));
-
-        return $parsed === false ? null : $parsed->setTime(0, 0);
     }
 }

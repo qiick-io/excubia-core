@@ -77,7 +77,7 @@ final readonly class ExcubiaConfigurationData
      * `until` is inclusive. A rule whose date is before today does not match,
      * so the finding stays active. Comparison uses the UTC calendar date.
      */
-    public function ignores(FindingData $finding, DateTimeImmutable $today): bool
+    public function isIgnored(FindingData $finding, DateTimeImmutable $today): bool
     {
         foreach ($this->ignoreRules as $ignoreRule) {
             if (! $this->ruleMatchesFinding($ignoreRule, $finding)) {
@@ -109,7 +109,7 @@ final readonly class ExcubiaConfigurationData
         $warnings = [];
 
         foreach ($findings as $finding) {
-            if ($this->ignores($finding, $today)) {
+            if ($this->isIgnored($finding, $today)) {
                 continue;
             }
 

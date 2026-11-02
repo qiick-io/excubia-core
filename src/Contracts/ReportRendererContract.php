@@ -6,6 +6,11 @@ namespace Qiick\Excubia\Contracts;
 
 use Qiick\Excubia\Data\HealthReportData;
 
+/**
+ * Turns a finished health report into text for stdout or `--output`.
+ *
+ * Renderers are pure: no I/O, no network, no mutation of the report.
+ */
 interface ReportRendererContract
 {
     /**

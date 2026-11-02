@@ -14,6 +14,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 
 /**
@@ -24,6 +25,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
     public function __construct(
         private readonly EndOfLifeApiService $endOfLifeApi,
         private readonly DateTimeImmutable $today,
+        private readonly CalendarDateService $calendarDate = new CalendarDateService,
     ) {}
 
     public function id(): string
@@ -48,24 +50,24 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'php', 'endoflife.date did not respond.');
         }
 
-        $cycle = $this->matchingCycle($projectSnapshot->phpVersion, $cycles);
+        $cycle = $this->matchingPhpCycle($projectSnapshot->phpVersion, $cycles);
 
         if ($cycle === null) {
             return CheckResultData::skipped($this->id(), $this->name(), 'php', 'No end-of-life cycle matches the resolved PHP version.');
         }
 
         $today = $this->today->setTimezone(new DateTimeZone('UTC'))->setTime(0, 0);
-        $securityEnds = $this->date($cycle->securitySupportEndsOn);
-        $activeEnds = $this->date($cycle->activeSupportEndsOn);
+        $securityEnds = $cycle->securitySupportEndDate();
+        $activeEnds = $cycle->activeSupportEndDate();
 
         if ($securityEnds !== null && $today > $securityEnds) {
             return $this->failed($cycle, $cycles, $today);
         }
 
-        $securityIsClose = $securityEnds !== null && $this->daysUntil($today, $securityEnds) <= $configuration->phpWarnDaysBeforeEndOfLife;
-        $activeHasEnded = $activeEnds !== null && $today > $activeEnds;
+        $isSecuritySupportEndingSoon = $securityEnds !== null && $this->calendarDate->daysUntil($today, $securityEnds) <= $configuration->phpWarnDaysBeforeEndOfLife;
+        $hasActiveSupportEnded = $activeEnds !== null && $today > $activeEnds;
 
-        if ($activeHasEnded && $securityIsClose) {
+        if ($hasActiveSupportEnded && $isSecuritySupportEndingSoon) {
             return CheckResultData::fromFindings($this->id(), $this->name(), [
                 $this->finding(
                     FindingStatusEnum::Warn,
@@ -80,6 +82,8 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
     }
 
     /**
+     * Critical failure when security support has already ended.
+     *
      * @param  list<EndOfLifeCycleData>  $cycles
      */
     private function failed(EndOfLifeCycleData $cycle, array $cycles, DateTimeImmutable $today): CheckResultData
@@ -110,26 +114,22 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
     }
 
     /**
+     * Match a resolved PHP version (e.g. `8.1.2`) to its `major.minor` cycle.
+     *
      * @param  list<EndOfLifeCycleData>  $cycles
      */
-    private function matchingCycle(string $phpVersion, array $cycles): ?EndOfLifeCycleData
+    private function matchingPhpCycle(string $phpVersion, array $cycles): ?EndOfLifeCycleData
     {
         if (preg_match('/^v?(\d+)\.(\d+)/i', $phpVersion, $matches) !== 1) {
             return null;
         }
 
-        $cycleName = $matches[1].'.'.$matches[2];
-
-        foreach ($cycles as $cycle) {
-            if ($cycle->cycle === $cycleName) {
-                return $cycle;
-            }
-        }
-
-        return null;
+        return $this->calendarDate->matchingCycle($matches[1].'.'.$matches[2], $cycles);
     }
 
     /**
+     * Prefer the newest cycle that still has security support on `$today`.
+     *
      * @param  list<EndOfLifeCycleData>  $cycles
      */
     private function fixHint(array $cycles, DateTimeImmutable $today): string
@@ -137,7 +137,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
         $recommended = null;
 
         foreach ($cycles as $cycle) {
-            $securityEnds = $this->date($cycle->securitySupportEndsOn);
+            $securityEnds = $cycle->securitySupportEndDate();
 
             if ($securityEnds !== null && $today > $securityEnds) {
                 continue;
@@ -155,25 +155,5 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
         $until = $recommended->securitySupportEndsOn ?? 'a later date';
 
         return 'Upgrade PHP to '.$recommended->cycle.' (supported until '.$until.').';
-    }
-
-    private function date(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value, new DateTimeZone('UTC'));
-
-        if ($parsed === false) {
-            return null;
-        }
-
-        return $parsed->setTime(0, 0);
-    }
-
-    private function daysUntil(DateTimeImmutable $today, DateTimeImmutable $end): int
-    {
-        return (int) $today->diff($end)->days;
     }
 }

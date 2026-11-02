@@ -97,7 +97,7 @@ final readonly class HealthReportData
             $remainingFindings = [];
 
             foreach ($checkResult->findings as $finding) {
-                if ($configuration->ignores($finding, $today)) {
+                if ($configuration->isIgnored($finding, $today)) {
                     continue;
                 }
 

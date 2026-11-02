@@ -67,6 +67,9 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
         return CheckResultData::fromFindings($this->id(), $this->name(), $findings);
     }
 
+    /**
+     * Map a numeric CVSS score string onto SeverityEnum; non-numeric → medium.
+     */
     private function severity(?string $value): SeverityEnum
     {
         if ($value === null || preg_match('/^(\d+(?:\.\d+)?)$/', $value, $matches) !== 1) {

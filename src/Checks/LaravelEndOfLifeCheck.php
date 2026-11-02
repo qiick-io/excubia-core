@@ -8,12 +8,12 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Data\CheckResultData;
-use Qiick\Excubia\Data\EndOfLifeCycleData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 
 /**
@@ -24,6 +24,7 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
     public function __construct(
         private readonly EndOfLifeApiService $endOfLifeApi,
         private readonly DateTimeImmutable $today,
+        private readonly CalendarDateService $calendarDate = new CalendarDateService,
     ) {}
 
     public function id(): string
@@ -48,77 +49,53 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'laravel/framework', 'endoflife.date did not respond.');
         }
 
-        $major = $this->major($projectSnapshot->laravelFrameworkVersion);
-        $cycle = $major === null ? null : $this->matchingCycle($major, $cycles);
+        $majorVersion = $this->majorVersion($projectSnapshot->laravelFrameworkVersion);
+        $cycle = $majorVersion === null ? null : $this->calendarDate->matchingCycle($majorVersion, $cycles);
 
         if ($cycle === null) {
             return CheckResultData::skipped($this->id(), $this->name(), 'laravel/framework', 'No end-of-life cycle matches the locked Laravel version.');
         }
 
         $today = $this->today->setTimezone(new DateTimeZone('UTC'))->setTime(0, 0);
-        $securityEnds = $this->date($cycle->securitySupportEndsOn);
-        $bugFixesEnd = $this->date($cycle->activeSupportEndsOn);
-        $nextMajor = (string) ((int) $major + 1);
+        $securityEnds = $cycle->securitySupportEndDate();
+        $bugFixesEnd = $cycle->activeSupportEndDate();
+        $nextMajor = (string) ((int) $majorVersion + 1);
         $securityDate = $securityEnds?->format('Y-m-d') ?? 'an unknown date';
         $fixHint = 'Upgrade to Laravel '.$nextMajor.'; security fixes for your version end '.$securityDate.'.';
 
         if ($securityEnds !== null && $today > $securityEnds) {
-            return $this->one(FindingStatusEnum::Fail, SeverityEnum::Critical, 'Security fixes ended on '.$securityDate.'.', $fixHint);
+            return $this->singleFindingResult(FindingStatusEnum::Fail, SeverityEnum::Critical, 'Security fixes ended on '.$securityDate.'.', $fixHint);
         }
 
-        $bugFixesEnded = $bugFixesEnd !== null && $today > $bugFixesEnd;
-        $securityIsClose = $securityEnds !== null && $this->daysUntil($today, $securityEnds) <= $configuration->laravelWarnDaysBeforeEndOfLife;
+        $haveBugFixesEnded = $bugFixesEnd !== null && $today > $bugFixesEnd;
+        $isSecuritySupportEndingSoon = $securityEnds !== null && $this->calendarDate->daysUntil($today, $securityEnds) <= $configuration->laravelWarnDaysBeforeEndOfLife;
 
-        if ($bugFixesEnded || $securityIsClose) {
-            return $this->one(FindingStatusEnum::Warn, SeverityEnum::Medium, 'Bug fixes ended or security fixes end within '.$configuration->laravelWarnDaysBeforeEndOfLife.' days.', $fixHint);
+        if ($haveBugFixesEnded || $isSecuritySupportEndingSoon) {
+            return $this->singleFindingResult(FindingStatusEnum::Warn, SeverityEnum::Medium, 'Bug fixes ended or security fixes end within '.$configuration->laravelWarnDaysBeforeEndOfLife.' days.', $fixHint);
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), []);
     }
 
-    private function one(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
+    /**
+     * One finding for the locked laravel/framework subject.
+     */
+    private function singleFindingResult(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             new FindingData($this->id(), $severity, $status, 'laravel/framework', $message, $fixHint, 'https://endoflife.date/laravel'),
         ]);
     }
 
-    private function major(string $lockedVersion): ?string
+    /**
+     * Leading major digit from a locked Composer version (`v12.0.1` → `12`).
+     */
+    private function majorVersion(string $lockedVersion): ?string
     {
         if (preg_match('/^v?(\d+)/i', $lockedVersion, $matches) !== 1) {
             return null;
         }
 
         return $matches[1];
-    }
-
-    /**
-     * @param  list<EndOfLifeCycleData>  $cycles
-     */
-    private function matchingCycle(string $major, array $cycles): ?EndOfLifeCycleData
-    {
-        foreach ($cycles as $cycle) {
-            if ($cycle->cycle === $major) {
-                return $cycle;
-            }
-        }
-
-        return null;
-    }
-
-    private function date(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value, new DateTimeZone('UTC'));
-
-        return $parsed === false ? null : $parsed->setTime(0, 0);
-    }
-
-    private function daysUntil(DateTimeImmutable $today, DateTimeImmutable $end): int
-    {
-        return (int) $today->diff($end)->days;
     }
 }

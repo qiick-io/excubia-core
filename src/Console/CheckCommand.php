@@ -110,6 +110,8 @@ final class CheckCommand extends Command
     }
 
     /**
+     * Load config, run checks, render the report, return the exit code.
+     *
      * @param  array{
      *     format?: string|null,
      *     output?: string|null,
@@ -122,6 +124,9 @@ final class CheckCommand extends Command
      *     config?: string|null,
      *     no-banner?: bool
      * }  $options
+     *
+     * @throws InvalidConfigurationException
+     * @throws LockfileNotFoundException
      */
     private function render(?string $path, array $options, OutputInterface $output): int
     {
@@ -149,7 +154,11 @@ final class CheckCommand extends Command
     }
 
     /**
+     * Merge file config with CLI overrides (`--fail-on`, `--no-dev`).
+     *
      * @param  array<string, mixed>  $options
+     *
+     * @throws InvalidConfigurationException
      */
     private function configuration(string $projectRoot, array $options): ExcubiaConfigurationData
     {
@@ -182,6 +191,9 @@ final class CheckCommand extends Command
         );
     }
 
+    /**
+     * Injected client, or Symfony; wraps with request logging when `-v` or higher.
+     */
     private function httpClient(OutputInterface $output): HttpClientContract
     {
         $httpClient = $this->httpClient ?? new SymfonyHttpClientService;
@@ -195,6 +207,11 @@ final class CheckCommand extends Command
         });
     }
 
+    /**
+     * Absolute project root: explicit path, or the process working directory.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function projectRoot(?string $path): string
     {
         if ($path === null || $path === '') {
@@ -211,6 +228,8 @@ final class CheckCommand extends Command
     }
 
     /**
+     * Split a comma-separated `--only` / `--skip` value into check ids.
+     *
      * @return list<string>|null
      */
     private function checkIds(?string $value): ?array
@@ -236,6 +255,11 @@ final class CheckCommand extends Command
         return $ids;
     }
 
+    /**
+     * Parse `--fail-on`. `none` means null (never fail the process on findings).
+     *
+     * @throws InvalidConfigurationException
+     */
     private function failOn(string $value): ?SeverityEnum
     {
         if ($value === 'none') {
@@ -251,6 +275,11 @@ final class CheckCommand extends Command
         return $severity;
     }
 
+    /**
+     * Pick a renderer for `--format`. Table uses decoration only when writing to stdout.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function renderer(?string $format, OutputInterface $output, ?string $outputFile): ReportRendererContract
     {
         $selected = $format ?? ReportFormatEnum::Table->value;
@@ -271,6 +300,11 @@ final class CheckCommand extends Command
         return new TableReportRenderer($outputFile === null && $output->isDecorated());
     }
 
+    /**
+     * Write the rendered report to stdout or `--output`, optionally with the banner.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function writeReport(string $rendered, ?string $outputFile, bool $isBannerHidden, OutputInterface $output): void
     {
         if (! $isBannerHidden && $output->getVerbosity() > OutputInterface::VERBOSITY_QUIET) {
@@ -292,6 +326,9 @@ final class CheckCommand extends Command
         }
     }
 
+    /**
+     * Prefer stderr when the output supports it so report stdout stays clean.
+     */
     private function writeError(OutputInterface $output, string $message): void
     {
         if ($output instanceof ConsoleOutputInterface) {
@@ -303,6 +340,9 @@ final class CheckCommand extends Command
         $output->writeln($message);
     }
 
+    /**
+     * Brand banner from `brand/excubia/cli/banner.txt`, or empty when missing.
+     */
     private function banner(): string
     {
         $path = dirname(__DIR__, 2).'/brand/excubia/cli/banner.txt';
@@ -320,6 +360,11 @@ final class CheckCommand extends Command
         return rtrim($banner);
     }
 
+    /**
+     * Read a string CLI option; reject non-string values from the input definition.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function stringOption(InputInterface $input, string $name): ?string
     {
         $value = $input->getOption($name);

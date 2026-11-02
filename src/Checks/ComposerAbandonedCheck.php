@@ -68,6 +68,8 @@ final class ComposerAbandonedCheck implements HealthCheckContract
     }
 
     /**
+     * First non-false abandoned flag across versions: replacement name, true, or null.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function abandonedFlag(array $versions): string|bool|null

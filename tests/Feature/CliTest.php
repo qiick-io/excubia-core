@@ -35,7 +35,7 @@ it('fails a critical php end-of-life finding and can hide the banner', function 
     expect($exitCode)->toBe(1)
         ->and($tester->getDisplay())->toContain('Security support ended')
         ->and($tester->getDisplay())->toContain('Upgrade PHP to 8.4')
-        ->and($tester->getDisplay())->not->toContain('Excubia');
+        ->and($tester->getDisplay())->not->toContain('Health checks for Laravel apps.');
 });
 
 it('returns zero when fail-on is none and writes json to a file', function () {

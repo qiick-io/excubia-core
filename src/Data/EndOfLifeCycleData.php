@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Data;
 
+use DateTimeImmutable;
+use Qiick\Excubia\Services\CalendarDateService;
+
 /**
  * One product cycle from endoflife.date.
  *
@@ -20,4 +23,20 @@ final readonly class EndOfLifeCycleData
         public ?string $activeSupportEndsOn,
         public bool $isLongTermSupport,
     ) {}
+
+    /**
+     * Security-support end as midnight UTC, or null when the API omitted it.
+     */
+    public function securitySupportEndDate(): ?DateTimeImmutable
+    {
+        return (new CalendarDateService)->parseUtcDate($this->securitySupportEndsOn);
+    }
+
+    /**
+     * Active/bugfix end as midnight UTC, or null when the API omitted it.
+     */
+    public function activeSupportEndDate(): ?DateTimeImmutable
+    {
+        return (new CalendarDateService)->parseUtcDate($this->activeSupportEndsOn);
+    }
 }

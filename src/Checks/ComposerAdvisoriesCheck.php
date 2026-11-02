@@ -57,7 +57,7 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
                     continue;
                 }
 
-                if (! $this->composerConstraint->matches($package->version, $advisory->affectedVersions)) {
+                if (! $this->composerConstraint->isSatisfiedBy($package->version, $advisory->affectedVersions)) {
                     continue;
                 }
 
@@ -82,6 +82,9 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
         );
     }
 
+    /**
+     * Map a Packagist advisory severity string onto SeverityEnum (default medium).
+     */
     private function severity(?string $value): SeverityEnum
     {
         if ($value === null) {

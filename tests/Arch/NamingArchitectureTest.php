@@ -8,7 +8,7 @@ arch('uses strict types')
 
 arch('does not call debug functions or env')
     ->expect('Qiick\Excubia')
-    ->not->toUse(['dd', 'dump', 'var_dump', 'env']);
+    ->not->toUse(['dd', 'dump', 'var_dump', 'env', 'ray']);
 
 arch('data objects are readonly and suffixed')
     ->expect('Qiick\Excubia\Data')
@@ -49,21 +49,19 @@ arch('configuration loaders use the loader suffix')
     ->expect('Qiick\Excubia\Configuration')
     ->toHaveSuffix('Loader');
 
-it('restricts health check dependencies once checks exist', function () {
-    $checkDirectory = dirname(__DIR__, 2).'/src/Checks';
+arch('console commands use the command suffix')
+    ->expect('Qiick\Excubia\Console')
+    ->toHaveSuffix('Command');
 
-    if (! is_dir($checkDirectory)) {
-        expect(is_dir($checkDirectory))->toBeFalse();
+arch('health checks use the check suffix')
+    ->expect('Qiick\Excubia\Checks')
+    ->toHaveSuffix('Check');
 
-        return;
-    }
-
-    expect('Qiick\Excubia\Checks')
-        ->toHaveSuffix('Check')
-        ->toOnlyUse([
-            'Qiick\Excubia\Contracts',
-            'Qiick\Excubia\Data',
-            'Qiick\Excubia\Enums',
-            'Qiick\Excubia\Services',
-        ]);
-});
+arch('health checks only use contracts, data, enums, and services')
+    ->expect('Qiick\Excubia\Checks')
+    ->toOnlyUse([
+        'Qiick\Excubia\Contracts',
+        'Qiick\Excubia\Data',
+        'Qiick\Excubia\Enums',
+        'Qiick\Excubia\Services',
+    ]);

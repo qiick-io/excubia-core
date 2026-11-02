@@ -8,6 +8,13 @@ use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 
+/**
+ * One registered health check.
+ *
+ * Implementations inspect a project snapshot and return findings. They never
+ * talk to the network themselves: data-source calls go through API services.
+ * A data-source outage must become a skipped result, not an exception.
+ */
 interface HealthCheckContract
 {
     /**

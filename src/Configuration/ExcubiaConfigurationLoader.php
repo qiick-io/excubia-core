@@ -115,10 +115,10 @@ final class ExcubiaConfigurationLoader
     /**
      * @param  array<mixed>  $checks
      */
-    private function booleanSetting(array $checks, string $checkId, string $key, bool $default): bool
+    private function booleanSetting(array $checks, string $checkId, string $key, bool $defaultValue): bool
     {
         if (! array_key_exists($checkId, $checks)) {
-            return $default;
+            return $defaultValue;
         }
 
         $check = $checks[$checkId];
@@ -130,7 +130,7 @@ final class ExcubiaConfigurationLoader
         $this->rejectUnknownKeys($check, [$key], 'checks.'.$checkId);
 
         if (! array_key_exists($key, $check)) {
-            return $default;
+            return $defaultValue;
         }
 
         return $this->boolean($check[$key], 'checks.'.$checkId.'.'.$key);
