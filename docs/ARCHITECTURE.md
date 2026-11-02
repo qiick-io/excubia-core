@@ -33,6 +33,7 @@ qiick-io/excubia-core
 │   │   ├── PackagistApiService.php          # metadata + security advisories
 │   │   ├── GitHubRepositoryApiService.php   # archived flag, last push
 │   │   ├── OsvApiService.php                # OSV.dev batch query
+│   │   ├── ReportPushService.php            # push envelope to excubia-app (SPEC §13)
 │   │   └── ResponseCacheService.php         # file cache with TTL, offline mode
 │   ├── Parsers/
 │   │   ├── ComposerLockParser.php
@@ -60,17 +61,19 @@ qiick-io/excubia-core
 │   │   └── ExcubiaConfigurationLoader.php   # reads + validates excubia.json  [suffix: Loader — see note]
 │   ├── Console/
 │   │   ├── CheckCommand.php                 # symfony/console command used by bin/excubia
+│   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
 │   │   ├── ExcubiaServiceProvider.php       # auto-discovered; registers the Artisan alias only
-│   │   └── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner
+│   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner
+│   │   └── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
 │       ├── LockfileNotFoundException.php
 │       └── DataSourceUnavailableException.php
 ├── tests/{Unit,Feature,Arch,Fixtures}
 ├── excubia.schema.json                      # JSON Schema of the config file
-├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,checks/*.md}
+├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,checks/*.md}
 └── .github/workflows/ci.yml                 # calls qiick-io/.github reusable workflow
 ```
 
