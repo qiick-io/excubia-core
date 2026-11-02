@@ -18,6 +18,7 @@ use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\HealthReportData;
+use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
@@ -55,6 +56,36 @@ final class HealthCheckRunnerService
         bool $isOffline,
         bool $isCacheBypassed,
     ): array {
+        return $this->runForSnapshot(
+            $this->projectSnapshot->snapshot($projectRoot, $configuration),
+            $configuration,
+            $onlyCheckIds,
+            $skippedCheckIds,
+            $isOffline,
+            $isCacheBypassed,
+        );
+    }
+
+    /**
+     * Runs the checks on values that were not read from a project directory.
+     *
+     * The web scanner receives package names and versions only, so it builds
+     * the snapshot itself and never writes a lockfile to disk.
+     *
+     * @param  list<string>|null  $onlyCheckIds
+     * @param  list<string>|null  $skippedCheckIds
+     * @return array{report: HealthReportData, expiredIgnoreWarnings: list<string>}
+     *
+     * @throws InvalidConfigurationException
+     */
+    public function runForSnapshot(
+        ProjectSnapshotData $snapshot,
+        ExcubiaConfigurationData $configuration,
+        ?array $onlyCheckIds,
+        ?array $skippedCheckIds,
+        bool $isOffline,
+        bool $isCacheBypassed,
+    ): array {
         $cache = new ResponseCacheService(
             $configuration->cacheDirectory,
             $configuration->cacheTtlHours,
@@ -62,7 +93,6 @@ final class HealthCheckRunnerService
             $isCacheBypassed,
         );
         $registry = new HealthCheckRegistry($this->healthChecks($cache));
-        $snapshot = $this->projectSnapshot->snapshot($projectRoot, $configuration);
         $checkResults = [];
 
         foreach ($registry->healthChecksFor($onlyCheckIds, $skippedCheckIds) as $healthCheck) {
