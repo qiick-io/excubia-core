@@ -135,3 +135,28 @@ it('decodes a symfony mock response', function () {
 
     expect($client->getJson('https://endoflife.date/api/php.json'))->toBe(['cycle' => '8.3']);
 });
+
+it('allows plain http to loopback hosts only', function () {
+    expect(SymfonyHttpClientService::isSecureUrl('https://excubia.example.test'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://localhost:8000'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://127.0.0.1'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://[::1]:8000'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://localhost.example.test'))->toBeFalse()
+        ->and(SymfonyHttpClientService::isSecureUrl('ftp://localhost'))->toBeFalse()
+        ->and(SymfonyHttpClientService::isSecureUrl('excubia.example.test'))->toBeFalse();
+});
+
+it('keeps the http status when a response is not successful', function () {
+    $client = new SymfonyHttpClientService(new MockHttpClient([
+        new MockResponse('{"message":"Unauthenticated."}', ['http_code' => 401]),
+    ]));
+
+    try {
+        $client->postJson('https://excubia.example.test/api/reports', ['protocolVersion' => 1]);
+        $status = null;
+    } catch (DataSourceUnavailableException $exception) {
+        $status = $exception->httpStatus;
+    }
+
+    expect($status)->toBe(401);
+});

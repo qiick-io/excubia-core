@@ -7,7 +7,7 @@ namespace Qiick\Excubia\Laravel;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Registers `php artisan excubia:check` when this package is installed in
+ * Registers `php artisan excubia:check` and `excubia:push` when this package is installed in
  * a Laravel app. The provider does not boot the scanned project.
  */
 final class ExcubiaServiceProvider extends ServiceProvider
@@ -16,6 +16,7 @@ final class ExcubiaServiceProvider extends ServiceProvider
     {
         $this->commands([
             ExcubiaCheckCommand::class,
+            ExcubiaPushCommand::class,
         ]);
     }
 }

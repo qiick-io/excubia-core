@@ -10,6 +10,7 @@ use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
+use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Enums\ReportFormatEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
@@ -75,7 +76,7 @@ final class CheckCommand extends Command
                 'no-banner' => (bool) $input->getOption('no-banner'),
             ], $output);
         } catch (InvalidConfigurationException|LockfileNotFoundException $exception) {
-            $this->writeError($output, $exception->getMessage());
+            self::writeError($output, $exception->getMessage());
 
             return $exception->getCode();
         }
@@ -103,14 +104,14 @@ final class CheckCommand extends Command
         try {
             return $this->render($path, $options, $output);
         } catch (InvalidConfigurationException|LockfileNotFoundException $exception) {
-            $this->writeError($output, $exception->getMessage());
+            self::writeError($output, $exception->getMessage());
 
             return $exception->getCode();
         }
     }
 
     /**
-     * Load config, run checks, render the report, return the exit code.
+     * Run the checks, render the report, return the exit code.
      *
      * @param  array{
      *     format?: string|null,
@@ -130,6 +131,36 @@ final class CheckCommand extends Command
      */
     private function render(?string $path, array $options, OutputInterface $output): int
     {
+        $scan = $this->scan($path, $options, $output);
+        $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null)->render($scan['report']);
+        $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
+
+        return $scan['report']->exitCodeFor($scan['configuration']->failOnSeverity)->value;
+    }
+
+    /**
+     * Load config, run the checks, and print expired ignore rules to stderr.
+     * `excubia push` calls this so both commands scan a project the same way.
+     *
+     * @param  array{
+     *     format?: string|null,
+     *     output?: string|null,
+     *     fail-on?: string|null,
+     *     only?: string|null,
+     *     skip?: string|null,
+     *     no-dev?: bool,
+     *     offline?: bool,
+     *     no-cache?: bool,
+     *     config?: string|null,
+     *     no-banner?: bool
+     * }  $options
+     * @return array{report: HealthReportData, configuration: ExcubiaConfigurationData}
+     *
+     * @throws InvalidConfigurationException
+     * @throws LockfileNotFoundException
+     */
+    public function scan(?string $path, array $options, OutputInterface $output): array
+    {
         $projectRoot = $this->projectRoot($path);
         $today = $this->today ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $configuration = $this->configuration($projectRoot, $options);
@@ -141,16 +172,12 @@ final class CheckCommand extends Command
             (bool) ($options['offline'] ?? false),
             (bool) ($options['no-cache'] ?? false),
         );
-        $report = $result['report'];
 
         foreach ($result['expiredIgnoreWarnings'] as $warning) {
-            $this->writeError($output, $warning);
+            self::writeError($output, $warning);
         }
 
-        $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null)->render($report);
-        $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
-
-        return $report->exitCodeFor($configuration->failOnSeverity)->value;
+        return ['report' => $result['report'], 'configuration' => $configuration];
     }
 
     /**
@@ -188,13 +215,15 @@ final class CheckCommand extends Command
             ignoreRules: $loaded->ignoreRules,
             cacheDirectory: $loaded->cacheDirectory,
             cacheTtlHours: $loaded->cacheTtlHours,
+            appUrl: $loaded->appUrl,
+            appToken: $loaded->appToken,
         );
     }
 
     /**
      * Injected client, or Symfony; wraps with request logging when `-v` or higher.
      */
-    private function httpClient(OutputInterface $output): HttpClientContract
+    public function httpClient(OutputInterface $output): HttpClientContract
     {
         $httpClient = $this->httpClient ?? new SymfonyHttpClientService;
 
@@ -203,7 +232,7 @@ final class CheckCommand extends Command
         }
 
         return new NotifyingHttpClientService($httpClient, function (string $line) use ($output): void {
-            $this->writeError($output, $line);
+            self::writeError($output, $line);
         });
     }
 
@@ -329,7 +358,7 @@ final class CheckCommand extends Command
     /**
      * Prefer stderr when the output supports it so report stdout stays clean.
      */
-    private function writeError(OutputInterface $output, string $message): void
+    public static function writeError(OutputInterface $output, string $message): void
     {
         if ($output instanceof ConsoleOutputInterface) {
             $output->getErrorOutput()->writeln($message);

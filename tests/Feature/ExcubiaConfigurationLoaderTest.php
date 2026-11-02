@@ -107,3 +107,19 @@ function advisoryFinding(string $advisoryId): FindingData
         advisoryId: $advisoryId,
     );
 }
+
+it('loads the excubia-app url and token and rejects unknown app keys', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"app": {"url": "https://excubia.example.test", "token": "project-token"}}',
+    ]);
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+
+    expect($configuration->appUrl)->toBe('https://excubia.example.test')
+        ->and($configuration->appToken)->toBe('project-token')
+        ->and(ExcubiaConfigurationData::defaults()->appUrl)->toBeNull();
+
+    $invalid = temporaryProject(['excubia.json' => '{"app": {"url": "https://excubia.example.test", "secret": "x"}}']);
+
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $invalid))
+        ->toThrow(InvalidConfigurationException::class, 'Unknown app key [secret]');
+});

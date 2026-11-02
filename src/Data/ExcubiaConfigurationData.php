@@ -16,6 +16,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * after 24 months, warn 180 days before end of life, node check enabled,
  * cache TTL 24 hours. A null `failOnSeverity` is `--fail-on=none`.
  * A null `cacheDirectory` means the cache service chooses its own directory.
+ * `appUrl` and `appToken` come from the `app` key and are read only by
+ * `excubia push`; the token is never printed, cached or written to a report.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -38,6 +40,9 @@ final readonly class ExcubiaConfigurationData
         public array $ignoreRules,
         public ?string $cacheDirectory,
         public int $cacheTtlHours,
+        public ?string $appUrl = null,
+        #[\SensitiveParameter]
+        public ?string $appToken = null,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');

@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
+    "title": "Excubia push envelope",
+    "description": "Protocol version 1 of the body that excubia push sends to POST {appUrl}/api/reports with Authorization: Bearer <project token>. The app stores a repeated batchId once. Frozen at 1.0.0.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["protocolVersion", "batchId", "sentAt", "report"],
+    "properties": {
+        "protocolVersion": {
+            "const": 1
+        },
+        "batchId": {
+            "type": "string",
+            "description": "Random UUID version 4, new for every run. A retry of the same send keeps it.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "sentAt": {
+            "type": "string",
+            "description": "UTC time the report was built for sending, Y-m-d\\TH:i:s\\Z.",
+            "format": "date-time"
+        },
+        "report": {
+            "$ref": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json"
+        }
+    }
+}
