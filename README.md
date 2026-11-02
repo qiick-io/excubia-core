@@ -12,6 +12,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/qiick-io/excubia-core/ci.yml?branch=main&label=CI)](https://github.com/qiick-io/excubia-core/actions/workflows/ci.yml)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.2-777BB4?logo=php&logoColor=white)](./composer.json)
 
+> **Status:** early development (0.x). The CLI works, but the CLI options, report JSON, check ids and `excubia.json` schema may still change before 1.0.0. See [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
 **Releases:** see [GitHub Releases](https://github.com/qiick-io/excubia-core/releases) and [CHANGELOG.md](./CHANGELOG.md).
 
 **Excubia** is the open-source (MIT) Laravel health-check CLI of the [qiick](https://qiick.io) suite. Package [`qiick/excubia-core`](https://github.com/qiick-io/excubia-core) reads lockfiles and manifests and reports, in one place: PHP / Laravel / Node end of life, known vulnerabilities, abandoned and stale packages, blockers for the next Laravel major, and a suggested upgrade order.
