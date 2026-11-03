@@ -6,6 +6,7 @@ namespace Qiick\Excubia\Data;
 
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 
 /**
  * Everything one check contributes to the report.
@@ -41,10 +42,18 @@ final readonly class CheckResultData
     /**
      * A check that did not run. The reason is the finding message.
      *
-     * Severity is info so a skipped check cannot trip `--fail-on`.
+     * Severity is info so a skipped check cannot trip `--fail-on`. A check
+     * whose data source did not answer passes `SkipReasonEnum::DataSourceFailure`
+     * so `--strict` can see it; the runner turns that into `Offline` under
+     * `--offline`, where no request is allowed.
      */
-    public static function skipped(string $checkId, string $name, string $subject, string $reason): self
-    {
+    public static function skipped(
+        string $checkId,
+        string $name,
+        string $subject,
+        string $reason,
+        SkipReasonEnum $skipReason = SkipReasonEnum::NotApplicable,
+    ): self {
         return self::fromFindings($checkId, $name, [
             new FindingData(
                 checkId: $checkId,
@@ -54,6 +63,7 @@ final readonly class CheckResultData
                 message: $reason,
                 fixHint: '',
                 evidenceUrl: null,
+                skipReason: $skipReason,
             ),
         ]);
     }

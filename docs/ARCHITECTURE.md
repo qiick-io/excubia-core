@@ -56,6 +56,7 @@ qiick-io/excubia-core
 │   ├── Enums/
 │   │   ├── SeverityEnum.php                 # critical..info, comparable
 │   │   ├── FindingStatusEnum.php            # pass|warn|fail|skipped
+│   │   ├── SkipReasonEnum.php               # data-source-failure|offline|not-applicable
 │   │   ├── ReportFormatEnum.php
 │   │   └── ExitCodeEnum.php                 # 0,1,2,3
 │   ├── Configuration/
@@ -113,7 +114,7 @@ interface HealthCheckContract
 
     /**
      * Inspect the snapshot and return findings. Must never throw for data-source
-     * outages: return a skipped result with the reason instead.
+     * outages: return a skipped result with the reason (SkipReasonEnum::DataSourceFailure) instead.
      */
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData;
 }
@@ -121,7 +122,7 @@ interface HealthCheckContract
 
 - Checks are pure apart from calls to `*ApiService` classes, which all go through `HttpClientContract` + `ResponseCacheService`.
 - Network calls are batched (Packagist advisories accepts many packages per request; OSV `querybatch`).
-- Exit code is computed only from findings with status `fail`/`warn` whose severity ≥ `failOn`, after ignores.
+- Exit code is computed only from findings with status `fail`/`warn` whose severity ≥ `failOn`, after ignores. With `--strict` (or `strict: true`), a remaining `skipped` row with `skipReason` `data-source-failure` gives 3 when nothing gives 1 (precedence 2 > 1 > 3). Under `--offline` the runner marks data-source skips `offline`, so they never give 3.
 
 ## 4. Dependencies (runtime)
 

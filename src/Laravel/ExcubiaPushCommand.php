@@ -19,7 +19,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 final class ExcubiaPushCommand extends Command
 {
     protected $signature = 'excubia:push
-        {--config= : Config file}';
+        {--config= : Config file}
+        {--strict : Do not send, exit 3, when a data source failure skipped a check}';
 
     protected $description = 'Run the checks and send the report to your excubia-app.';
 
@@ -33,7 +34,7 @@ final class ExcubiaPushCommand extends Command
 
         return (new PushCommand)->runWithOptions(
             ExcubiaCheckCommand::applicationBasePath($this->getLaravel()),
-            ['config' => $config === '' ? null : $config],
+            ['config' => $config === '' ? null : $config, 'strict' => (bool) $this->option('strict')],
             $this->output,
         );
     }

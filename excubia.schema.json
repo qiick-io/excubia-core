@@ -14,6 +14,10 @@
         "includeDev": {
             "type": "boolean"
         },
+        "strict": {
+            "type": "boolean",
+            "description": "Same as --strict: exit 3 when a check was skipped because a data source failed (excubia push then does not send). --strict on the command line turns it on even when this key is false; the command line cannot turn it off. Default false."
+        },
         "checks": {
             "type": "object",
             "additionalProperties": false,

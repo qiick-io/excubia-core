@@ -11,6 +11,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\OsvApiService;
 
 /**
@@ -46,7 +47,7 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
         $vulnerabilities = $this->osvApi->vulnerabilitiesIfAvailable($packages);
 
         if ($vulnerabilities === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'OSV.dev did not respond.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'OSV.dev did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
         $findings = [];
