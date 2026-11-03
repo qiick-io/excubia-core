@@ -57,8 +57,8 @@ jobs:
       - name: Pest
         run: vendor/bin/pest --parallel --coverage --coverage-clover=build/clover.xml
 
-      - name: src/Checks coverage
-        run: php .github/assert-checks-coverage.php build/clover.xml
+      - name: Coverage gate
+        run: php .github/assert-coverage.php build/clover.xml src/Checks=90 src=90
 
       - name: Dogfood
         run: php bin/excubia check --fail-on=critical --no-banner
