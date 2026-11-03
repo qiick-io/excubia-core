@@ -3,10 +3,14 @@
 1.0 adds features but keeps what 0.1.x did. Most projects only need to update the constraint:
 
 ```bash
-composer require --dev qiick/excubia-core:^1.0 -W
+composer require --dev qiick/excubia-core:^1.0
 ```
 
 Use the same command without `--dev` if you turn on one of the opt-ins that run in the deployed app. Then read the list below; the items marked **check** may change what your CI sees.
+
+## Symfony 8 is supported
+
+`symfony/console` and `symfony/http-client` accept `^7.2 || ^8.0`. On a Laravel 13 app that already locks Symfony 8 components, `composer require` works without `-W`, and Composer no longer downgrades the app's own Symfony packages. If you added `-W` (`--with-all-dependencies`) to install 0.x or an earlier 1.0 pre-release, drop it. Symfony 8 needs PHP 8.4 or newer; on PHP 8.2 and 8.3 Composer keeps Symfony 7, which still works.
 
 ## Laravel 11 is no longer supported for the Artisan integration (D19)
 

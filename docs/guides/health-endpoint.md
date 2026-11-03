@@ -6,7 +6,7 @@ This page is the setup. The request and response contract (fields, status mappin
 
 ## 1. Turn it on
 
-The package must be installed without `--dev`: `composer require qiick/excubia-core -W`.
+The package must be installed without `--dev`: `composer require qiick/excubia-core`.
 
 ```json
 {

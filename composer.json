@@ -28,8 +28,8 @@
     "require": {
         "php": "^8.2",
         "composer/semver": "^3.4",
-        "symfony/console": "^7.2",
-        "symfony/http-client": "^7.2"
+        "symfony/console": "^7.2 || ^8.0",
+        "symfony/http-client": "^7.2 || ^8.0"
     },
     "require-dev": {
         "justinrainbow/json-schema": "^6.14",

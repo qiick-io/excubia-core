@@ -38,11 +38,9 @@ Any Composer project can be scanned. Laravel-specific checks are `skipped` when 
 ## Quick start
 
 ```bash
-composer require --dev qiick/excubia-core -W
+composer require --dev qiick/excubia-core
 vendor/bin/excubia check
 ```
-
-`-W` lets Composer move `symfony/console` to 7.4 when the app's lockfile has 8.x, as a fresh Laravel 13 app does; Laravel 13 supports both. Without it Composer refuses the install.
 
 `vendor/bin/excubia` does not boot your app and never runs project code. In a Laravel app the package is auto-discovered, so the same checks plus the six posture checks run with:
 
@@ -50,7 +48,7 @@ vendor/bin/excubia check
 php artisan excubia:check
 ```
 
-Install without `--dev` (`composer require qiick/excubia-core -W`) when the deployed app runs Excubia itself: the scheduled push, runtime monitoring, exception capture, the health endpoint or posture checks in production. While those opt-ins are off, the package registers four Artisan commands and one every-minute scheduled heartbeat, and nothing else.
+Install without `--dev` (`composer require qiick/excubia-core`) when the deployed app runs Excubia itself: the scheduled push, runtime monitoring, exception capture, the health endpoint or posture checks in production. While those opt-ins are off, the package registers four Artisan commands and one every-minute scheduled heartbeat, and nothing else.
 
 More examples:
 

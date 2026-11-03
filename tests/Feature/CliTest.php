@@ -132,3 +132,13 @@ it('names the artisan alias and prints the banner and version', function () {
     expect($exitCode)->toBe(0)
         ->and(implode("\n", $output))->toContain('Excubia');
 });
+
+it('registers check, push, and cache:clear in the standalone binary', function () {
+    $binary = dirname(__DIR__, 2).'/bin/excubia';
+    exec('php '.escapeshellarg($binary).' list --raw 2>&1', $output, $exitCode);
+
+    $commandNames = array_map(static fn (string $line): string => explode(' ', $line)[0], $output);
+
+    expect($exitCode)->toBe(0)
+        ->and($commandNames)->toContain('check', 'push', 'cache:clear');
+});
