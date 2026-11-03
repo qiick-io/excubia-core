@@ -140,7 +140,7 @@
                 "token": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Project push token from excubia-app."
+                    "description": "Project push token from excubia-app. Prefer the EXCUBIA_APP_TOKEN environment variable: excubia.json is normally committed, so a token here ends up in Git history, and check, push and excubia:push-runtime print a warning when it is set."
                 }
             }
         },

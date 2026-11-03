@@ -21,7 +21,7 @@ Or put the URL in `excubia.json` and keep only the token in the environment:
 { "app": { "url": "https://excubia.example.com" } }
 ```
 
-The environment wins over `app.url` / `app.token`. Keep the token out of committed files. Excubia reads the variables with `getenv()`, not through Laravel config: with `php artisan config:cache`, `.env` is not loaded into the process, so set them in the real process environment (PHP-FPM pool, container, systemd unit, CI secrets).
+The environment wins over `app.url` / `app.token`. Keep the token out of committed files: `app.token` still works, but `check`, `push`, `excubia:check`, `excubia:push` and `excubia:push-runtime` print a warning on stderr when it is set (`app.token is set in excubia.json; prefer EXCUBIA_APP_TOKEN so the token is not committed.`). Excubia reads the variables with `getenv()`, not through Laravel config: with `php artisan config:cache`, `.env` is not loaded into the process, so set them in the real process environment (PHP-FPM pool, container, systemd unit, CI secrets).
 
 The scheduler runs each command in its own process, so the variables must also be set where `schedule:run` runs (the cron or `schedule:work` environment), not only for the web server. A scheduled push without a token exits `2` and shows as failed in the scheduler.
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Console\PushCommand;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaPushCommand;
@@ -86,6 +87,45 @@ it('reads the app keys from excubia.json and lets the environment win', function
     expect($tester->execute($input))->toBe(0)
         ->and($fromEnvironment->lastPostUrl)->toBe(PUSH_ENDPOINT)
         ->and($fromEnvironment->lastHeaders)->toBe(['Authorization' => 'Bearer '.PUSH_TOKEN]);
+});
+
+it('warns on stderr when app.token is set in excubia.json, and still sends', function () {
+    $client = new FakeHttpClient(['https://file.example.test/api/reports' => ['stored' => true]]);
+    ['tester' => $tester, 'input' => $input] = pushTester($client, [], ['url' => 'https://file.example.test', 'token' => 'file-token']);
+
+    expect($tester->execute($input, ['capture_stderr_separately' => true]))->toBe(0)
+        ->and($tester->getErrorOutput())->toContain(CheckCommand::APP_TOKEN_IN_FILE_WARNING)
+        ->and($tester->getErrorOutput())->not->toContain('file-token')
+        ->and($tester->getDisplay())->not->toContain(CheckCommand::APP_TOKEN_IN_FILE_WARNING);
+});
+
+it('prints no token warning when the token comes from the environment only', function () {
+    $client = new FakeHttpClient([PUSH_ENDPOINT => ['stored' => true]]);
+    ['tester' => $tester, 'input' => $input] = pushTester($client, appEnvironment(), ['url' => 'https://file.example.test']);
+
+    expect($tester->execute($input, ['capture_stderr_separately' => true]))->toBe(0)
+        ->and($tester->getErrorOutput())->not->toContain(CheckCommand::APP_TOKEN_IN_FILE_WARNING);
+});
+
+it('warns about app.token in excubia.json on check too, keeping the JSON report clean', function () {
+    $config = temporaryProject(['excubia.json' => json_encode([
+        'cache' => ['directory' => temporaryProject([])],
+        'app' => ['token' => 'file-token'],
+    ], JSON_THROW_ON_ERROR)]).'/excubia.json';
+    $tester = new CommandTester(new CheckCommand(new FakeHttpClient([])));
+
+    $tester->execute([
+        'path' => dirname(__DIR__).'/Fixtures/Projects/outdated-laravel-10',
+        '--config' => $config,
+        '--offline' => true,
+        '--only' => 'php-eol',
+        '--format' => 'json',
+        '--no-banner' => true,
+        '--fail-on' => 'none',
+    ], ['capture_stderr_separately' => true]);
+
+    expect($tester->getErrorOutput())->toContain(CheckCommand::APP_TOKEN_IN_FILE_WARNING)
+        ->and(json_decode($tester->getDisplay(), true))->toBeArray();
 });
 
 it('exits 2 without sending when the url or token is missing', function (array $environment, string $message) {
