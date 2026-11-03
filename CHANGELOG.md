@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-11-03
+
+First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [`docs/CONTRACTS.md`](./docs/CONTRACTS.md) are frozen: until 1.0.0 only backwards-compatible fixes land. Upgrading from 0.x: [`docs/guides/upgrading.md`](./docs/guides/upgrading.md).
+
 ### Added
 
 - Contracts frozen for 1.0.0-beta (#76): `docs/CONTRACTS.md` lists every public contract (report JSON, check ids, exit codes, `bin/excubia` and Artisan commands and options, scheduled entries and the heartbeat cache key, `excubia.json` and environment variables, push envelope and endpoints, runtime and exception payloads, health endpoint, SARIF rule ids and fingerprints, GitHub Action inputs and outputs, `skipReason` values) with its source files, version field and contract test; everything else (PHP classes, message wording, table and Markdown layout) is internal. Every schema file now carries `x-excubia-version: 1`, and `tests/Feature/PublicContractsTest.php` plus `tests/Laravel/ScheduleAndRouteContractTest.php` compare the code with the snapshot in `tests/Fixtures/Contracts/public-contracts.json`, so an unannounced contract change fails CI. The `--strict` (#15) and posture checks (#73) decisions are in. No contract changed.
@@ -35,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Supports Symfony 8 (#113): `symfony/console` and `symfony/http-client` now allow `^7.2 || ^8.0`, so `composer require qiick/excubia-core` installs in a Laravel 13 app that already locks Symfony 8 components, without `-W`. Symfony 8 needs PHP 8.4 or newer; on PHP 8.2 and 8.3 Composer keeps Symfony 7. `bin/excubia` registers its commands with `addCommands()`, which both majors provide (`Application::add()` was removed in Symfony 8).
+
+### Removed
+
+- Laravel 11 is no longer supported for the Artisan integration (D19): it is past security support and Composer blocks its releases by default. The standalone CLI still scans Laravel 11 projects and reports them as end of life.
 
 ### Security
 
@@ -70,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial `qiick/excubia-core` release: standalone `vendor/bin/excubia check` CLI, optional Artisan alias `excubia:check`, nine health checks, `table` / `json` / `markdown` formats, `excubia.json` config, and local response cache.
 
-[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.1...HEAD
+[1.0.0-beta.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.1...v1.0.0-beta.1
 [0.1.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/qiick-io/excubia-core/releases/tag/v0.1.0
