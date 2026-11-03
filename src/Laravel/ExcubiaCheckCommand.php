@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Laravel;
 
+use Closure;
 use Illuminate\Console\Command;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
 /**
  * `php artisan excubia:check`. Same engine as `vendor/bin/excubia check`,
- * with the path fixed to the application base path.
+ * with the path fixed to the application base path. With the health
+ * endpoint enabled, the result is stored for it (`HealthEndpointService`).
  */
 final class ExcubiaCheckCommand extends Command
 {
@@ -31,7 +33,9 @@ final class ExcubiaCheckCommand extends Command
 
     public function handle(): int
     {
-        return (new CheckCommand)->runWithOptions(self::applicationBasePath($this->getLaravel()), [
+        $configPath = $this->stringOption('config');
+
+        return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new CheckCommand(reportListener: $reportListener))->runWithOptions(self::applicationBasePath($this->getLaravel()), [
             'format' => $this->stringOption('format'),
             'output' => $this->stringOption('output'),
             'fail-on' => $this->stringOption('fail-on'),
@@ -40,10 +44,10 @@ final class ExcubiaCheckCommand extends Command
             'no-dev' => (bool) $this->option('no-dev'),
             'offline' => (bool) $this->option('offline'),
             'no-cache' => (bool) $this->option('no-cache'),
-            'config' => $this->stringOption('config'),
+            'config' => $configPath,
             'no-banner' => (bool) $this->option('no-banner'),
             'strict' => (bool) $this->option('strict'),
-        ], $this->output);
+        ], $this->output));
     }
 
     /**

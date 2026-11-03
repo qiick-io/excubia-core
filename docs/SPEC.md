@@ -200,7 +200,7 @@ These decisions are final. They extend section 10 and replace D2 where they disa
 15. **D15 Phase B approved:** projects send data to the user's own self-hosted `qiick-io/excubia-app`. Nothing goes to qiick or third parties. Each kind of data is a separate opt-in.
 16. **D16 Push, not pull:** projects push to the app with `excubia push` (section 13). The app never reads project directories and never polls projects. The push ships in v0.2.0 so `excubia-app` v0.1.0 can use it.
 17. **D17 Exceptions before 1.0.0:** opt-in exception capture (#77) ships before 1.0.0, with messages masked before sending.
-18. **D18 Health endpoint:** an opt-in endpoint compatible with the Oh Dear application health JSON (#74) is approved at low priority. It complements the push for external monitors; it is not the channel to `excubia-app`.
+18. **D18 Health endpoint:** an opt-in endpoint compatible with the Oh Dear application health JSON (#74) is approved at low priority. It complements the push for external monitors; it is not the channel to `excubia-app`. Contract: `docs/health-endpoint.md` (`healthEndpoint` keys, `EXCUBIA_HEALTH_SECRET`, serves the last stored Artisan run).
 19. **D19 Laravel 11 dropped (Luca, 2026-11-03):** the Artisan integration supports Laravel 12 and 13 from 1.0. Laravel 11 is past security support and Composer blocks its releases by default, so it cannot be tested in CI. The standalone CLI still scans Laravel 11 projects.
 
 ## 13. Push protocol (approved 2026-11-02)

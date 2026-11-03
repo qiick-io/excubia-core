@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Console;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
@@ -37,9 +38,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 final class CheckCommand extends Command
 {
+    /**
+     * @param  (Closure(HealthReportData): void)|null  $reportListener  called with every finished report;
+     *                                                                  the Laravel aliases store it for the health endpoint
+     */
     public function __construct(
         private readonly ?HttpClientContract $httpClient = null,
         private readonly ?DateTimeImmutable $today = null,
+        private readonly ?Closure $reportListener = null,
     ) {
         parent::__construct();
     }
@@ -190,6 +196,10 @@ final class CheckCommand extends Command
             self::writeError($output, $warning);
         }
 
+        if ($this->reportListener !== null) {
+            ($this->reportListener)($result['report']);
+        }
+
         return ['report' => $result['report'], 'configuration' => $configuration];
     }
 
@@ -233,6 +243,8 @@ final class CheckCommand extends Command
             appUrl: $loaded->appUrl,
             appToken: $loaded->appToken,
             isStrict: $isStrict,
+            isHealthEndpointEnabled: $loaded->isHealthEndpointEnabled,
+            healthEndpointPath: $loaded->healthEndpointPath,
         );
     }
 

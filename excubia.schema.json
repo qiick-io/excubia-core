@@ -121,6 +121,22 @@
                     "description": "Project push token from excubia-app."
                 }
             }
+        },
+        "healthEndpoint": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Oh Dear-compatible health endpoint registered by the Laravel service provider (docs/health-endpoint.md). Off by default. The secret is read from the EXCUBIA_HEALTH_SECRET environment variable only; without it the route is not registered.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Register the GET route. Default false."
+                },
+                "path": {
+                    "type": "string",
+                    "pattern": "^/?[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*/?$",
+                    "description": "URL path of the route, relative to the app root. Default excubia/health."
+                }
+            }
         }
     }
 }

@@ -34,6 +34,7 @@ qiick-io/excubia-core
 │   │   ├── GitHubRepositoryApiService.php   # archived flag, last push
 │   │   ├── OsvApiService.php                # OSV.dev batch query
 │   │   ├── ReportPushService.php            # push envelope to excubia-app (SPEC §13)
+│   │   ├── HealthResultStoreService.php     # last Oh Dear health payload (storage/excubia/health.json)
 │   │   └── ResponseCacheService.php         # file cache with TTL, offline mode
 │   ├── Parsers/
 │   │   ├── ComposerLockParser.php
@@ -44,7 +45,8 @@ qiick-io/excubia-core
 │   │   ├── TableReportRenderer.php
 │   │   ├── JsonReportRenderer.php
 │   │   ├── MarkdownReportRenderer.php
-│   │   └── SarifRenderer.php                # SARIF 2.1.0 (v0.3.0, D6)
+│   │   ├── SarifRenderer.php                # SARIF 2.1.0 (v0.3.0, D6)
+│   │   └── OhDearHealthRenderer.php         # Oh Dear health JSON (docs/health-endpoint.md)
 │   ├── Data/                                # readonly classes
 │   │   ├── ProjectSnapshotData.php
 │   │   ├── LockedPackageData.php
@@ -66,7 +68,8 @@ qiick-io/excubia-core
 │   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; registers the Artisan alias only
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan aliases + opt-in health route
+│   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
 │   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner
 │   │   └── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand
 │   └── Exceptions/
