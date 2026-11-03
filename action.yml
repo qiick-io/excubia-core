@@ -92,7 +92,7 @@ runs:
         SKIP: ${{ inputs.skip }}
         SARIF_FILE: ${{ runner.temp }}/excubia.sarif
       run: |
-        set -uo pipefail
+        set +e -uo pipefail
         selection=()
         if [ -n "$ONLY" ]; then
           selection+=("--only=$ONLY")
