@@ -57,19 +57,22 @@ Masking, applied before anything is written to the local buffer, in this order:
 | What | Becomes |
 | --- | --- |
 | Matches of `exceptions.maskPatterns` | `[masked]` |
-| Absolute paths | project root removed; other paths reduced to the file name |
+| Absolute paths (`/…`, `C:\…`, `\\server\share\…`) | project root removed; other paths reduced to the file name |
 | URL credentials | removed |
+| URL hosts and ports | `[host]` (the scheme and path stay) |
 | URL query strings and fragments | `?[query]` |
 | Quoted SQL literals, when the message carries SQL | `?` |
 | Database `Host`, `Socket`, `Port`, `Database` details | `[masked]` |
 | JWTs | `[jwt]` |
 | `Bearer` / `Basic` credentials | `[token]` |
+| Any other `Authorization` / `Proxy-Authorization` value (`Token`, `Digest`, `AWS4-HMAC-SHA256`…) | `[masked]` |
+| Host names after `host:`, `hostname=`, `resolve host` or `getaddrinfo for` | `[host]` |
 | `password=`, `secret:`, `token=`, `api_key=` and similar values | `[masked]` |
 | Emails | `[email]` |
 | IPv4 and IPv6 addresses | `[ip]` |
 | UUIDs | `[uuid]` |
 | Hex strings of 32+ characters, 20+ character strings mixing letters and digits (API keys) | `[token]` |
-| Card-like runs of 13–19 digits, any number longer than four digits | `[number]` |
+| Phone-like numbers (`+` and 8 or more digits with separators), US social security numbers, card-like runs of 13–19 digits, any number longer than four digits | `[number]` |
 
 Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. Never sent: request payloads, headers, cookies, users, IP addresses, query bindings, `.env` values or absolute paths.
 
