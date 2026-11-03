@@ -40,7 +40,7 @@ outputs:
     description: Path of the SARIF log written by Excubia.
     value: ${{ steps.check.outputs.sarif-file }}
   exit-code:
-    description: Exit code of excubia check (0 clean, 1 finding at or above fail-on, 2 usage error).
+    description: Exit code of excubia check (0 clean, 1 finding at or above fail-on, 2 usage error, 3 a data source failure skipped a check while strict is true in the scanned project's excubia.json).
     value: ${{ steps.check.outputs.exit-code }}
 
 runs:

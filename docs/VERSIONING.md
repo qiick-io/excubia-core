@@ -22,22 +22,23 @@ Changing any of these in an incompatible way is a breaking change, so it waits f
 
 - The report JSON (`docs/report-schema.json`, `schemaVersion`).
 - Check ids and their meaning.
-- Exit codes of `check` and `push`.
-- CLI commands and options of `bin/excubia`.
-- Artisan commands (`excubia:check`, `excubia:push`, `excubia:heartbeat` and the cache key it writes, `excubia:push-runtime`, cache commands) and their options.
+- Exit codes of `check`, `push` and `excubia:push-runtime`, and their precedence.
+- CLI commands and options of `bin/excubia` (`check`, `push`, `cache:clear`).
+- Artisan commands (`excubia:check`, `excubia:push`, `excubia:push-runtime`, `excubia:heartbeat` and the cache key it writes) and their options, and the entries the service provider schedules. There is no Artisan cache command: `cache:clear` exists only in `bin/excubia`.
 - The `excubia.json` schema (`excubia.schema.json`) and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`).
 - The push envelope (`docs/push-schema.json`, `protocolVersion`) and the runtime and exception batch payloads.
-- The health endpoint response and its config keys.
-- SARIF rule ids.
-- GitHub Action inputs.
+- The health endpoint response, header, path default and its config keys.
+- SARIF rule ids, the `excubiaFinding/v1` fingerprint key and the report `fingerprint` recipe.
+- GitHub Action inputs and outputs.
+- The `skipReason` values.
 
-The full list, with files and stability levels, is #76 (`docs/CONTRACTS.md` once it lands).
+The full list, with source files, version fields, stability and the contract test that guards each one, is [`docs/CONTRACTS.md`](./CONTRACTS.md). A deliberate change to a contract updates the snapshot in `tests/Fixtures/Contracts/public-contracts.json`, `docs/CONTRACTS.md` and the CHANGELOG together.
 
 ### Not breaking
 
 These can change in a minor or patch release:
 
-- PHP classes not listed as public. Everything under `src/` is internal unless the contracts list says otherwise; do not extend or call it directly.
+- PHP classes. Everything under `src/` is internal (`docs/CONTRACTS.md`, "Internal"); do not extend or call it directly.
 - The wording of finding messages, table output and Markdown output. Parse the JSON, not the text.
 - Results that change because an upstream data source changed (endoflife.date, Packagist, GitHub, the npm registry, advisory databases). A new advisory or an EOL date can turn a green run red without a new Excubia release.
 - New optional fields in the report JSON, the push payloads or `excubia.json`. Consumers must ignore fields they do not know.

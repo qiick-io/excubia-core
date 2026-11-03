@@ -1,0 +1,220 @@
+{
+    "schemas": {
+        "docs/report-schema.json": {
+            "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
+            "x-excubia-version": 1,
+            "sha256": "abb3864d4f3f1d36ff8a37766d63fe61a833f893e06a087a52cb946c4deba496"
+        },
+        "docs/push-schema.json": {
+            "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
+            "x-excubia-version": 1,
+            "sha256": "9cc551502f9b469863541547f026848ea5cc894c59ddeccf5e68f80303900289"
+        },
+        "docs/runtime-schema.json": {
+            "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
+            "x-excubia-version": 1,
+            "sha256": "ce7a8f76ae7acd6a4e5b07fecf40b3a00d833970456e71d9724c945b2757fee9"
+        },
+        "docs/exception-schema.json": {
+            "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
+            "x-excubia-version": 1,
+            "sha256": "94e1926d20e2df0c5c9ea9975c2291c1839cf60b80bb60db24efaad87a330214"
+        },
+        "excubia.schema.json": {
+            "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
+            "x-excubia-version": 1,
+            "sha256": "d2223f524fda128d947d3a625357b8cf3d7907636fed0c03188ccf9341f849e9"
+        }
+    },
+    "checkIds": [
+        "php-eol",
+        "laravel-eol",
+        "node-eol",
+        "composer-advisories",
+        "npm-advisories",
+        "composer-abandoned",
+        "composer-stale",
+        "laravel-next-blocker",
+        "laravel-debug-mode",
+        "laravel-production-caches",
+        "laravel-pending-migrations",
+        "laravel-failed-jobs",
+        "laravel-scheduler-heartbeat",
+        "laravel-maintenance-mode"
+    ],
+    "sarif": {
+        "fingerprintKeys": [
+            "excubiaFinding/v1"
+        ],
+        "sarifVersion": "2.1.0",
+        "fingerprintWithAdvisory": "03196da51635453993c18e898509a354947c899a4d8ec76e05f8375d73546977",
+        "fingerprintWithoutAdvisory": "a64ed5f54fc9897340cd1486ae0f8c2d0dd2d4a5e9e6e0127869c07a2ad778ab"
+    },
+    "exitCodes": {
+        "NoFindingsAtOrAboveFailOn": 0,
+        "FindingsAtOrAboveFailOn": 1,
+        "UsageOrConfigurationError": 2,
+        "DataSourceFailure": 3
+    },
+    "skipReasons": [
+        "data-source-failure",
+        "offline",
+        "not-applicable"
+    ],
+    "cli": {
+        "check": {
+            "arguments": {
+                "path": "optional"
+            },
+            "options": {
+                "--format": "value required",
+                "--output": "value required",
+                "--fail-on": "value required",
+                "--only": "value required",
+                "--skip": "value required",
+                "--no-dev": "flag",
+                "--offline": "flag",
+                "--no-cache": "flag",
+                "--config": "value required",
+                "--no-banner": "flag",
+                "--strict": "flag"
+            }
+        },
+        "push": {
+            "arguments": {
+                "path": "optional"
+            },
+            "options": {
+                "--config": "value required",
+                "--strict": "flag"
+            }
+        },
+        "cache:clear": {
+            "arguments": {
+                "path": "optional"
+            },
+            "options": {
+                "--config": "value required"
+            }
+        }
+    },
+    "artisan": {
+        "commands": {
+            "excubia:check": {
+                "arguments": [],
+                "options": {
+                    "--format": "value optional",
+                    "--output": "value optional",
+                    "--fail-on": "value optional",
+                    "--only": "value optional",
+                    "--skip": "value optional",
+                    "--no-dev": "flag",
+                    "--offline": "flag",
+                    "--no-cache": "flag",
+                    "--config": "value optional",
+                    "--no-banner": "flag",
+                    "--strict": "flag"
+                }
+            },
+            "excubia:push": {
+                "arguments": [],
+                "options": {
+                    "--config": "value optional",
+                    "--strict": "flag"
+                }
+            },
+            "excubia:push-runtime": {
+                "arguments": [],
+                "options": {
+                    "--config": "value optional"
+                }
+            },
+            "excubia:heartbeat": {
+                "arguments": [],
+                "options": []
+            }
+        },
+        "heartbeatCacheKey": "excubia:scheduler-heartbeat"
+    },
+    "environmentVariables": [
+        "EXCUBIA_APP_TOKEN",
+        "EXCUBIA_APP_URL",
+        "EXCUBIA_HEALTH_SECRET",
+        "GITHUB_TOKEN"
+    ],
+    "push": {
+        "protocolVersion": 1,
+        "endpoints": {
+            "report": "/api/reports",
+            "runtime": "/api/runtime",
+            "exceptions": "/api/exceptions"
+        },
+        "types": [
+            "runtime",
+            "exceptions"
+        ],
+        "runtimeBucketSeconds": 60
+    },
+    "healthEndpoint": {
+        "secretHeader": "oh-dear-health-check-secret",
+        "secretVariable": "EXCUBIA_HEALTH_SECRET",
+        "minimumSecretLength": 32,
+        "defaultPath": "excubia/health",
+        "responseKeys": [
+            "finishedAt",
+            "checkResults"
+        ],
+        "checkResultKeys": [
+            "name",
+            "label",
+            "status",
+            "notificationMessage",
+            "shortSummary",
+            "meta"
+        ],
+        "statuses": {
+            "pass": "ok",
+            "warn": "warning",
+            "fail": "failed",
+            "skipped": "skipped"
+        },
+        "crashed": [
+            "excubia-run",
+            "crashed"
+        ],
+        "notRunYet": [
+            "excubia-run",
+            "skipped"
+        ]
+    },
+    "action": {
+        "inputs": {
+            "path": ".",
+            "fail-on": "critical",
+            "only": "",
+            "skip": "",
+            "github-token": "",
+            "upload-sarif": "true",
+            "php-version": "8.4"
+        },
+        "outputs": [
+            "sarif-file",
+            "exit-code"
+        ]
+    },
+    "laravel": {
+        "schedule": {
+            "excubia:heartbeat": "* * * * *",
+            "excubia:push-runtime": "* * * * *"
+        },
+        "routes": {
+            "excubia.health": {
+                "uri": "excubia/health",
+                "methods": [
+                    "GET",
+                    "HEAD"
+                ]
+            }
+        }
+    }
+}

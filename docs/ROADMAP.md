@@ -38,12 +38,12 @@ Order of work:
 
 ## Decisions needed before the beta
 
-These change public contracts, so they are decided (in or out) before #76 freezes them:
+These change public contracts, so they were decided before #76 froze them (`docs/CONTRACTS.md`):
 
-| Issue | Question |
-| --- | --- |
-| #73 | Configuration posture checks through Artisan: new check ids in 1.0, or 1.x? |
-| #15 | `--strict` for data-source failures: changes exit-code behaviour, so in 1.0 or never as a breaking change |
+| Issue | Question | Decision |
+| --- | --- | --- |
+| #73 | Configuration posture checks through Artisan: new check ids in 1.0, or 1.x? | In 1.0 (PR #100): six `laravel-*` check ids |
+| #15 | `--strict` for data-source failures: changes exit-code behaviour, so in 1.0 or never as a breaking change | In 1.0 (PR #97): opt-in `--strict` / `strict`, exit `3` |
 
 ## No milestone
 

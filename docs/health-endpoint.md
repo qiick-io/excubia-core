@@ -2,7 +2,7 @@
 
 An opt-in HTTP endpoint that serves the latest Excubia result in the [Oh Dear application health](https://ohdear.app/docs/features/application-health-monitoring) JSON format, the same format [spatie/laravel-health](https://github.com/spatie/laravel-health) uses. External monitors can poll it. It complements `excubia push` (SPEC §13, D18) and is not the channel to `excubia-app`.
 
-The response shape and the config keys below are a public contract (`docs/VERSIONING.md`), frozen with the other contracts at 1.0.0-beta (#76).
+The response shape, the header, the path default and the config keys below are a public contract ([`docs/CONTRACTS.md`](./CONTRACTS.md), `docs/VERSIONING.md`), frozen with the other contracts at 1.0.0-beta (#76). The wording of `notificationMessage` and `shortSummary` is not part of it.
 
 ## Configuration
 
