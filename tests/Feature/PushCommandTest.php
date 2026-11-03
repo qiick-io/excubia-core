@@ -129,6 +129,19 @@ it('exits 3 with a clear message when the app rejects the token or is unreachabl
         ->and($tester->getErrorOutput())->toContain('could not be reached at '.PUSH_ENDPOINT);
 });
 
+it('does not print URL credentials when the app is unreachable or requests are listed', function () {
+    $unreachable = new FakeHttpClient([], [
+        'https://push-user:url-password@excubia.example.test/api/reports' => new DataSourceUnavailableException('http', 'The data source did not respond.'),
+    ]);
+    ['tester' => $tester, 'input' => $input] = pushTester($unreachable, appEnvironment('https://push-user:url-password@excubia.example.test/'));
+
+    expect($tester->execute($input, ['capture_stderr_separately' => true, 'verbosity' => OutputInterface::VERBOSITY_VERBOSE]))->toBe(3)
+        ->and($tester->getErrorOutput())->toContain('could not be reached at '.PUSH_ENDPOINT)
+        ->and($tester->getErrorOutput())->toContain('POST '.PUSH_ENDPOINT)
+        ->and($tester->getErrorOutput().$tester->getDisplay())->not->toContain('url-password')
+        ->and($tester->getErrorOutput().$tester->getDisplay())->not->toContain('push-user');
+});
+
 it('does not print the token when requests are listed', function () {
     $client = new FakeHttpClient([PUSH_ENDPOINT => ['stored' => true]]);
     ['tester' => $tester, 'input' => $input] = pushTester($client, appEnvironment());

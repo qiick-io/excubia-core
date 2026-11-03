@@ -12,18 +12,26 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 /**
  * File cache for data-source bodies.
  *
- * A null directory uses the operating-system temporary directory so the
- * scanned project is not written. The cache key is a hash of the request
+ * A null directory uses a per-user directory in the operating-system
+ * temporary directory so the scanned project is not written. That shared
+ * location is trusted only when it is a real directory owned by the current
+ * user and not writable by others; otherwise the cache is skipped, so another
+ * local user cannot plant responses (hiding advisories) or point it at their
+ * choice of directory with a symlink. The cache key is a hash of the request
  * identity. Headers, including a GitHub token, are not part of the key and
- * are not written.
+ * are not written. Only files named like a cache key are ever deleted.
  */
 final class ResponseCacheService
 {
+    /**
+     * @param  string|null  $temporaryDirectory  tests point the shared temporary directory elsewhere; null is sys_get_temp_dir()
+     */
     public function __construct(
         private readonly ?string $directory,
         private readonly int $ttlHours,
         private readonly bool $isOffline,
         private readonly bool $isBypassed,
+        private readonly ?string $temporaryDirectory = null,
     ) {}
 
     /**
@@ -35,7 +43,9 @@ final class ResponseCacheService
      */
     public function remember(string $cacheKey, callable $resolve): array
     {
-        if (! $this->isBypassed) {
+        $isUsable = ! $this->isBypassed && $this->isTrustedDirectory();
+
+        if ($isUsable) {
             $cached = $this->read($cacheKey);
 
             if ($cached !== null) {
@@ -49,7 +59,7 @@ final class ResponseCacheService
 
         $body = $resolve();
 
-        if (! $this->isBypassed) {
+        if ($isUsable) {
             $this->write($cacheKey, $body);
         }
 
@@ -67,7 +77,7 @@ final class ResponseCacheService
     {
         $directory = $this->directory();
 
-        if (! is_dir($directory)) {
+        if (! is_dir($directory) || ! $this->isTrustedDirectory()) {
             return;
         }
 
@@ -78,7 +88,7 @@ final class ResponseCacheService
         }
 
         foreach ($files as $file) {
-            if (! is_file($file)) {
+            if (! is_file($file) || preg_match('/^[0-9a-f]{64}\.json$/', basename($file)) !== 1) {
                 continue;
             }
 
@@ -141,6 +151,11 @@ final class ResponseCacheService
             throw new InvalidConfigurationException('The response cache directory ['.$directory.'] could not be created.');
         }
 
+        // Checked again after mkdir: another user may have created it in between.
+        if (! $this->isTrustedDirectory()) {
+            return;
+        }
+
         $payload = json_encode([
             'storedAt' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DateTimeImmutable::ATOM),
             'body' => $body,
@@ -158,10 +173,45 @@ final class ResponseCacheService
 
     private function directory(): string
     {
-        if ($this->directory !== null && $this->directory !== '') {
-            return $this->directory;
+        if ($this->isConfiguredDirectory()) {
+            return (string) $this->directory;
         }
 
-        return sys_get_temp_dir().DIRECTORY_SEPARATOR.'qiick-excubia';
+        $user = function_exists('posix_geteuid') ? (string) posix_geteuid() : get_current_user();
+
+        return ($this->temporaryDirectory ?? sys_get_temp_dir()).DIRECTORY_SEPARATOR.'qiick-excubia-'.(preg_replace('/[^A-Za-z0-9_.-]/', '_', $user) ?? 'user');
+    }
+
+    private function isConfiguredDirectory(): bool
+    {
+        return $this->directory !== null && $this->directory !== '';
+    }
+
+    /**
+     * A configured directory is the user's choice. The default one, in the
+     * shared temporary directory, must not exist yet or be a real directory
+     * owned by this user that nobody else can write to.
+     */
+    private function isTrustedDirectory(): bool
+    {
+        if ($this->isConfiguredDirectory()) {
+            return true;
+        }
+
+        $directory = $this->directory();
+        clearstatcache(true, $directory);
+
+        if (is_link($directory)) {
+            return false;
+        }
+
+        if (! file_exists($directory)) {
+            return true;
+        }
+
+        $permissions = fileperms($directory);
+        $isOwned = ! function_exists('posix_geteuid') || fileowner($directory) === posix_geteuid();
+
+        return is_dir($directory) && $isOwned && $permissions !== false && ($permissions & 0o022) === 0;
     }
 }

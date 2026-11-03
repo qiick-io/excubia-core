@@ -81,6 +81,10 @@ it('masks a corpus of real-looking messages so no secret survives', function (st
     'UUID' => ['Model not found: 3b241101-e2bb-4255-8caf-4136c566a962', ['3b241101-e2bb-4255-8caf-4136c566a962'], ['[uuid]']],
     'URL with credentials and token' => ['cURL error 28 for https://admin:pa55word@api.example.test/v1/charges?api_key=query-secret&user=7#frag', ['admin', 'pa55word', 'query-secret', 'frag'], ['https://api.example.test/v1/charges?[query]', 'cURL error 28']],
     'SQL with values' => ["SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'luigi@example.test' for key 'users_email_unique' (Connection: mysql, Host: db.internal, Port: 3306, Database: shop_prod, SQL: insert into users (name) values ('Luigi Verdi'))", ['luigi', 'Luigi Verdi', 'db.internal', 'shop_prod', '3306'], ['SQLSTATE[23000]', 'Duplicate entry ? for key ?', 'Connection: mysql']],
+    'PHP array dump' => ["Login failed for ['password' => 'hunter2', 'token' => \"tok-123\"]", ['hunter2', 'tok-123'], ["'password' => '[masked]'", "'token' => \"[masked]\""]],
+    'quoted value with spaces' => ['Vault rejected secret="correct horse battery" and password: \'two words\'', ['correct', 'horse', 'battery', 'two words'], ['secret="[masked]"', "password: '[masked]'"]],
+    'unterminated quoted value' => ["Bad config passphrase='half-written-secret", ['half-written-secret'], ["passphrase='[masked]"]],
+    'short key names' => ['SMTP auth failed: pass=hunter2, cookie: laravel_session=abc-session', ['hunter2', 'abc-session'], ['pass=[masked]', 'cookie: [masked]']],
     'absolute paths' => ['file_get_contents(/var/www/shop/storage/app/private/invoice.pdf): Failed to open stream; see /etc/ssl/private/server.key', ['/var/www/shop', '/etc/ssl/private'], ['storage/app/private/invoice.pdf', 'server.key']],
 ]);
 

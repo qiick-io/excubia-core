@@ -79,9 +79,22 @@ final class SymfonyHttpClientService implements HttpClientContract
         return $this->request('GET', $target, null, $headers);
     }
 
+    /**
+     * Redirects are not followed: a 307 or 308 would resend the payload to
+     * the `Location` host, possibly over plain HTTP, after the HTTPS check.
+     * A redirect answers as a non-2xx status instead.
+     */
     public function postJson(string $url, array $payload, array $headers = []): array
     {
         return $this->request('POST', $url, $payload, $headers);
+    }
+
+    /**
+     * The URL without its `user:password@` part, for messages and logs.
+     */
+    public static function redactedUrl(string $url): string
+    {
+        return preg_replace('#^([a-z][a-z0-9+.-]*://)[^/?\#@]*@#i', '$1', $url) ?? $url;
     }
 
     /**
@@ -99,6 +112,7 @@ final class SymfonyHttpClientService implements HttpClientContract
 
         if ($payload !== null) {
             $options['json'] = $payload;
+            $options['max_redirects'] = 0;
         }
 
         try {

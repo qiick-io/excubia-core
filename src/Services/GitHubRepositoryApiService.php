@@ -26,7 +26,7 @@ final class GitHubRepositoryApiService
      */
     public function repository(string $owner, string $name): GitHubRepositoryData
     {
-        if (preg_match('/^[A-Za-z0-9_.-]+$/', $owner) !== 1 || preg_match('/^[A-Za-z0-9_.-]+$/', $name) !== 1) {
+        if (! self::isPathSegment($owner) || ! self::isPathSegment($name)) {
             throw new DataSourceUnavailableException('github', 'Repository name is not a GitHub owner and name.');
         }
 
@@ -57,5 +57,14 @@ final class GitHubRepositoryApiService
         } catch (DataSourceUnavailableException) {
             return null;
         }
+    }
+
+    /**
+     * A GitHub owner or repository name. `.` and `..` are refused so a
+     * source URL from Packagist cannot walk the API path.
+     */
+    private static function isPathSegment(string $segment): bool
+    {
+        return preg_match('/^[A-Za-z0-9_.-]+$/', $segment) === 1 && trim($segment, '.') !== '';
     }
 }

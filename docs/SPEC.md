@@ -152,7 +152,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
   - requests: route name (or `unnamed`), HTTP method, status class (`2xx`…);
   - slow queries: SQL text without bindings, with quoted string literals replaced by `?`, and the connection name;
   - jobs: job class, queue and connection names, `processed` or `failed`;
-  - scheduled tasks: description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it); `finished`, `failed` or `skipped`;
+  - scheduled tasks: description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it), secrets masked as in exception messages; `finished`, `failed` or `skipped`;
   - outgoing HTTP (Laravel's HTTP client): host and status class.
 
   Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
@@ -165,6 +165,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 
   **Masking (D17)**, applied before anything is written to the local buffer: first the user's `exceptions.maskPatterns` (→ `[masked]`), then absolute paths (project root removed, other paths reduced to the file name), URL credentials (removed) and query strings and fragments (→ `?[query]`), quoted SQL literals when the message carries SQL (→ `?`), database `Host` / `Socket` / `Port` / `Database` details (→ `[masked]`), JWTs (`[jwt]`), `Bearer` / `Basic` credentials (`[token]`), `password=`, `secret:`, `token=`, `api_key=`… values (`[masked]`), emails (`[email]`), IPv4 and IPv6 addresses (`[ip]`), UUIDs (`[uuid]`), hex strings of 32+ characters and 20+ character strings mixing letters and digits such as API keys (`[token]`), card-like runs of 13–19 digits and any number longer than four digits (`[number]`). Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. Never sent: request payloads, headers, cookies, users, IP addresses, query bindings, `.env` values or absolute paths.
 - `GITHUB_TOKEN` is optional, read from the environment only, never printed or written to the cache or report.
+- The response cache defaults to a per-user directory in the system temp directory and is skipped when that directory is a symlink, owned by another user or writable by others. The threat model of every data path is `docs/SECURITY-MODEL.md`.
 - All HTTP over TLS with timeouts (connect 5 s, total 15 s) and limited retries with backoff; respects `HTTPS_PROXY`.
 - The tool never writes to the scanned project except `--output` and never executes project code (no app boot for `vendor/bin/excubia`). The Artisan commands run inside the already booted app; the posture checks read it without writing, except the scheduler heartbeat cache key, and never report `.env` values, DSNs, hostnames, paths or exception messages.
 - `SECURITY.md` with private vulnerability reporting.

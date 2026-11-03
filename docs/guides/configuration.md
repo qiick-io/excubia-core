@@ -104,10 +104,10 @@ Data-source responses are cached on disk so repeated runs and `--offline` work w
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `cache` | object | | Cache settings. |
-| `cache.directory` | string or null | `null` | Cache directory. `null` uses `qiick-excubia` in the system temporary directory, so nothing is written to the project. |
+| `cache.directory` | string or null | `null` | Cache directory. `null` uses `qiick-excubia-<uid>` in the system temporary directory, so nothing is written to the project; it is skipped when it is a symlink, owned by another user or writable by others. |
 | `cache.ttlHours` | integer ≥ 0 | `24` | Age after which a cached response is fetched again. `--offline` uses only responses younger than this; older ones count as missing. |
 
-`--no-cache` bypasses the cache for one run. `vendor/bin/excubia cache:clear` deletes it.
+`--no-cache` bypasses the cache for one run. `vendor/bin/excubia cache:clear` deletes the cache entries (only files named like cache entries).
 
 ## excubia-app
 

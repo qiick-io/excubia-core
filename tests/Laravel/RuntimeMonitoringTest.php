@@ -296,6 +296,27 @@ it('aggregates scheduled tasks by name and outcome, once per failed command, wit
         ->and($raw)->not->toContain($project);
 });
 
+it('masks secrets in scheduled task command lines and descriptions', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $schedule = $this->app->make(Schedule::class);
+    $command = $schedule->command('backup:run', ['--password' => 'task-password-secret']);
+    $script = $schedule->exec('/usr/bin/mysqldump --password=dump-password-secret shop');
+    $described = $schedule->call(fn () => null)->description('sync with token=description-token-secret');
+
+    event(new ScheduledTaskFinished($command, 0.1));
+    event(new ScheduledTaskFinished($script, 0.1));
+    event(new ScheduledTaskFinished($described, 0.1));
+
+    $tasks = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->pluck('task')->all();
+    $raw = rawBuffer($this->app);
+
+    expect($tasks)->toEqualCanonicalizing(["artisan backup:run --password='[masked]'", 'mysqldump --password=[masked] shop', 'sync with token=[masked]']);
+
+    foreach (['task-password-secret', 'dump-password-secret', 'description-token-secret'] as $secret) {
+        expect($raw)->not->toContain($secret);
+    }
+});
+
 it('aggregates outgoing HTTP by host and status class only', function () {
     bootRuntimeProject($this->app, ['enabled' => true]);
     Http::fake([

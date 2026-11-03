@@ -305,14 +305,16 @@ final class RuntimeCollectorService
     /**
      * The task description, else the Artisan command without the PHP and
      * Artisan binaries, else `Closure`. Absolute paths become relative to the
-     * project, or their file name outside it.
+     * project, or their file name outside it. Command arguments can carry
+     * secrets (`--password=…`, a DSN, an API key), so the name goes through
+     * the exception message masks too.
      */
     private function taskName(object $task): string
     {
         $description = $task->description ?? null;
 
         if (is_string($description) && $description !== '') {
-            return $this->relative($description);
+            return ExceptionPayloadService::mask($this->relative($description), $this->basePath);
         }
 
         $command = $task->command ?? null;
@@ -321,7 +323,7 @@ final class RuntimeCollectorService
             return 'Closure';
         }
 
-        return $this->relative(str_replace(ArtisanApplication::formatCommandString(''), 'artisan ', $command));
+        return ExceptionPayloadService::mask($this->relative(str_replace(ArtisanApplication::formatCommandString(''), 'artisan ', $command)), $this->basePath);
     }
 
     private function relative(string $value): string

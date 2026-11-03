@@ -81,7 +81,7 @@ Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runt
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with quoted literals replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions or `artisan <command>`, with paths made relative; the host of outgoing calls. Never URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with quoted literals replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions or `artisan <command>`, with paths made relative and secrets masked; the host of outgoing calls. Never URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

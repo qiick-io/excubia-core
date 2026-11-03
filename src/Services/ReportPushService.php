@@ -186,6 +186,6 @@ final class ReportPushService
             return 'excubia-app did not accept '.$subject.' (HTTP '.$exception->httpStatus.').';
         }
 
-        return 'excubia-app could not be reached at '.$endpoint.': '.$exception->getMessage();
+        return 'excubia-app could not be reached at '.SymfonyHttpClientService::redactedUrl($endpoint).': '.$exception->getMessage();
     }
 }

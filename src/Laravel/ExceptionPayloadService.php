@@ -43,7 +43,8 @@ final class ExceptionPayloadService
         '/\b(Host|Socket|Database|Port): [^,)]*/' => '$1: [masked]',
         '/\beyJ[\w-]+\.[\w-]+\.[\w-]*/' => '[jwt]',
         '/\b(Bearer|Basic)\s+[^\s,;\'"]+/i' => '$1 [token]',
-        '/\b([\w-]*(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|auth|signature|credentials?)[\w-]*)(["\']?\s*[=:]\s*["\']?)(?!(?:Bearer|Basic)\b|\[|\?)[^\s"\',;&)]+/i' => '$1$2[masked]',
+        // `key=value`, `key: value` and `'key' => 'value'`; a quoted value is masked whole, spaces included.
+        '/\b([\w-]*(?:pass|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth|signature|credentials?|cookie|session|dsn)[\w-]*)(["\']?\s*(?:=>|[=:])\s*)(?:(["\'])(?![\[?])[^"\'\n]*\3?|(?!(?:Bearer|Basic)\b|\[|\?)[^\s"\',;&)]+)/i' => '$1$2$3[masked]$3',
         '/[\w.%+-]+@[\w-]+(?:\.[\w-]+)+/' => '[email]',
         '/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/' => '[ip]',
         '/(?<![\w:])(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{0,4}::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{0,4})(?![\w:(])/i' => '[ip]',

@@ -37,7 +37,7 @@ Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute,
 - requests: route name (or `unnamed`), HTTP method, status class (`2xx`, …);
 - slow queries: SQL text without bindings, with quoted string literals replaced by `?`, and the connection name;
 - jobs: job class, queue and connection names, `processed` or `failed`;
-- scheduled tasks: the description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it); `finished`, `failed` or `skipped`;
+- scheduled tasks: the description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it), secrets such as `--password=…` masked as in exception messages; `finished`, `failed` or `skipped`;
 - outgoing HTTP (Laravel's HTTP client): host and status class.
 
 Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
@@ -82,7 +82,7 @@ Off until `healthEndpoint.enabled` is true and `EXCUBIA_HEALTH_SECRET` is set. I
 | Path | Written by | Content |
 | --- | --- | --- |
 | `--output` file | `check` | The report you asked for |
-| System temp `qiick-excubia/` or `cache.directory` | all checks | Public data-source responses |
+| System temp `qiick-excubia-<uid>/` or `cache.directory` | all checks | Public data-source responses |
 | `storage/excubia/runtime/` | runtime monitoring | Aggregates waiting to be sent, capped by `runtime.bufferMaxBytes` |
 | `storage/excubia/exceptions/` | exception capture | Masked groups waiting to be sent, capped by `exceptions.bufferMaxBytes` |
 | `storage/excubia/health.json` | `excubia:check`, `excubia:push` with the endpoint on | The last health result |
