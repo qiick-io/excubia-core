@@ -17,8 +17,10 @@ use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
+use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
@@ -27,9 +29,10 @@ use Qiick\Excubia\Registries\HealthCheckRegistry;
 /**
  * Runs the spec's checks in order, applies ignore rules, and builds the report.
  *
- * A data-source outage becomes a skipped check. `--strict` is not
- * implemented, so that outage does not become exit code 3. This service
- * does not write the report and does not print warnings.
+ * A data-source outage becomes a skipped check marked
+ * `SkipReasonEnum::DataSourceFailure` (or `Offline` under `--offline`);
+ * the command decides whether `--strict` turns it into exit code 3. This
+ * service does not write the report and does not print warnings.
  */
 final class HealthCheckRunnerService
 {
@@ -97,15 +100,18 @@ final class HealthCheckRunnerService
 
         foreach ($registry->healthChecksFor($onlyCheckIds, $skippedCheckIds) as $healthCheck) {
             try {
-                $checkResults[] = $healthCheck->run($snapshot, $configuration);
+                $checkResult = $healthCheck->run($snapshot, $configuration);
             } catch (DataSourceUnavailableException $exception) {
-                $checkResults[] = CheckResultData::skipped(
+                $checkResult = CheckResultData::skipped(
                     $healthCheck->id(),
                     $healthCheck->name(),
                     $healthCheck->id(),
                     $exception->getMessage(),
+                    SkipReasonEnum::DataSourceFailure,
                 );
             }
+
+            $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
         $raw = new HealthReportData($checkResults, []);
@@ -118,6 +124,38 @@ final class HealthCheckRunnerService
             ),
             'expiredIgnoreWarnings' => $configuration->expiredIgnoreWarnings($raw->findings(), $this->today),
         ];
+    }
+
+    /**
+     * Under `--offline` no request is sent, so a data source that "did not
+     * respond" is a cache miss the user asked for: a deliberate skip that
+     * `--strict` must not turn into exit code 3.
+     */
+    private function withOfflineSkips(CheckResultData $checkResult): CheckResultData
+    {
+        $findings = [];
+
+        foreach ($checkResult->findings as $finding) {
+            if (! $finding->isDataSourceFailure()) {
+                $findings[] = $finding;
+
+                continue;
+            }
+
+            $findings[] = new FindingData(
+                checkId: $finding->checkId,
+                severity: $finding->severity,
+                status: $finding->status,
+                subject: $finding->subject,
+                message: $finding->message,
+                fixHint: $finding->fixHint,
+                evidenceUrl: $finding->evidenceUrl,
+                advisoryId: $finding->advisoryId,
+                skipReason: SkipReasonEnum::Offline,
+            );
+        }
+
+        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings);
     }
 
     /**

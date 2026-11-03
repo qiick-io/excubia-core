@@ -81,20 +81,23 @@ Options:
   --no-cache                     Bypass the cache
   --config=FILE                  Config file (default: ./excubia.json if present)
   --no-banner                    Hide the ASCII banner (brand/excubia/cli/banner.txt)
+  --strict                       Exit 3 when a data-source failure skipped a check (also `"strict": true` in excubia.json)
   -q | -v | -vv                  Quiet / verbose / debug (HTTP calls listed)
 
 vendor/bin/excubia cache:clear
 vendor/bin/excubia --version
 
-vendor/bin/excubia push [path] [--config=FILE]   # run the checks, send the report to excubia-app (section 13)
-php artisan excubia:push [--config=FILE]
+vendor/bin/excubia push [path] [--config=FILE] [--strict]   # run the checks, send the report to excubia-app (section 13)
+php artisan excubia:push [--config=FILE] [--strict]
 ```
 
 Exit codes:
 - `0` no finding at or above `--fail-on`
 - `1` at least one finding at or above `--fail-on`
 - `2` usage or configuration error (missing `composer.lock`, broken or unparseable `composer.lock`, invalid config, unknown check id). The error message says what is wrong.
-- `3` data-source failure that made a non-skippable check impossible (network down and no cache) — only when `--strict` is passed; otherwise affected checks are `skipped` with a warning and exit code ignores them. [PROPOSAL: `--strict`]
+- `3` data-source failure (network down and no cache, or an API error) that skipped a check — only with `--strict` or `"strict": true` (approved for 1.0.0-beta, 2026-11-03). Without it, affected checks are `skipped` with the reason as the finding message, and the exit code ignores them. The error message names each check and its failing data source. Deliberate skips never give `3`: `--offline` without a cached response, `--only` / `--skip`, Laravel checks on a non-Laravel project, a disabled check, or a row removed by an ignore rule.
+- Precedence: `2` > `1` > `3`, so CI still sees real findings first. `--strict` can only turn strict mode on: the file key cannot be switched off from the CLI, and `--strict` wins over `"strict": false`.
+- The JSON report marks every `skipped` finding with `skipReason`: `data-source-failure`, `offline`, or `not-applicable` (optional field, `schemaVersion` stays 1).
 
 Table output: grouped by severity, coloured (no colour when not a TTY or `NO_COLOR`), summary line `3 critical · 2 high · 5 medium · 1 low` and the upgrade plan at the end. JSON output schema is versioned (`"schemaVersion": 1`) and documented in `docs/report-schema.json`.
 
@@ -119,6 +122,8 @@ Table output: grouped by severity, coloured (no colour when not a TTY or `NO_COL
   "cache": { "directory": null, "ttlHours": 24 }
 }
 ```
+
+Optional top-level `"strict": true` is the same as `--strict` (section 4); default `false`.
 
 Rules: every `ignore` entry needs a `reason`; an expired `until` makes the finding active again and prints a warning. Unknown keys are a config error (exit 2).
 
@@ -203,7 +208,7 @@ These decisions are final. They extend section 10 and replace D2 where they disa
 - **Command:** `vendor/bin/excubia push [path]` and `php artisan excubia:push` run the checks and send the report. Reports are sent daily from the Laravel scheduler and from CI after deploy.
 - **Configuration:** app URL and project token from `excubia.json` (`"app": {"url": "…", "token": "…"}`) or `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN`; the environment wins over the file. The URL is the app's base URL. The token is never printed, cached or written to a report.
 - **Endpoint:** `POST {url}/api/reports` with the envelope as JSON. The app answers 2xx with a JSON body when it stored the report (or already had that `batchId`), 401/403 for a wrong or revoked token.
-- **Exit codes of `push`:** `0` sent (findings do not change it), `2` configuration error (missing URL or token, plain HTTP to a host other than localhost, missing `composer.lock`, invalid config), `3` the app rejected the token, answered an error, or could not be reached. Each case prints a message saying which.
+- **Exit codes of `push`:** `0` sent (findings do not change it), `2` configuration error (missing URL or token, plain HTTP to a host other than localhost, missing `composer.lock`, invalid config), `3` the app rejected the token, answered an error, or could not be reached. With `--strict` (or `"strict": true`), a check skipped because a data source failed also gives `3`, and the report is **not sent**, so the app never stores an incomplete report as complete. Each case prints a message saying which.
 - **Transport:** HTTPS only (plain HTTP only for localhost), `Authorization: Bearer <token>`, the timeouts and retries of section 7.
 - **Envelope:** JSON with `protocolVersion` (1), a unique `batchId` (UUID v4, new per run, kept across HTTP retries) so a retried send is stored once, `sentAt` (UTC, `Y-m-d\TH:i:s\Z`), and the payload (`report`, following `docs/report-schema.json`). Documented in `docs/push-schema.json`. The envelope is a public contract, frozen at 1.0.0 (#76).
 - **Runtime data and exceptions** (#75, #77, opt-in): written to a local buffer, never sent during a request, sent in batches by the scheduler about every minute. When the app is unreachable the buffer keeps data up to a size cap and drops the oldest entries; it never slows the project down.

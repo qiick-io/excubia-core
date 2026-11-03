@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--strict` on `check` and `push` (and `excubia:check` / `excubia:push`), also the `excubia.json` key `strict`: a check skipped because a data source failed (network down and no cache, or an API error) makes the command exit `3`, with a message naming each check and data source. `push --strict` then sends nothing. Deliberate skips (`--offline` without cache, `--only` / `--skip`, Laravel checks on a non-Laravel project, ignore rules) never exit `3`. Precedence `2` > `1` > `3`. The flag can only turn strict mode on. Without `--strict` nothing changes.
+- Optional finding field `skipReason` in the JSON report (`data-source-failure`, `offline`, `not-applicable`), set on every `skipped` finding and documented in `docs/report-schema.json`. Additive, so `schemaVersion` stays `1`.
 - `HealthCheckRunnerService::runForSnapshot()` runs the checks on a `ProjectSnapshotData` built by the caller, without reading a project directory.
 - `vendor/bin/excubia push [path]` and `php artisan excubia:push` run the checks and send the report to your own `excubia-app` (`POST {url}/api/reports`, `Authorization: Bearer`). Envelope `protocolVersion: 1` with a unique `batchId` and `sentAt`, documented in `docs/push-schema.json`. Exit codes: `0` sent, `2` configuration error, `3` token rejected or app unreachable.
 - `excubia.json` key `app` (`url`, `token`); `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` override it. HTTPS only, plain HTTP allowed for localhost.

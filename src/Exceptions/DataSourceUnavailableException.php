@@ -10,8 +10,8 @@ use RuntimeException;
  * A public data source did not answer.
  *
  * API clients throw this. Checks must not let it escape `run`: the runner
- * turns it into a skipped result. `--strict` is not implemented, so this
- * exception does not become exit code 3 for `check`. `push` uses
+ * turns it into a skipped result marked as a data-source failure, which
+ * `--strict` turns into exit code 3. `push` uses
  * `httpStatus` to tell a rejected token from an unreachable app; it is
  * null when no HTTP response arrived.
  */

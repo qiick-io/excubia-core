@@ -150,3 +150,19 @@ it('exits 2 when composer.lock is missing', function () {
 it('names the artisan alias', function () {
     expect((new ExcubiaPushCommand)->getName())->toBe('excubia:push');
 });
+
+it('does not send and exits 3 with --strict when a data source failure skipped a check', function () {
+    $client = new FakeHttpClient([PUSH_ENDPOINT => ['stored' => true]]);
+    ['tester' => $tester, 'input' => $input] = pushTester($client, appEnvironment());
+
+    expect($tester->execute($input + ['--strict' => true], ['capture_stderr_separately' => true]))->toBe(3)
+        ->and($client->postedPayloads)->toBe([])
+        ->and($tester->getErrorOutput())->toContain('endoflife.date did not respond.')
+        ->and($tester->getErrorOutput())->toContain('The report was not sent.');
+
+    ['tester' => $tester, 'input' => $input] = pushTester($client, appEnvironment());
+
+    expect($tester->execute($input))->toBe(0)
+        ->and($client->postedPayloads)->toHaveCount(1)
+        ->and(json_encode($client->postedPayloads[0]['report'], JSON_THROW_ON_ERROR))->toContain('"skipReason":"data-source-failure"');
+});

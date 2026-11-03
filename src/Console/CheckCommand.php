@@ -11,6 +11,7 @@ use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\HealthReportData;
+use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\ReportFormatEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
@@ -57,7 +58,8 @@ final class CheckCommand extends Command
             ->addOption('offline', null, InputOption::VALUE_NONE, 'Use the cache only')
             ->addOption('no-cache', null, InputOption::VALUE_NONE, 'Bypass the cache')
             ->addOption('config', null, InputOption::VALUE_REQUIRED, 'Config file')
-            ->addOption('no-banner', null, InputOption::VALUE_NONE, 'Hide the ASCII banner');
+            ->addOption('no-banner', null, InputOption::VALUE_NONE, 'Hide the ASCII banner')
+            ->addOption('strict', null, InputOption::VALUE_NONE, 'Exit 3 when a data source failure skipped a check');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -76,6 +78,7 @@ final class CheckCommand extends Command
                 'no-cache' => (bool) $input->getOption('no-cache'),
                 'config' => $this->stringOption($input, 'config'),
                 'no-banner' => (bool) $input->getOption('no-banner'),
+                'strict' => (bool) $input->getOption('strict'),
             ], $output);
         } catch (InvalidConfigurationException|LockfileNotFoundException $exception) {
             self::writeError($output, $exception->getMessage());
@@ -98,7 +101,8 @@ final class CheckCommand extends Command
      *     offline?: bool,
      *     no-cache?: bool,
      *     config?: string|null,
-     *     no-banner?: bool
+     *     no-banner?: bool,
+     *     strict?: bool
      * }  $options
      */
     public function runWithOptions(?string $path, array $options, OutputInterface $output): int
@@ -125,7 +129,8 @@ final class CheckCommand extends Command
      *     offline?: bool,
      *     no-cache?: bool,
      *     config?: string|null,
-     *     no-banner?: bool
+     *     no-banner?: bool,
+     *     strict?: bool
      * }  $options
      *
      * @throws InvalidConfigurationException
@@ -136,8 +141,13 @@ final class CheckCommand extends Command
         $scan = $this->scan($path, $options, $output);
         $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null, $path)->render($scan['report']);
         $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
+        $exitCode = $scan['report']->exitCodeFor($scan['configuration']->failOnSeverity, $scan['configuration']->isStrict);
 
-        return $scan['report']->exitCodeFor($scan['configuration']->failOnSeverity)->value;
+        if ($exitCode === ExitCodeEnum::DataSourceFailure) {
+            self::writeError($output, $scan['report']->dataSourceFailureMessage());
+        }
+
+        return $exitCode->value;
     }
 
     /**
@@ -154,7 +164,8 @@ final class CheckCommand extends Command
      *     offline?: bool,
      *     no-cache?: bool,
      *     config?: string|null,
-     *     no-banner?: bool
+     *     no-banner?: bool,
+     *     strict?: bool
      * }  $options
      * @return array{report: HealthReportData, configuration: ExcubiaConfigurationData}
      *
@@ -183,7 +194,7 @@ final class CheckCommand extends Command
     }
 
     /**
-     * Merge file config with CLI overrides (`--fail-on`, `--no-dev`).
+     * Merge file config with CLI overrides (`--fail-on`, `--no-dev`, `--strict`).
      *
      * @param  array<string, mixed>  $options
      *
@@ -202,8 +213,10 @@ final class CheckCommand extends Command
         }
 
         $includeDev = ($options['no-dev'] ?? false) === true ? false : $loaded->isDevelopmentDependencyIncluded;
+        // `--strict` can only turn strict mode on; `strict: true` in the file cannot be turned off from the CLI.
+        $isStrict = ($options['strict'] ?? false) === true || $loaded->isStrict;
 
-        if ($failOn === $loaded->failOnSeverity && $includeDev === $loaded->isDevelopmentDependencyIncluded) {
+        if ($failOn === $loaded->failOnSeverity && $includeDev === $loaded->isDevelopmentDependencyIncluded && $isStrict === $loaded->isStrict) {
             return $loaded;
         }
 
@@ -219,6 +232,7 @@ final class CheckCommand extends Command
             cacheTtlHours: $loaded->cacheTtlHours,
             appUrl: $loaded->appUrl,
             appToken: $loaded->appToken,
+            isStrict: $isStrict,
         );
     }
 

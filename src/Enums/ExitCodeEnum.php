@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Enums;
 
 /**
- * Process status for `vendor/bin/excubia`. `check` does not return 3:
- * `--strict` is still a proposal, and a data-source miss becomes a skipped
- * check. `push` returns 3 when excubia-app rejects the token or does not
- * accept the report.
+ * Process status for `vendor/bin/excubia`. Precedence is 2 > 1 > 3.
+ * `check` returns 3 only with `--strict` (or `strict: true`), when a check
+ * was skipped because a data source failed. `push` returns 3 for the same
+ * reason before sending, and when excubia-app rejects the token or does
+ * not accept the report.
  */
 enum ExitCodeEnum: int
 {

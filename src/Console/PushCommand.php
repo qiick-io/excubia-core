@@ -23,7 +23,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * to the user's own `excubia-app`. The Artisan alias calls `runWithOptions`.
  *
  * Exit codes: 0 sent (whatever the findings), 2 configuration error,
- * 3 the app rejected the token or did not accept the report.
+ * 3 the app rejected the token or did not accept the report, or, with
+ * `--strict`, a data source failure skipped a check (nothing is sent).
  * `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` win over the `app` keys of
  * `excubia.json`, so CI can override a committed file.
  */
@@ -45,7 +46,8 @@ final class PushCommand extends Command
         $this->setName('push')
             ->setDescription('Run the checks and send the report to your excubia-app.')
             ->addArgument('path', InputArgument::OPTIONAL, 'Project directory')
-            ->addOption('config', null, InputOption::VALUE_REQUIRED, 'Config file');
+            ->addOption('config', null, InputOption::VALUE_REQUIRED, 'Config file')
+            ->addOption('strict', null, InputOption::VALUE_NONE, 'Do not send, exit 3, when a data source failure skipped a check');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -55,13 +57,17 @@ final class PushCommand extends Command
 
         return $this->runWithOptions(
             is_string($path) ? $path : null,
-            ['config' => is_string($config) ? $config : null],
+            ['config' => is_string($config) ? $config : null, 'strict' => (bool) $input->getOption('strict')],
             $output,
         );
     }
 
     /**
-     * @param  array{config?: string|null}  $options
+     * With `--strict` (or `strict: true`) a check skipped because a data
+     * source failed stops the push before anything is sent: the app would
+     * otherwise store an incomplete report as if it were the full picture.
+     *
+     * @param  array{config?: string|null, strict?: bool}  $options
      */
     public function runWithOptions(?string $path, array $options, OutputInterface $output): int
     {
@@ -69,7 +75,15 @@ final class PushCommand extends Command
         $checkCommand = new CheckCommand($this->httpClient, $now);
 
         try {
-            $scan = $checkCommand->scan($path, ['config' => $options['config'] ?? null], $output);
+            $scan = $checkCommand->scan($path, ['config' => $options['config'] ?? null, 'strict' => $options['strict'] ?? false], $output);
+
+            if ($scan['configuration']->isStrict && $scan['report']->dataSourceFailures() !== []) {
+                CheckCommand::writeError($output, $scan['report']->dataSourceFailureMessage());
+                CheckCommand::writeError($output, 'The report was not sent.');
+
+                return ExitCodeEnum::DataSourceFailure->value;
+            }
+
             $batchId = (new ReportPushService($checkCommand->httpClient($output)))->push(
                 $scan['report'],
                 $this->environmentValue('EXCUBIA_APP_URL') ?? $scan['configuration']->appUrl,

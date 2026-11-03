@@ -10,6 +10,7 @@ use Qiick\Excubia\Data\UpgradeStepData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 
 function finding(
     FindingStatusEnum $status,
@@ -65,6 +66,21 @@ it('returns exit code 1 for a warn or fail at the threshold', function () {
     expect($warn->exitCodeFor(SeverityEnum::High))->toBe(ExitCodeEnum::FindingsAtOrAboveFailOn)
         ->and($fail->exitCodeFor(SeverityEnum::Critical))->toBe(ExitCodeEnum::FindingsAtOrAboveFailOn)
         ->and($warn->exitCodeFor(SeverityEnum::Critical))->toBe(ExitCodeEnum::NoFindingsAtOrAboveFailOn);
+});
+
+it('returns 3 only in strict mode for a data-source failure skip, after exit 1', function () {
+    $failure = CheckResultData::skipped('php-eol', 'PHP end of life', 'php', 'endoflife.date did not respond.', SkipReasonEnum::DataSourceFailure);
+    $deliberate = CheckResultData::skipped('node-eol', 'Node end of life', 'node', 'Node version is not declared.');
+    $offline = CheckResultData::skipped('npm-advisories', 'Known vulnerabilities (npm)', 'npm', 'OSV.dev did not respond.', SkipReasonEnum::Offline);
+    $critical = CheckResultData::fromFindings('laravel-eol', 'Laravel end of life', [finding(FindingStatusEnum::Fail, SeverityEnum::Critical)]);
+
+    expect((new HealthReportData([$failure], []))->exitCodeFor(SeverityEnum::High))->toBe(ExitCodeEnum::NoFindingsAtOrAboveFailOn)
+        ->and((new HealthReportData([$failure], []))->exitCodeFor(SeverityEnum::High, true))->toBe(ExitCodeEnum::DataSourceFailure)
+        ->and((new HealthReportData([$failure], []))->exitCodeFor(null, true))->toBe(ExitCodeEnum::DataSourceFailure)
+        ->and((new HealthReportData([$failure, $critical], []))->exitCodeFor(SeverityEnum::High, true))->toBe(ExitCodeEnum::FindingsAtOrAboveFailOn)
+        ->and((new HealthReportData([$deliberate, $offline], []))->exitCodeFor(SeverityEnum::High, true))->toBe(ExitCodeEnum::NoFindingsAtOrAboveFailOn)
+        ->and((new HealthReportData([$failure, $deliberate], []))->dataSourceFailureMessage())
+        ->toBe("--strict: checks were skipped because a data source failed:\n  php-eol (php): endoflife.date did not respond.");
 });
 
 it('drops a finding covered by an active ignore rule and keeps an expired one', function () {

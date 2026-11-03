@@ -12,6 +12,7 @@ use Qiick\Excubia\Data\PackagistVersionData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\PackagistApiService;
 
 /**
@@ -40,7 +41,7 @@ final class ComposerAbandonedCheck implements HealthCheckContract
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             $abandoned = $this->abandonedFlag($versions);

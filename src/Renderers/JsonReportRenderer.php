@@ -9,7 +9,8 @@ use Qiick\Excubia\Data\HealthReportData;
 
 /**
  * JSON report for schema version 1. `advisoryId` is not emitted: the spec
- * does not say the rendered report prints that field.
+ * does not say the rendered report prints that field. `skipReason` is
+ * printed on skipped rows only (optional field, still schema version 1).
  */
 final class JsonReportRenderer implements ReportRendererContract
 {
@@ -39,7 +40,7 @@ final class JsonReportRenderer implements ReportRendererContract
             $findings = [];
 
             foreach ($checkResult->findings as $finding) {
-                $findings[] = [
+                $row = [
                     'checkId' => $finding->checkId,
                     'severity' => $finding->severity->value,
                     'status' => $finding->status->value,
@@ -48,6 +49,12 @@ final class JsonReportRenderer implements ReportRendererContract
                     'fixHint' => $finding->fixHint,
                     'evidenceUrl' => $finding->evidenceUrl,
                 ];
+
+                if ($finding->skipReason !== null) {
+                    $row['skipReason'] = $finding->skipReason->value;
+                }
+
+                $findings[] = $row;
             }
 
             $checks[] = [

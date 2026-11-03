@@ -41,7 +41,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -64,6 +64,7 @@ final class ExcubiaConfigurationLoader
             cacheTtlHours: $cache['ttlHours'],
             appUrl: $app['url'],
             appToken: $app['token'],
+            isStrict: array_key_exists('strict', $document) ? $this->boolean($document['strict'], 'strict') : $defaults->isStrict,
         );
     }
 

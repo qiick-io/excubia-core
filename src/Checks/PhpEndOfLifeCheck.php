@@ -14,6 +14,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 
@@ -47,7 +48,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
         $cycles = $this->endOfLifeApi->cyclesIfAvailable('php');
 
         if ($cycles === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'php', 'endoflife.date did not respond.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'php', 'endoflife.date did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
         $cycle = $this->matchingPhpCycle($projectSnapshot->phpVersion, $cycles);
