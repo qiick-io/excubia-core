@@ -76,7 +76,7 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
             return $this->singleFindingResult($cycle, FindingStatusEnum::Warn, SeverityEnum::Medium, 'Bug fixes ended or security fixes end within '.$configuration->laravelWarnDaysBeforeEndOfLife.' days.', $fixHint);
         }
 
-        return CheckResultData::fromFindings($this->id(), $this->name(), []);
+        return CheckResultData::fromFindings($this->id(), $this->name(), [], $cycle);
     }
 
     /**
@@ -86,7 +86,7 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             new FindingData($this->id(), $severity, $status, 'laravel/framework', $message, $fixHint, 'https://endoflife.date/laravel', details: $cycle->findingDetails()),
-        ]);
+        ], $cycle);
     }
 
     /**

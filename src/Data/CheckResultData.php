@@ -14,6 +14,9 @@ use Qiick\Excubia\Enums\SkipReasonEnum;
  * The status is the worst finding status so a renderer can tell that the
  * check failed without scanning the rows. Fail outranks warn, warn outranks
  * skipped, and skipped outranks pass. An empty finding list is a pass.
+ * `endOfLifeCycle` is set by the end-of-life checks whenever they matched a
+ * cycle, also when they pass, so the report's `project` object can carry the
+ * support dates without a second request.
  */
 final readonly class CheckResultData
 {
@@ -25,6 +28,7 @@ final readonly class CheckResultData
         public string $name,
         public FindingStatusEnum $status,
         public array $findings,
+        public ?EndOfLifeCycleData $endOfLifeCycle = null,
     ) {}
 
     /**
@@ -34,9 +38,9 @@ final readonly class CheckResultData
      *
      * @param  list<FindingData>  $findings
      */
-    public static function fromFindings(string $checkId, string $name, array $findings): self
+    public static function fromFindings(string $checkId, string $name, array $findings, ?EndOfLifeCycleData $endOfLifeCycle = null): self
     {
-        return new self($checkId, $name, self::combinedStatus($findings), $findings);
+        return new self($checkId, $name, self::combinedStatus($findings), $findings, $endOfLifeCycle);
     }
 
     /**

@@ -100,7 +100,7 @@ In the JSON report every `skipped` finding has a `skipReason`: `data-source-fail
 
 The JSON report also carries, as optional fields of schema version 1:
 
-- top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with the `php`, `laravel` and `node` versions (each `null` when not declared; no name, path or hostname);
+- top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with `php`, `laravel` and `node`, each `{version, cycle, securitySupportEndsOn, activeSupportEndsOn}` or `null` when not declared (no name, path or hostname). The cycle and the `Y-m-d` dates come from the endoflife.date data the EOL checks already read, also when they pass; they are `null` when that check was skipped or did not run;
 - per finding: `fingerprint` (sha256 of `checkId`, `subject` and `advisoryId` joined by a NUL byte, the same value as the SARIF `partialFingerprints`, stable across runs), `advisoryId` on advisory findings, and `details` with check-specific values so you do not parse `message`:
 
 | `checkId` | `details` keys |

@@ -37,22 +37,69 @@
     },
     "$defs": {
         "project": {
-            "description": "Runtime and framework versions of the scanned project. Versions only: no name, path or hostname (the app knows the project from its token). Each is null when the project does not declare it.",
+            "description": "Runtime and framework versions of the scanned project, each with the endoflife.date cycle it matched and the support end dates, present also when the end-of-life checks pass (#123). Versions only: no name, path or hostname (the app knows the project from its token). Each entry is null when the project does not declare that version. The dates come from the responses php-eol, laravel-eol and node-eol already fetched; when that check did not run (--skip, --only, node-eol disabled), was skipped (offline with no cache, data-source failure) or matched no cycle, cycle and the dates are null and version stays.",
             "type": "object",
             "additionalProperties": false,
             "required": ["php", "laravel", "node"],
             "properties": {
                 "php": {
                     "description": "Resolved PHP version, as php-eol reads it: config.platform.php, then the lower bound of require.php, then platform.php in composer.lock.",
-                    "type": ["string", "null"]
+                    "anyOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "$ref": "#/$defs/projectRuntime"
+                        }
+                    ]
                 },
                 "laravel": {
                     "description": "Locked laravel/framework version from composer.lock.",
-                    "type": ["string", "null"]
+                    "anyOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "$ref": "#/$defs/projectRuntime"
+                        }
+                    ]
                 },
                 "node": {
                     "description": "Node declaration as written in .nvmrc, .node-version or package.json engines.node (a version or a range; Node has no lockfile entry). Null when absent or when it holds characters no version or range uses.",
+                    "anyOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "$ref": "#/$defs/projectRuntime"
+                        }
+                    ]
+                }
+            }
+        },
+        "projectRuntime": {
+            "description": "One project entry: the version and its endoflife.date support window.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["version", "cycle", "securitySupportEndsOn", "activeSupportEndsOn"],
+            "properties": {
+                "version": {
+                    "description": "The version as described on the project property (unchanged from #92).",
+                    "type": "string"
+                },
+                "cycle": {
+                    "description": "endoflife.date cycle the version matched (8.1, 10, 20), or null.",
                     "type": ["string", "null"]
+                },
+                "securitySupportEndsOn": {
+                    "description": "End of security support, Y-m-d; null when unknown or when endoflife.date gives no date.",
+                    "type": ["string", "null"],
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "activeSupportEndsOn": {
+                    "description": "End of active support (bug fixes), Y-m-d; null when unknown or when endoflife.date gives no date.",
+                    "type": ["string", "null"],
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                 }
             }
         },
