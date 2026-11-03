@@ -12,7 +12,7 @@ The endpoint is registered by `Qiick\Excubia\Laravel\ExcubiaServiceProvider`, so
 | --- | --- | --- | --- |
 | `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route. |
 | `healthEndpoint.path` | string | `excubia/health` | URL path of the route. Leading and trailing `/` are ignored. Letters, digits, `.`, `_`, `~`, `-` and `/` only. |
-| `EXCUBIA_HEALTH_SECRET` (environment) | string | — | Expected value of the request header. Read from the process environment only. Without it the route is not registered. |
+| `EXCUBIA_HEALTH_SECRET` (environment) | string | — | Expected value of the request header, at least 32 characters. Read from the process environment only. Without it, or when it is shorter, the route is not registered (`excubia:check` and `excubia:push` warn about a short secret on stderr). |
 
 The endpoint serves what the last `php artisan excubia:check` or `php artisan excubia:push` stored; it never runs checks in the request. `bin/excubia` does not store a result.
 
@@ -23,7 +23,7 @@ GET /excubia/health
 oh-dear-health-check-secret: <EXCUBIA_HEALTH_SECRET>
 ```
 
-The header is compared with `hash_equals`. A missing, empty or wrong secret gets the app's normal `404`, so the route is indistinguishable from a missing page. The route has no middleware group (no session, no CSRF).
+The header is compared with `hash_equals`. A missing, empty or wrong secret gets the app's normal `404`, so the route is indistinguishable from a missing page. The route has no middleware group (no session, no CSRF). It is throttled with Laravel's `Illuminate\Routing\Middleware\ThrottleRequests` at 60 requests a minute per client IP; more get `429`.
 
 ## Response
 

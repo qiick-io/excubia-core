@@ -50,7 +50,7 @@ final class ExcubiaCheckCommand extends Command
             'config' => $configPath,
             'no-banner' => (bool) $this->option('no-banner'),
             'strict' => (bool) $this->option('strict'),
-        ], $this->output));
+        ], $this->output), $this->output);
     }
 
     /**
