@@ -62,3 +62,41 @@ jobs:
 
       - name: Dogfood
         run: php bin/excubia check --fail-on=critical --no-banner
+
+  laravel:
+    name: Laravel ${{ matrix.laravel }} PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        laravel:
+          - '12'
+          - '13'
+        php:
+          - '8.3'
+          - '8.4'
+          - '8.5'
+        include:
+          - laravel: '12'
+            testbench: '10'
+          - laravel: '13'
+            testbench: '11'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Install Laravel ${{ matrix.laravel }}
+        run: |
+          composer require --dev --no-interaction --no-update "laravel/framework:^${{ matrix.laravel }}.0" "orchestra/testbench:^${{ matrix.testbench }}.0"
+          composer update --no-interaction --prefer-dist --with-all-dependencies
+
+      - name: Pest (Laravel integration)
+        run: vendor/bin/pest tests/Laravel

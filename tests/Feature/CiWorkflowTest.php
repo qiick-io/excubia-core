@@ -16,6 +16,15 @@ it('keeps Pest on PHP 8.3 and newer and does not call the reusable workflow', fu
         ->and($workflow)->toContain('assert-checks-coverage.php');
 });
 
+it('runs the Laravel integration tests on Laravel 12 and 13', function () {
+    $workflow = (string) file_get_contents(dirname(__DIR__, 2).'/.github/workflows/ci.yml');
+
+    expect($workflow)->toContain('laravel/framework:^${{ matrix.laravel }}.0')
+        ->and($workflow)->toContain("testbench: '10'")
+        ->and($workflow)->toContain("testbench: '11'")
+        ->and($workflow)->toContain('vendor/bin/pest tests/Laravel');
+});
+
 it('passes the checks coverage gate when no check class exists', function () {
     $emptyDirectory = sys_get_temp_dir().'/excubia-empty-checks-'.bin2hex(random_bytes(4));
     mkdir($emptyDirectory);
