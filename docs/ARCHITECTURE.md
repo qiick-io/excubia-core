@@ -74,6 +74,7 @@ qiick-io/excubia-core
 │       └── DataSourceUnavailableException.php
 ├── tests/{Unit,Feature,Arch,Fixtures}
 ├── excubia.schema.json                      # JSON Schema of the config file
+├── action.yml                               # composite GitHub Action: SARIF upload to code scanning (v0.3.0, D6)
 ├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,checks/*.md}
 └── .github/workflows/ci.yml                 # calls qiick-io/.github reusable workflow
 ```

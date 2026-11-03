@@ -1,0 +1,70 @@
+name: Action test
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Runs the composite action from this checkout. SARIF is never uploaded here,
+# so the workflow needs no security-events permission and is safe on forks.
+jobs:
+  sarif:
+    name: SARIF output
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Run Excubia action
+        id: excubia
+        uses: ./
+        with:
+          path: tests/Fixtures/Projects/outdated-laravel-10
+          fail-on: none
+          upload-sarif: 'false'
+          github-token: ${{ github.token }}
+
+      - name: Assert SARIF is valid
+        env:
+          SARIF_FILE: ${{ steps.excubia.outputs.sarif-file }}
+        run: |
+          test -s "$SARIF_FILE"
+          jq -e '.version == "2.1.0"' "$SARIF_FILE"
+          jq -e '.runs[0].results | length > 0' "$SARIF_FILE"
+
+  fail-on:
+    name: Exit code follows fail-on
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Run Excubia action
+        id: excubia
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/Fixtures/Projects/outdated-laravel-10
+          fail-on: critical
+          upload-sarif: 'false'
+          github-token: ${{ github.token }}
+
+      - name: Assert the action failed with exit code 1
+        env:
+          OUTCOME: ${{ steps.excubia.outcome }}
+          EXIT_CODE: ${{ steps.excubia.outputs.exit-code }}
+        run: |
+          echo "outcome=$OUTCOME exit-code=$EXIT_CODE"
+          test "$OUTCOME" = "failure"
+          test "$EXIT_CODE" = "1"

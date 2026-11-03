@@ -35,6 +35,7 @@
 - **Standalone CLI** — `vendor/bin/excubia` (no app boot) plus Artisan alias `php artisan excubia:check`
 - **Formats** — `table` (default), `json`, `markdown`, `sarif` (SARIF 2.1.0 for GitHub code scanning)
 - **CI-friendly** — `--fail-on`, exit codes, optional `--offline` cache
+- **GitHub Action** — `qiick-io/excubia-core@v1` uploads findings to GitHub code scanning
 - **Config** — project-root `excubia.json` with JSON Schema
 - **Push** — `excubia push` sends the report to your own self-hosted `excubia-app` (opt-in)
 
@@ -89,6 +90,51 @@ Key options: `--format=table|json|markdown|sarif`, `--output=FILE`, `--fail-on=c
 | `1` | At least one finding at or above `--fail-on` |
 | `2` | Usage or configuration error (missing/broken `composer.lock`, invalid config, unknown check id) |
 | `3` | Reserved for data-source failure; not returned in 0.1.x — an unavailable data source marks the affected check `skipped`. |
+
+## GitHub Action
+
+The composite action in [`action.yml`](./action.yml) runs Excubia on a Laravel or PHP repository, writes the Markdown report to the job summary and uploads the SARIF log to GitHub code scanning, so findings show up in the **Security** tab.
+
+```yaml
+# .github/workflows/excubia.yml
+name: Excubia
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  excubia:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: qiick-io/excubia-core@v1
+        with:
+          fail-on: critical
+          github-token: ${{ github.token }}
+```
+
+| Input | Default | Notes |
+| --- | --- | --- |
+| `path` | `.` | Project directory to scan |
+| `fail-on` | `critical` | `critical`, `high`, `medium`, `low` or `none`, as in the CLI |
+| `only` / `skip` | — | Comma-separated check ids |
+| `github-token` | — | Optional; raises the GitHub API rate limit. Passed to Excubia as the `GITHUB_TOKEN` environment variable only |
+| `upload-sarif` | `true` | Set to `false` to skip the code scanning upload |
+| `php-version` | `8.4` | PHP used to run Excubia, not the scanned project's PHP |
+
+Outputs: `sarif-file` (path of the SARIF log) and `exit-code`.
+
+- Excubia is installed with Composer in `$RUNNER_TEMP/excubia`, from the action's own checkout, so the version always matches the ref you use (`@v1`, a tag or a SHA). The scanned project's code and dependencies are never installed or executed.
+- The SARIF log is uploaded even when the step then fails on `fail-on`. Pull requests from forks get a read-only token, so the upload is skipped there.
+- Pin the action to a commit SHA if your policy requires it. The `v1` tag is created as a release step.
 
 ## Push to excubia-app
 
