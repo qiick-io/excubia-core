@@ -43,7 +43,8 @@ qiick-io/excubia-core
 │   ├── Renderers/
 │   │   ├── TableReportRenderer.php
 │   │   ├── JsonReportRenderer.php
-│   │   └── MarkdownReportRenderer.php
+│   │   ├── MarkdownReportRenderer.php
+│   │   └── SarifRenderer.php                # SARIF 2.1.0 (v0.3.0, D6)
 │   ├── Data/                                # readonly classes
 │   │   ├── ProjectSnapshotData.php
 │   │   ├── LockedPackageData.php
@@ -95,7 +96,7 @@ flowchart LR
   API --> CACHE[ResponseCacheService]
   RUN --> PLAN[UpgradePlanService]
   RUN --> REPORT[HealthReportData]
-  REPORT --> RENDER[Table / Json / Markdown Renderer]
+  REPORT --> RENDER[Table / Json / Markdown / Sarif Renderer]
   RENDER --> OUT[stdout or --output + exit code]
 ```
 
@@ -129,7 +130,7 @@ interface HealthCheckContract
 
 - `tests/Arch/NamingArchitectureTest.php`: strict types, suffix per folder, `Data` readonly, no `dd`/`dump`/`var_dump`/`env()`, `Checks` only depend on `Contracts`, `Data`, `Enums`, `Services`.
 - Each check: one test file with fixtures for pass / warn / fail / skipped.
-- Golden-file tests for renderers (`tests/Fixtures/Reports/*.txt|json|md`).
+- Golden-file tests for renderers (`tests/Fixtures/Reports/*.txt|json|md|sarif`); SARIF output is also validated against the vendored official schema in `tests/Fixtures/Schemas/`.
 - Fake `HttpClientContract` returning recorded responses; a test asserts no real HTTP happens.
 
 ## 6. CI / fleet

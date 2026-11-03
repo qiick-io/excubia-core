@@ -71,7 +71,7 @@ vendor/bin/excubia check [path] [options]
 php artisan excubia:check [options]          # same engine, path = base_path()
 
 Options:
-  --format=table|json|markdown   Output format (default: table)
+  --format=table|json|markdown|sarif   Output format (default: table; sarif = SARIF 2.1.0, v0.3.0, D6)
   --output=FILE                  Write report to FILE instead of stdout
   --fail-on=critical|high|medium|low|none   Minimum severity that makes the exit code 1 (default: high)
   --only=ID,ID                   Run only these checks

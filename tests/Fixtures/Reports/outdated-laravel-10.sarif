@@ -1,0 +1,170 @@
+{
+    "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "Excubia",
+                    "informationUri": "https://github.com/qiick-io/excubia-core",
+                    "rules": [
+                        {
+                            "id": "php-eol",
+                            "name": "PHP end of life",
+                            "shortDescription": {
+                                "text": "PHP end of life"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-eol",
+                            "name": "Laravel end of life",
+                            "shortDescription": {
+                                "text": "Laravel end of life"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "node-eol",
+                            "name": "Node end of life",
+                            "shortDescription": {
+                                "text": "Node end of life"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-advisories",
+                            "name": "Known vulnerabilities (Composer)",
+                            "shortDescription": {
+                                "text": "Known vulnerabilities (Composer)"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "npm-advisories",
+                            "name": "Known vulnerabilities (npm)",
+                            "shortDescription": {
+                                "text": "Known vulnerabilities (npm)"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-abandoned",
+                            "name": "Abandoned packages",
+                            "shortDescription": {
+                                "text": "Abandoned packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-stale",
+                            "name": "Stale packages",
+                            "shortDescription": {
+                                "text": "Stale packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-next-blocker",
+                            "name": "Next-major blockers",
+                            "shortDescription": {
+                                "text": "Next-major blockers"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        }
+                    ]
+                }
+            },
+            "results": [
+                {
+                    "ruleId": "php-eol",
+                    "ruleIndex": 0,
+                    "level": "error",
+                    "message": {
+                        "text": "php: Security support ended on 2025-12-31. Upgrade PHP to 8.4 (supported until 2028-12-31)."
+                    },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {
+                                    "uri": "composer.json"
+                                },
+                                "region": {
+                                    "startLine": 1
+                                }
+                            }
+                        }
+                    ],
+                    "partialFingerprints": {
+                        "excubiaFinding/v1": "0922da86f591a753fea108fa63f903b45018c654703247dff64c5cd727e8ec79"
+                    },
+                    "properties": {
+                        "severity": "critical",
+                        "status": "fail",
+                        "subject": "php",
+                        "evidenceUrl": "https://endoflife.date/php"
+                    }
+                },
+                {
+                    "ruleId": "laravel-eol",
+                    "ruleIndex": 1,
+                    "level": "error",
+                    "message": {
+                        "text": "laravel/framework: Security fixes ended on 2025-02-04. Upgrade to Laravel 11; security fixes for your version end 2025-02-04."
+                    },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {
+                                    "uri": "composer.lock"
+                                },
+                                "region": {
+                                    "startLine": 1
+                                }
+                            }
+                        }
+                    ],
+                    "partialFingerprints": {
+                        "excubiaFinding/v1": "e928fb2597cd19128f12ad7b5fd9b9cbfe058984bf07ae1fd01d5c032dfcf15e"
+                    },
+                    "properties": {
+                        "severity": "critical",
+                        "status": "fail",
+                        "subject": "laravel/framework",
+                        "evidenceUrl": "https://endoflife.date/laravel"
+                    }
+                },
+                {
+                    "ruleId": "composer-advisories",
+                    "ruleIndex": 3,
+                    "level": "warning",
+                    "message": {
+                        "text": "laravel/framework: Known vulnerability PKSA-2y3q-xh2b-7vqk. Update laravel/framework to ≥ fixed version (PKSA-2y3q-xh2b-7vqk)."
+                    },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {
+                                    "uri": "composer.lock"
+                                },
+                                "region": {
+                                    "startLine": 1
+                                }
+                            }
+                        }
+                    ],
+                    "partialFingerprints": {
+                        "excubiaFinding/v1": "03196da51635453993c18e898509a354947c899a4d8ec76e05f8375d73546977"
+                    },
+                    "properties": {
+                        "severity": "medium",
+                        "status": "fail",
+                        "subject": "laravel/framework",
+                        "advisoryId": "PKSA-2y3q-xh2b-7vqk",
+                        "evidenceUrl": "https://github.com/advisories/GHSA-gv7v-rgg6-548h"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -33,7 +33,7 @@
 
 - **Eight health checks plus an upgrade plan** — EOL, advisories, abandoned/stale packages, next-major blockers, ordered upgrade plan
 - **Standalone CLI** — `vendor/bin/excubia` (no app boot) plus Artisan alias `php artisan excubia:check`
-- **Formats** — `table` (default), `json`, `markdown`
+- **Formats** — `table` (default), `json`, `markdown`, `sarif` (SARIF 2.1.0 for GitHub code scanning)
 - **CI-friendly** — `--fail-on`, exit codes, optional `--offline` cache
 - **Config** — project-root `excubia.json` with JSON Schema
 - **Push** — `excubia push` sends the report to your own self-hosted `excubia-app` (opt-in)
@@ -70,6 +70,7 @@ php artisan excubia:check
 vendor/bin/excubia check
 vendor/bin/excubia check --format=json
 vendor/bin/excubia check --format=markdown --output=report.md
+vendor/bin/excubia check --format=sarif --output=report.sarif
 vendor/bin/excubia check --fail-on=critical
 vendor/bin/excubia check --only=php-eol,composer-advisories
 vendor/bin/excubia check --skip=node-eol --no-dev
@@ -78,7 +79,7 @@ vendor/bin/excubia cache:clear
 vendor/bin/excubia --version
 ```
 
-Key options: `--format=table|json|markdown`, `--output=FILE`, `--fail-on=critical|high|medium|low|none` (default `high`), `--only` / `--skip`, `--no-dev`, `--offline`, `--no-cache`, `--config=FILE`, `--no-banner`, `-q` / `-v` / `-vv`.
+Key options: `--format=table|json|markdown|sarif`, `--output=FILE`, `--fail-on=critical|high|medium|low|none` (default `high`), `--only` / `--skip`, `--no-dev`, `--offline`, `--no-cache`, `--config=FILE`, `--no-banner`, `-q` / `-v` / `-vv`.
 
 ### Exit codes
 
@@ -166,6 +167,10 @@ Optional `excubia.json` at the project root (JSON Schema: [`excubia.schema.json`
 ```
 
 JSON report schema: [`docs/report-schema.json`](./docs/report-schema.json).
+
+### SARIF output
+
+`--format=sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log for GitHub code scanning. Each check id is a rule and each `fail` or `warn` finding is a result; `pass` and `skipped` rows are left out, and so is the upgrade plan. Levels: `critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`; the Excubia severity stays in `properties.severity`. The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `.nvmrc`, `.node-version` or `package.json`), relative to the scanned project, never an absolute path. `partialFingerprints` are built from the check id, subject and advisory id, so an alert keeps its identity across runs. `--fail-on` and the exit codes are the same as for the other formats.
 
 ## Privacy
 
