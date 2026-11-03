@@ -159,7 +159,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 - No telemetry, no analytics, no phone-home to qiick or any third party. The only exception is the opt-in push to the user's own `excubia-app` (section 13), which is off until the user configures an app URL and token.
 - Opt-in runtime monitoring (`runtime.enabled` in `excubia.json`, off by default, #75) sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs` and its `sampleRate` (`docs/runtime-schema.json`):
   - requests: route name (or `unnamed`), HTTP method, status class (`2xx`…);
-  - slow queries: SQL text without bindings, with quoted string literals replaced by `?`, and the connection name;
+  - slow queries: SQL text without bindings, with inline literals (single-quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name;
   - jobs: job class, queue and connection names, `processed` or `failed`;
   - scheduled tasks: description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it), secrets masked as in exception messages; `finished`, `failed` or `skipped`;
   - outgoing HTTP (Laravel's HTTP client): host and status class.

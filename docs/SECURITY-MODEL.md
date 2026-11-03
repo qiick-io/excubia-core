@@ -80,7 +80,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 
 | | |
 | --- | --- |
-| Collected | per UTC minute: requests (route name or `unnamed`, method, status class); slow queries (SQL without bindings, quoted literals as `?`, connection name); jobs (class, queue, connection, outcome); scheduled tasks (description, `artisan <command>` or `Closure`, paths relative, secrets masked as in exception messages, outcome); outgoing HTTP (host, status class). Each with `count`, `errorCount`, `totalMs`, `maxMs`, `sampleRate`. |
+| Collected | per UTC minute: requests (route name or `unnamed`, method, status class); slow queries (SQL without bindings, inline string, numeric, hex and dollar-quoted literals as `?`, connection name); jobs (class, queue, connection, outcome); scheduled tasks (description, `artisan <command>` or `Closure`, paths relative, secrets masked as in exception messages, outcome); outgoing HTTP (host, status class). Each with `count`, `errorCount`, `totalMs`, `maxMs`, `sampleRate`. |
 | Never collected | URLs, query strings, bodies, headers, cookies, users, IP addresses, bindings, exception messages, `.env` values, absolute paths. |
 | Stored | `storage/excubia/runtime/buffer.ndjson` and claimed `batch-<sequence>-<batchId>.ndjson` files, capped by `runtime.bufferMaxBytes` (default 1 MiB, oldest lines dropped first). Directory created `0775`, files follow the umask, like the rest of Laravel's `storage/`. |
 | Sent | `excubia:push-runtime` (scheduled every minute) → `POST {app.url}/api/runtime`, same transport and token as the report push. A batch is deleted only after a 2xx. |
@@ -139,7 +139,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Tampering** in CI through a fork PR | 8 | project code never runs; inputs via env; SHA-pinned actions | Excubia's own dependencies are resolved at run time (#111) |
 | **Repudiation** | 3–5 | `batchId`, `sentAt`, the app stores per project token | No signing of payloads (not needed for the user's own app) |
 | **Information disclosure**: secrets in exception messages | 5 | masking before buffering, fail-closed regexes, user patterns; hosts, Windows and UNC paths and every `Authorization` scheme masked (#104) | Host names in free text without a `host` keyword or URL, and secrets in forms no mask recognises; add `exceptions.maskPatterns` |
-| **Information disclosure**: values in SQL | 4, 5 | bindings never read; quoted literals masked | Inline numeric, hex and dollar-quoted literals survive (#106) |
+| **Information disclosure**: values in SQL | 4, 5 | bindings never read; inline string, numeric, hex and dollar-quoted literals masked (#106) | MySQL double-quoted strings stay, as they cannot be told apart from PostgreSQL / SQLite identifiers |
 | **Information disclosure**: secrets in scheduled task commands | 4 | paths relative; exception masks applied | Unrecognisable forms such as `-pSECRET` or positional arguments (#109) |
 | **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist; packages the lockfile does not show as served by Packagist or the public npm registry are never sent, nor names matching `privacy.skipPackages` (#108) | A private package the lockfile cannot tell apart (a private package on the public npm registry, or one served through Packagist) is sent unless `privacy.skipPackages` names it |
 | **Information disclosure**: token or credentials in logs | 1, 3 | headers never logged, URL credentials removed, no response bodies in messages | — |
@@ -163,7 +163,6 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 
 | Issue | Severity | Summary |
 | --- | --- | --- |
-| #106 | low | Slow-query SQL keeps numeric, hex and dollar-quoted literals |
 | #109 | low | Decide whether scheduled task names keep their arguments |
 | #110 | low | Warn when the project token is read from `excubia.json` |
 | #111 | low | GitHub Action resolves Excubia's dependencies unlocked at run time |
