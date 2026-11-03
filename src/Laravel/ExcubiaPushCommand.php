@@ -43,6 +43,6 @@ final class ExcubiaPushCommand extends Command
             ExcubiaCheckCommand::applicationBasePath($this->getLaravel()),
             ['config' => $configPath, 'strict' => (bool) $this->option('strict')],
             $this->output,
-        ));
+        ), $this->output);
     }
 }

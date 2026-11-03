@@ -80,7 +80,7 @@
                 "type": { "const": "slowQuery" },
                 "bucket": { "$ref": "#/$defs/bucket" },
                 "sampleRate": { "$ref": "#/$defs/sampleRate" },
-                "sql": { "type": "string", "minLength": 1, "description": "SQL text without bindings; quoted string literals are replaced by ?. At most 2000 characters." },
+                "sql": { "type": "string", "minLength": 1, "description": "SQL text without bindings; inline literals are replaced by ?: single-quoted strings, standalone numbers, hex literals (0x..., X'...') and dollar-quoted bodies ($$...$$, $tag$...$tag$). Placeholders ($1, ?), identifiers with digits (t1) and double-quoted or backtick-quoted identifiers stay. At most 2000 characters." },
                 "connection": { "type": "string", "description": "Laravel database connection name." },
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },

@@ -254,12 +254,32 @@ final class RuntimeCollectorService
     }
 
     /**
-     * SQL text without bindings. Quoted string literals written inline are
-     * masked too, because they can hold the same kind of data as bindings.
+     * SQL text without bindings. Literals written inline are masked too,
+     * because they can hold the same kind of data as bindings and each
+     * distinct value would be a new aggregate: dollar-quoted bodies
+     * (`$$…$$`, `$tag$…$tag$`), hex literals (`X'…'`, `0x…`), single-quoted
+     * strings and standalone numbers all become `?`. Placeholders (`?`,
+     * `$1`) and identifiers with digits (`t1`, `col_2`) stay. Double-quoted
+     * and backtick-quoted text is left alone, numbers included: it is an
+     * identifier on PostgreSQL, SQLite and MySQL.
      */
     public static function maskSql(string $sql): string
     {
-        $masked = preg_replace("/'(?:[^'\\\\]|\\\\.|'')*'/s", '?', $sql) ?? '?';
+        $masked = preg_replace(
+            [
+                '/\$([a-z_]\w*|)\$.*?\$\1\$/is',
+                "/\\bx'[0-9a-f]*'|\\b0x[0-9a-f]+\\b/i",
+                "/'(?:[^'\\\\]|\\\\.|'')*'/s",
+            ],
+            '?',
+            $sql,
+        );
+        $masked = $masked === null ? null : preg_replace_callback(
+            '/("(?:[^"]|"")*"|`(?:[^`]|``)*`)|(?<![\w$.])\d+(?:\.\d+)?(?![\w.])/',
+            static fn (array $matches): string => isset($matches[1]) && $matches[1] !== '' ? $matches[1] : '?',
+            $masked,
+        );
+        $masked ??= '?';
 
         return mb_strimwidth($masked, 0, self::MAX_SQL_LENGTH, '…');
     }
