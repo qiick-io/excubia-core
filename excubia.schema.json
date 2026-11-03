@@ -60,6 +60,28 @@
                             "type": "boolean"
                         }
                     }
+                },
+                "laravel-scheduler-heartbeat": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "staleAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn when the scheduler heartbeat written by excubia:heartbeat is older than this many minutes. Default 10."
+                        }
+                    }
+                },
+                "laravel-failed-jobs": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "highSeverityAfterHours": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Failed jobs warn at medium; at high once the oldest is older than this many hours. Default 24."
+                        }
+                    }
                 }
             }
         },

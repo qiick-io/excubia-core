@@ -57,6 +57,11 @@ arch('health checks use the check suffix')
     ->expect('Qiick\Excubia\Checks')
     ->toHaveSuffix('Check');
 
+arch('only src/Laravel uses illuminate, so the standalone CLI needs no Laravel runtime')
+    ->expect('Qiick\Excubia')
+    ->not->toUse('Illuminate')
+    ->ignoring('Qiick\Excubia\Laravel');
+
 arch('health checks only use contracts, data, enums, and services')
     ->expect('Qiick\Excubia\Checks')
     ->toOnlyUse([

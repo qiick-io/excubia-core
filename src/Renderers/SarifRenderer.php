@@ -29,6 +29,8 @@ final class SarifRenderer implements ReportRendererContract
     /**
      * Manifest each check reads its findings from. `node-eol` is resolved by
      * the caller because the Node declaration can live in several files.
+     * The `laravel-*` posture checks read the booted app, so they point at
+     * the standard Laravel file where the fix usually starts.
      */
     private const MANIFEST_BY_CHECK_ID = [
         'php-eol' => 'composer.json',
@@ -38,6 +40,12 @@ final class SarifRenderer implements ReportRendererContract
         'composer-stale' => 'composer.lock',
         'laravel-next-blocker' => 'composer.lock',
         'npm-advisories' => 'package-lock.json',
+        'laravel-debug-mode' => 'config/app.php',
+        'laravel-production-caches' => 'config/app.php',
+        'laravel-pending-migrations' => 'database/migrations',
+        'laravel-failed-jobs' => 'config/queue.php',
+        'laravel-scheduler-heartbeat' => 'routes/console.php',
+        'laravel-maintenance-mode' => 'config/app.php',
     ];
 
     /**

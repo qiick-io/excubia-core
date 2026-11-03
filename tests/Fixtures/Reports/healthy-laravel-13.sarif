@@ -71,6 +71,54 @@
                                 "text": "Next-major blockers"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-debug-mode",
+                            "name": "Debug mode",
+                            "shortDescription": {
+                                "text": "Debug mode"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-production-caches",
+                            "name": "Production caches",
+                            "shortDescription": {
+                                "text": "Production caches"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-pending-migrations",
+                            "name": "Pending migrations",
+                            "shortDescription": {
+                                "text": "Pending migrations"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-failed-jobs",
+                            "name": "Failed jobs",
+                            "shortDescription": {
+                                "text": "Failed jobs"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-scheduler-heartbeat",
+                            "name": "Scheduler heartbeat",
+                            "shortDescription": {
+                                "text": "Scheduler heartbeat"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-maintenance-mode",
+                            "name": "Maintenance mode",
+                            "shortDescription": {
+                                "text": "Maintenance mode"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

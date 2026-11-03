@@ -21,6 +21,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `isStrict` is the `strict` key: data-source failures exit 3 (`--strict`).
  * `isHealthEndpointEnabled` and `healthEndpointPath` are the `healthEndpoint`
  * keys read by the Laravel provider (`docs/health-endpoint.md`).
+ * The posture thresholds default to a scheduler heartbeat older than 10
+ * minutes and failed jobs older than 24 hours (high instead of medium).
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -51,6 +53,8 @@ final readonly class ExcubiaConfigurationData
         public bool $isStrict = false,
         public bool $isHealthEndpointEnabled = false,
         public string $healthEndpointPath = self::DEFAULT_HEALTH_ENDPOINT_PATH,
+        public int $schedulerHeartbeatStaleAfterMinutes = 10,
+        public int $failedJobHighSeverityAfterHours = 24,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -58,6 +62,14 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->phpWarnDaysBeforeEndOfLife < 0 || $this->laravelWarnDaysBeforeEndOfLife < 0) {
             throw new InvalidConfigurationException('warnDaysBeforeEol must be zero or greater.');
+        }
+
+        if ($this->schedulerHeartbeatStaleAfterMinutes < 1) {
+            throw new InvalidConfigurationException('staleAfterMinutes must be at least 1.');
+        }
+
+        if ($this->failedJobHighSeverityAfterHours < 1) {
+            throw new InvalidConfigurationException('highSeverityAfterHours must be at least 1.');
         }
 
         if ($this->cacheTtlHours < 0) {

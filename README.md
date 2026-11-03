@@ -206,6 +206,27 @@ Schedule::command('excubia:check --offline --fail-on=none --no-banner')->everyFi
 | `composer-abandoned` | Abandoned packages |
 | `composer-stale` | Stale packages |
 | `laravel-next-blocker` | Next-major blockers |
+| `laravel-debug-mode` | Debug mode (Artisan only) |
+| `laravel-production-caches` | Production caches (Artisan only) |
+| `laravel-pending-migrations` | Pending migrations (Artisan only) |
+| `laravel-failed-jobs` | Failed jobs (Artisan only) |
+| `laravel-scheduler-heartbeat` | Scheduler heartbeat (Artisan only) |
+| `laravel-maintenance-mode` | Maintenance mode (Artisan only) |
+
+The six `laravel-*` posture checks read the booted app, so they run only through `php artisan excubia:check` and `excubia:push`. In `vendor/bin/excubia` they are `skipped` with "requires Artisan". They report only booleans, counts, ages and names, never `.env` values, DSNs, hostnames or paths:
+
+| ID | Warns or fails when |
+| --- | --- |
+| `laravel-debug-mode` | `app.debug` is on outside `local` / `testing` (fail, high) |
+| `laravel-production-caches` | the config, route or event cache is missing in `production`, one row per cache (warn, low); skipped in other environments |
+| `laravel-pending-migrations` | migrations have not run (fail, medium) |
+| `laravel-failed-jobs` | failed jobs exist, with the count and the age of the oldest (warn, medium; high once the oldest is 24 hours old) |
+| `laravel-scheduler-heartbeat` | the scheduler has not run for more than 10 minutes, or never (warn, medium) |
+| `laravel-maintenance-mode` | the app is in maintenance mode (warn, medium) |
+
+Scheduler heartbeat: the service provider schedules `php artisan excubia:heartbeat` every minute. It stores the current Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store, the only thing the posture checks write. Your server only needs the usual `* * * * * php artisan schedule:run` cron (or `schedule:work`). Use a shared cache store (database, Redis) when the scheduler and `excubia:check` run on different machines.
+
+Thresholds live in `excubia.json`: `checks.laravel-scheduler-heartbeat.staleAfterMinutes` (default `10`) and `checks.laravel-failed-jobs.highSeverityAfterHours` (default `24`). Turn a check off with `--skip`, or accept one row with an ignore rule (subjects: `app.debug`, `config-cache`, `route-cache`, `event-cache`, `migrations`, `failed-jobs`, `scheduler`, `maintenance-mode`).
 
 Every report ends with an ordered upgrade plan (`upgrade-plan` section, info only, never affects the exit code, cannot be selected with `--only`/`--skip`).
 
@@ -225,7 +246,9 @@ Optional `excubia.json` at the project root (JSON Schema: [`excubia.schema.json`
     "composer-stale": { "staleAfterMonths": 24 },
     "php-eol": { "warnDaysBeforeEol": 180 },
     "laravel-eol": { "warnDaysBeforeEol": 180 },
-    "node-eol": { "enabled": true }
+    "node-eol": { "enabled": true },
+    "laravel-scheduler-heartbeat": { "staleAfterMinutes": 10 },
+    "laravel-failed-jobs": { "highSeverityAfterHours": 24 }
   },
   "ignore": [
     {
@@ -245,7 +268,7 @@ JSON report schema: [`docs/report-schema.json`](./docs/report-schema.json).
 
 ### SARIF output
 
-`--format=sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log for GitHub code scanning. Each check id is a rule and each `fail` or `warn` finding is a result; `pass` and `skipped` rows are left out, and so is the upgrade plan. Levels: `critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`; the Excubia severity stays in `properties.severity`. The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `.nvmrc`, `.node-version` or `package.json`), relative to the scanned project, never an absolute path. `partialFingerprints` are built from the check id, subject and advisory id, so an alert keeps its identity across runs. `--fail-on` and the exit codes are the same as for the other formats.
+`--format=sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log for GitHub code scanning. Each check id is a rule and each `fail` or `warn` finding is a result; `pass` and `skipped` rows are left out, and so is the upgrade plan. Levels: `critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`; the Excubia severity stays in `properties.severity`. The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `.nvmrc`, `.node-version` or `package.json`; for the `laravel-*` posture checks the Laravel file where the fix starts: `config/app.php`, `config/queue.php`, `database/migrations` or `routes/console.php`), relative to the scanned project, never an absolute path. `partialFingerprints` are built from the check id, subject and advisory id, so an alert keeps its identity across runs. `--fail-on` and the exit codes are the same as for the other formats.
 
 ## Privacy
 

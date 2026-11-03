@@ -18,7 +18,13 @@ qiick-io/excubia-core
 │   │   ├── NpmAdvisoriesCheck.php          (npm-advisories)
 │   │   ├── ComposerAbandonedCheck.php      (composer-abandoned)
 │   │   ├── ComposerStaleCheck.php          (composer-stale)
-│   │   └── LaravelNextMajorBlockerCheck.php (laravel-next-blocker)
+│   │   ├── LaravelNextMajorBlockerCheck.php (laravel-next-blocker)
+│   │   ├── LaravelDebugModeCheck.php       (laravel-debug-mode)           # posture checks: read the
+│   │   ├── LaravelProductionCachesCheck.php (laravel-production-caches)   # snapshot's laravelPosture,
+│   │   ├── LaravelPendingMigrationsCheck.php (laravel-pending-migrations) # skipped "requires Artisan"
+│   │   ├── LaravelFailedJobsCheck.php      (laravel-failed-jobs)          # when it is null
+│   │   ├── LaravelSchedulerHeartbeatCheck.php (laravel-scheduler-heartbeat)
+│   │   └── LaravelMaintenanceModeCheck.php (laravel-maintenance-mode)
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
@@ -49,6 +55,7 @@ qiick-io/excubia-core
 │   │   └── OhDearHealthRenderer.php         # Oh Dear health JSON (docs/health-endpoint.md)
 │   ├── Data/                                # readonly classes
 │   │   ├── ProjectSnapshotData.php
+│   │   ├── LaravelPostureData.php           # booted-app posture, set by the Artisan commands only
 │   │   ├── LockedPackageData.php
 │   │   ├── CheckResultData.php
 │   │   ├── FindingData.php
@@ -68,10 +75,12 @@ qiick-io/excubia-core
 │   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan aliases + opt-in health route
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute
 │   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
-│   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner
-│   │   └── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand
+│   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
+│   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
+│   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat
+│   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache)
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
 │       ├── LockfileNotFoundException.php
@@ -124,6 +133,7 @@ interface HealthCheckContract
 ```
 
 - Checks are pure apart from calls to `*ApiService` classes, which all go through `HttpClientContract` + `ResponseCacheService`.
+- Posture checks (#73) keep the same contract. Only the Artisan commands can see the booted app, so `ExcubiaCheckCommand` / `ExcubiaPushCommand` call `LaravelPostureService` and pass the resulting `LaravelPostureData` through `CheckCommand` to `HealthCheckRunnerService::run()`, which attaches it to the snapshot. Everything outside `src/Laravel/` stays free of `illuminate/*` (arch test), so `bin/excubia` loads no Laravel class and the posture is null there.
 - Network calls are batched (Packagist advisories accepts many packages per request; OSV `querybatch`).
 - Exit code is computed only from findings with status `fail`/`warn` whose severity ≥ `failOn`, after ignores. With `--strict` (or `strict: true`), a remaining `skipped` row with `skipReason` `data-source-failure` gives 3 when nothing gives 1 (precedence 2 > 1 > 3). Under `--offline` the runner marks data-source skips `offline`, so they never give 3.
 

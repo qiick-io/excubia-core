@@ -12,6 +12,7 @@ use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\HealthReportData;
+use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\ReportFormatEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
@@ -35,6 +36,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * `excubia check`. The Artisan alias calls `runWithOptions` so both entry
  * points share this command. The command does not boot the scanned project.
+ * The Artisan alias passes the posture it read from the booted app; the
+ * standalone CLI passes none, so the posture checks are skipped.
  */
 final class CheckCommand extends Command
 {
@@ -46,6 +49,7 @@ final class CheckCommand extends Command
         private readonly ?HttpClientContract $httpClient = null,
         private readonly ?DateTimeImmutable $today = null,
         private readonly ?Closure $reportListener = null,
+        private readonly ?LaravelPostureData $laravelPosture = null,
     ) {
         parent::__construct();
     }
@@ -190,6 +194,7 @@ final class CheckCommand extends Command
             $this->checkIds($options['skip'] ?? null),
             (bool) ($options['offline'] ?? false),
             (bool) ($options['no-cache'] ?? false),
+            $this->laravelPosture,
         );
 
         foreach ($result['expiredIgnoreWarnings'] as $warning) {
@@ -245,6 +250,8 @@ final class CheckCommand extends Command
             isStrict: $isStrict,
             isHealthEndpointEnabled: $loaded->isHealthEndpointEnabled,
             healthEndpointPath: $loaded->healthEndpointPath,
+            schedulerHeartbeatStaleAfterMinutes: $loaded->schedulerHeartbeatStaleAfterMinutes,
+            failedJobHighSeverityAfterHours: $loaded->failedJobHighSeverityAfterHours,
         );
     }
 
