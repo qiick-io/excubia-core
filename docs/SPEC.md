@@ -124,8 +124,8 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 
 ## 6. Supported versions
 
-- Runtime of the tool: PHP **^8.2** so it installs as a dev dependency in Laravel 11, 12 and 13 apps (D3; the qiick app skeleton is PHP 8.4/8.5, but a CLI must reach older projects). Pest and the CI test jobs run on PHP 8.3 and newer only. There is no PHP 8.2 Pest job.
-- Artisan integration: Laravel 11, 12, 13.
+- Runtime of the tool: PHP **^8.2** so it installs as a dev dependency in Laravel 12 and 13 apps (D3; the qiick app skeleton is PHP 8.4/8.5, but a CLI must reach older projects). Pest and the CI test jobs run on PHP 8.3 and newer only. There is no PHP 8.2 Pest job.
+- Artisan integration: Laravel 12, 13 (D19). Scanning Laravel 11 projects with the standalone CLI keeps working; they are reported as end of life.
 - Scanned projects: any Composer project; Laravel-specific checks are `skipped` when `laravel/framework` is not locked.
 - Lockfiles: `composer.lock` (Composer 2), `package-lock.json` lockfileVersion 2 and 3. `yarn.lock` / `pnpm-lock.yaml` are non-goals for v0.1.0.
 
@@ -196,6 +196,7 @@ These decisions are final. They extend section 10 and replace D2 where they disa
 16. **D16 Push, not pull:** projects push to the app with `excubia push` (section 13). The app never reads project directories and never polls projects. The push ships in v0.2.0 so `excubia-app` v0.1.0 can use it.
 17. **D17 Exceptions before 1.0.0:** opt-in exception capture (#77) ships before 1.0.0, with messages masked before sending.
 18. **D18 Health endpoint:** an opt-in endpoint compatible with the Oh Dear application health JSON (#74) is approved at low priority. It complements the push for external monitors; it is not the channel to `excubia-app`.
+19. **D19 Laravel 11 dropped (Luca, 2026-11-03):** the Artisan integration supports Laravel 12 and 13 from 1.0. Laravel 11 is past security support and Composer blocks its releases by default, so it cannot be tested in CI. The standalone CLI still scans Laravel 11 projects.
 
 ## 13. Push protocol (approved 2026-11-02)
 

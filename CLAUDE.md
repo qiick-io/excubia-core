@@ -13,7 +13,7 @@ Excubia is the open-source (MIT) health check for Laravel apps in the qiick suit
 
 ## Stack
 
-- PHP `^8.2` package floor (installs in Laravel 11–13 apps); Pest and CI run on PHP 8.3+.
+- PHP `^8.2` package floor (installs in Laravel 12–13 apps; Laravel 11 dropped by D19); Pest and CI run on PHP 8.3+.
 - `symfony/console`, `symfony/http-client`, `composer/semver`. No Guzzle, no Laravel runtime dependency (`illuminate/*` is only suggested).
 - Dev: Pest 4, Pint (pinned `<1.31`), PHPStan / Larastan. No npm, no Vitest, no `php artisan test`.
 

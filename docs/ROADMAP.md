@@ -1,7 +1,7 @@
 # Excubia — Roadmap
 
 Through v1.0.0, updated 2026-11-03. Sources of truth:
-- [`docs/SPEC.md`](SPEC.md): decisions D1–D18, push protocol in section 13.
+- [`docs/SPEC.md`](SPEC.md): decisions D1–D19, push protocol in section 13.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
 
 Issues labelled `needs-decision` are proposals, not approved work, even when they carry a milestone.
@@ -26,7 +26,7 @@ Priority labels: `priority:P0` blocks the beta, `P1` is required for the beta, `
 | v0.4.0 — health endpoint | #74 Oh Dear-compatible health endpoint (P3); #73 posture checks (`needs-decision`) | — |
 | v0.5.0 — runtime aggregates | #75 opt-in requests, jobs, scheduler, slow queries, outgoing HTTP (P1, part of #20) | v0.5.0: runtime cards |
 | v0.6.0 — exceptions | #77 opt-in exception capture with masking (P1) | v0.6.0: exceptions grouped into issues |
-| **v1.0.0-beta — contracts frozen** | #76 contract freeze (P0), #82 security review (P0), #83 Laravel 11–13 test matrix (P1), #84 versioning and support policy (P1), #85 user documentation (P1), #86 coverage gate (P2), #87 beta release checklist (P1) | excubia-app runs against the beta |
+| **v1.0.0-beta — contracts frozen** | #76 contract freeze (P0), #82 security review (P0), #83 Laravel 12–13 test matrix (P1), #84 versioning and support policy (P1), #85 user documentation (P1), #86 coverage gate (P2), #87 beta release checklist (P1) | excubia-app runs against the beta |
 | v1.0.0 — stable | #88 release checklist: no contract change since the beta, feedback triaged | v1.0.0: stable app |
 
 excubia-app milestones in between (v0.2.0 findings views, v0.3.0 alerts, v0.4.0 EOL calendar) do not need a new core version.
