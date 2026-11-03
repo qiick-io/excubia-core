@@ -35,6 +35,12 @@ The JSON report keeps `schemaVersion` `1`. New optional field: `skipReason` on e
 
 `--strict` (or `"strict": true`) makes a check that was skipped because a data source failed exit `3`. Without it nothing changes: such checks stay `skipped` and the exit code ignores them. Precedence is `2` > `1` > `3`.
 
+## Private packages are not checked (check)
+
+Excubia no longer sends the names of private packages to Packagist, OSV.dev or GitHub (#108). A package is private when the lockfile shows it was not served by Packagist or the public npm registry (path, artifact, VCS, Satis, Private Packagist, `file:`, links, workspace members, other registries), or when it matches `privacy.skipPackages`.
+
+`composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale` and `laravel-next-blocker` add one `skipped` row with subject `private packages` naming them, so a check that used to `pass` can now show `skipped`. It never fails and `--strict` ignores it (`skipReason` `not-applicable`). To accept the row, add an `ignore` rule with that subject. See [privacy](./privacy.md#private-packages).
+
 ## New `excubia.json` keys
 
 All optional, all off or unchanged by default. An existing 0.1.x file stays valid.
@@ -48,6 +54,7 @@ All optional, all off or unchanged by default. An existing 0.1.x file stays vali
 | `healthEndpoint` | [Health endpoint](./health-endpoint.md) |
 | `runtime` | [Runtime monitoring](./runtime-monitoring.md) |
 | `exceptions` | [Exception capture](./exception-capture.md) |
+| `privacy.skipPackages` | [Private packages](./privacy.md#private-packages) never sent to public data sources |
 
 New environment variables: `EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_HEALTH_SECRET`. Full reference: [configuration](./configuration.md).
 

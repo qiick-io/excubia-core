@@ -186,7 +186,7 @@ Unknown keys are a configuration error (exit `2`). Every key, type and default, 
 
 ## Privacy
 
-By default only package names and versions (and runtime versions) leave the machine, and only to the public data sources in the check table. No file contents, `.env` values, source code, paths or hostnames. No telemetry. Each opt-in that sends data to your own `excubia-app` is listed field by field in the [privacy guide](./docs/guides/privacy.md).
+By default only package names and versions (and runtime versions) leave the machine, and only to the public data sources in the check table. No file contents, `.env` values, source code, paths or hostnames. Private packages (path, VCS, Satis, Private Packagist, `file:` or other-registry origins in the lockfile, plus `privacy.skipPackages`) are never sent and show as `skipped`. No telemetry. Each opt-in that sends data to your own `excubia-app` is listed field by field in the [privacy guide](./docs/guides/privacy.md).
 
 ## Versioning and support
 

@@ -13,9 +13,16 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * The root package (the empty path) is the project, not a dependency.
  * Package names come from the entry's `name` when it is set, otherwise from
  * the last `node_modules/` segment so nested copies keep their own name.
+ *
+ * A package is public only when `resolved` is a tarball on the public npm
+ * registry. Links (`link: true`), `file:` and VCS dependencies, other
+ * registries and entries without `resolved` (workspace members) are
+ * private, so their names are never sent to OSV.
  */
 final class PackageLockParser
 {
+    private const NPM_REGISTRY_URL = 'https://registry.npmjs.org/';
+
     /**
      * @param  array<string, mixed>  $document
      * @param  list<string>  $directPackageNames
@@ -68,10 +75,25 @@ final class PackageLockParser
                 version: $version,
                 isDirectDependency: isset($direct[$name]),
                 isDevelopmentDependency: ($package['dev'] ?? false) === true || ($package['devOptional'] ?? false) === true,
+                isPrivate: $this->isPrivate($package),
             );
         }
 
         return $lockedPackages;
+    }
+
+    /**
+     * @param  array<mixed>  $package
+     */
+    private function isPrivate(array $package): bool
+    {
+        $resolved = $package['resolved'] ?? null;
+
+        if (($package['link'] ?? false) === true || ! is_string($resolved)) {
+            return true;
+        }
+
+        return ! str_starts_with($resolved, self::NPM_REGISTRY_URL);
     }
 
     private function nameFromPath(string $path): ?string

@@ -144,6 +144,22 @@
                 }
             }
         },
+        "privacy": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "What the checks may send to public data sources (Packagist, OSV.dev, GitHub). Packages the lockfile shows as not served by Packagist or the public npm registry (path, artifact, VCS, Satis, Private Packagist, file:, links, other registries) are never sent and are reported as skipped; this key adds more.",
+            "properties": {
+                "skipPackages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9@/._~*?-]+$"
+                    },
+                    "description": "Package name globs never sent to a public data source, for example \"acme/*\" or \"@acme/*\". * matches any characters (including /), ? exactly one; matching is case-insensitive and covers the whole name. Matching packages are reported as skipped. Default []."
+                }
+            }
+        },
         "healthEndpoint": {
             "type": "object",
             "additionalProperties": false,
