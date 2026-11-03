@@ -86,7 +86,7 @@ it('exits 2 for a missing lock, an unknown check, and a bad format', function ()
 it('skips when offline and clears the cache directory from config', function () {
     $cache = sys_get_temp_dir().'/excubia-cache-'.bin2hex(random_bytes(4));
     mkdir($cache);
-    file_put_contents($cache.'/cached.json', '{}');
+    file_put_contents($cache.'/'.hash('sha256', 'https://endoflife.date/api/php.json').'.json', '{}');
     $project = sys_get_temp_dir().'/excubia-project-'.bin2hex(random_bytes(4));
     mkdir($project);
     copy(outdatedProject().'/composer.json', $project.'/composer.json');
