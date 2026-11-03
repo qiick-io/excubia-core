@@ -13,6 +13,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 
@@ -46,7 +47,7 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
         $cycles = $this->endOfLifeApi->cyclesIfAvailable('laravel');
 
         if ($cycles === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'laravel/framework', 'endoflife.date did not respond.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'laravel/framework', 'endoflife.date did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
         $majorVersion = $this->majorVersion($projectSnapshot->laravelFrameworkVersion);

@@ -15,6 +15,7 @@ use Qiick\Excubia\Data\PackagistVersionData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\GitHubRepositoryApiService;
 use Qiick\Excubia\Services\PackagistApiService;
@@ -51,14 +52,14 @@ final class ComposerStaleCheck implements HealthCheckContract
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             $latest = $this->latestRelease($versions);
             $repository = $this->gitHubRepository($latest);
 
             if ($repository === false) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'GitHub did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'GitHub did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             if ($repository !== null && $repository->isArchived) {

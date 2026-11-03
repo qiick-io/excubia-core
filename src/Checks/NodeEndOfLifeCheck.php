@@ -14,6 +14,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 
@@ -66,7 +67,7 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
         $cycles = $this->endOfLifeApi->cyclesIfAvailable('nodejs');
 
         if ($cycles === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'node', 'endoflife.date did not respond.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'node', 'endoflife.date did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
         $cycle = $this->calendarDate->matchingCycle($majorVersion, $cycles);

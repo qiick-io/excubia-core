@@ -12,6 +12,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\ComposerConstraintService;
 use Qiick\Excubia\Services\PackagistApiService;
 
@@ -46,7 +47,7 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
         $advisories = $this->packagistApi->securityAdvisoriesIfAvailable($names);
 
         if ($advisories === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'composer', 'Packagist security advisories did not respond.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'composer', 'Packagist security advisories did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
         $findings = [];

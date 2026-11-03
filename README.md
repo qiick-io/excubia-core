@@ -76,11 +76,14 @@ vendor/bin/excubia check --fail-on=critical
 vendor/bin/excubia check --only=php-eol,composer-advisories
 vendor/bin/excubia check --skip=node-eol --no-dev
 vendor/bin/excubia check --offline
+vendor/bin/excubia check --strict
 vendor/bin/excubia cache:clear
 vendor/bin/excubia --version
 ```
 
-Key options: `--format=table|json|markdown|sarif`, `--output=FILE`, `--fail-on=critical|high|medium|low|none` (default `high`), `--only` / `--skip`, `--no-dev`, `--offline`, `--no-cache`, `--config=FILE`, `--no-banner`, `-q` / `-v` / `-vv`.
+Key options: `--format=table|json|markdown|sarif`, `--output=FILE`, `--fail-on=critical|high|medium|low|none` (default `high`), `--only` / `--skip`, `--no-dev`, `--offline`, `--no-cache`, `--config=FILE`, `--no-banner`, `--strict`, `-q` / `-v` / `-vv`.
+
+`--strict` (or `"strict": true` in `excubia.json`) exits `3` when a check was skipped because a data source failed (network down and no cache, or an API error), and prints which checks and data sources. Without it, those checks are only marked `skipped` and the exit code ignores them. Deliberate skips never exit `3`: `--offline` without a cached response, `--only` / `--skip`, Laravel checks on a non-Laravel project, a disabled check, or a row removed by an ignore rule. The flag can only turn strict mode on: `--strict` wins over `"strict": false`, and nothing on the command line turns `"strict": true` off.
 
 ### Exit codes
 
@@ -89,7 +92,11 @@ Key options: `--format=table|json|markdown|sarif`, `--output=FILE`, `--fail-on=c
 | `0` | No finding at or above `--fail-on` |
 | `1` | At least one finding at or above `--fail-on` |
 | `2` | Usage or configuration error (missing/broken `composer.lock`, invalid config, unknown check id) |
-| `3` | Reserved for data-source failure; not returned in 0.1.x — an unavailable data source marks the affected check `skipped`. |
+| `3` | Only with `--strict`: a check was skipped because a data source failed. Without `--strict` the check is marked `skipped` and the exit code ignores it. |
+
+When several apply, `2` wins over `1`, and `1` wins over `3`, so CI sees real findings first.
+
+In the JSON report every `skipped` finding carries `skipReason`: `data-source-failure`, `offline` (`--offline` found no cached response) or `not-applicable` (the check does not apply or is disabled). The field is optional and additive, so `schemaVersion` stays `1`.
 
 ## GitHub Action
 
@@ -165,7 +172,7 @@ Schedule::command('excubia:push')->daily();
     EXCUBIA_APP_TOKEN: ${{ secrets.EXCUBIA_APP_TOKEN }}
 ```
 
-Protocol: `POST {url}/api/reports` over HTTPS (plain HTTP only to localhost) with `Authorization: Bearer <token>`, same timeouts and retries as the data sources. The body is an envelope with `protocolVersion` (`1`), a unique `batchId` (a retried send is stored once), `sentAt` and the `report`; see [`docs/push-schema.json`](./docs/push-schema.json) and SPEC §13. Exit codes: `0` sent (findings do not change it), `2` configuration error (missing URL or token, insecure URL), `3` the app rejected the token or could not be reached.
+Protocol: `POST {url}/api/reports` over HTTPS (plain HTTP only to localhost) with `Authorization: Bearer <token>`, same timeouts and retries as the data sources. The body is an envelope with `protocolVersion` (`1`), a unique `batchId` (a retried send is stored once), `sentAt` and the `report`; see [`docs/push-schema.json`](./docs/push-schema.json) and SPEC §13. Exit codes: `0` sent (findings do not change it), `2` configuration error (missing URL or token, insecure URL), `3` the app rejected the token or could not be reached. `excubia push --strict` (or `"strict": true`) also exits `3` when a data source failure skipped a check, and then sends nothing, so the app never stores an incomplete report.
 
 ## Health checks
 
@@ -193,6 +200,7 @@ Optional `excubia.json` at the project root (JSON Schema: [`excubia.schema.json`
   "$schema": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
   "failOn": "high",
   "includeDev": true,
+  "strict": false,
   "checks": {
     "composer-stale": { "staleAfterMonths": 24 },
     "php-eol": { "warnDaysBeforeEol": 180 },

@@ -24,7 +24,8 @@ final class ExcubiaCheckCommand extends Command
         {--offline : Use the cache only}
         {--no-cache : Bypass the cache}
         {--config= : Config file}
-        {--no-banner : Hide the ASCII banner}';
+        {--no-banner : Hide the ASCII banner}
+        {--strict : Exit 3 when a data source failure skipped a check}';
 
     protected $description = 'Health checks for Laravel apps.';
 
@@ -41,6 +42,7 @@ final class ExcubiaCheckCommand extends Command
             'no-cache' => (bool) $this->option('no-cache'),
             'config' => $this->stringOption('config'),
             'no-banner' => (bool) $this->option('no-banner'),
+            'strict' => (bool) $this->option('strict'),
         ], $this->output);
     }
 

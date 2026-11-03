@@ -74,6 +74,10 @@
                 },
                 "advisoryId": {
                     "type": ["string", "null"]
+                },
+                "skipReason": {
+                    "description": "Present on skipped findings only. data-source-failure: a data source failed (network down and no cache, or an API error); --strict makes the command exit 3. offline: --offline found no cached response. not-applicable: the check does not apply to the project or is disabled. Neither offline nor not-applicable ever changes the exit code. Optional and additive, so schemaVersion stays 1.",
+                    "enum": ["data-source-failure", "offline", "not-applicable"]
                 }
             }
         },
