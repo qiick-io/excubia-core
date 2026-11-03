@@ -6,7 +6,7 @@ It does not replace your error tracker: your own reporting (log channels, Sentry
 
 ## Prerequisites
 
-- The package installed without `--dev`: `composer require qiick/excubia-core -W`.
+- The package installed without `--dev`: `composer require qiick/excubia-core`.
 - An `excubia-app` URL and project token, set up as in [Push to excubia-app](./excubia-app.md#2-configure).
 - The Laravel scheduler running (`schedule:run` from cron, or `schedule:work`).
 
@@ -73,7 +73,7 @@ Envelope: `protocolVersion` `1`, `type` `exceptions`, `batchId`, `sentAt` and `e
 
 Per group: class, fingerprint, masked message (at most 1000 characters), stack frames (relative file, line, function, in-app flag; never arguments or local variables), the classes of chained exceptions, the context, the environment (`app.env`), the count and the first and last seen times. Never request payloads, headers, cookies, users, IP addresses, query bindings, `.env` values or absolute paths.
 
-Built-in masking, applied before anything is written to disk: absolute paths, URL credentials and query strings, quoted SQL literals, database hosts, JWTs, bearer and basic credentials, `password=` / `token=` / `api_key=` style values, emails, IP addresses, UUIDs, long hex strings and API-key-like strings, card-like and long numbers. The exact rules are in the [privacy guide](./privacy.md#exception-capture).
+Built-in masking, applied before anything is written to disk: absolute paths (also Windows and UNC paths), URL credentials, hosts and query strings, host names in `host:` / `resolve host` phrases, quoted SQL literals, database hosts, JWTs, bearer and basic credentials, any other `Authorization` value, `password=` / `token=` / `api_key=` style values, emails, IP addresses, UUIDs, long hex strings and API-key-like strings, phone-like, social-security, card-like and long numbers. The exact rules are in the [privacy guide](./privacy.md#exception-capture).
 
 ## Turn it off
 

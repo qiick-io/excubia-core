@@ -135,6 +135,8 @@ Table output: grouped by severity, coloured (no colour when not a TTY or `NO_COL
 
 Optional top-level `"strict": true` is the same as `--strict` (section 4); default `false`.
 
+Optional `"privacy": { "skipPackages": ["acme/*", "@acme/*"] }` (#108): package name globs (`*` any characters including `/`, `?` exactly one, case-insensitive, whole name; no other glob syntax) that are never sent to a public data source, on top of the packages the lockfile already marks private (section 7). Default `[]`.
+
 Rules: every `ignore` entry needs a `reason`; an expired `until` makes the finding active again and prints a warning. Unknown keys are a config error (exit 2).
 
 ## 6. Supported versions
@@ -147,6 +149,12 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 ## 7. Security & privacy
 
 - Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs listed in section 3. No file contents, no `.env`, no source code, no paths, no hostnames.
+- **Private packages are never sent (#108, decided 2026-11-03).** Only packages the lockfile shows as served by the public registries are sent to Packagist, OSV.dev or GitHub:
+  - Composer: public only when the `composer.lock` entry has `notification-url` `https://packagist.org/downloads/` and its dist type is not `path` or `artifact`. Path and artifact dists, VCS repositories, Satis, Private Packagist (another `notification-url`) and entries without a `notification-url` are private.
+  - npm: public only when `resolved` starts with `https://registry.npmjs.org/` and the entry is not `link: true`. `file:` and VCS dependencies, links, workspace members (no `resolved`) and other registries are private.
+  - `privacy.skipPackages` globs (section 5) mark more packages private, for example a private package published on the public npm registry.
+
+  Each check that would send names (`composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`) adds one `skipped` row with subject `private packages`, `skipReason` `not-applicable` and the message "N private packages not sent to <source>: name, name." The names come from the local lockfile and stay in the report (they reach only the user's own `excubia-app` through the opt-in push); a check with no other finding reports `skipped`, never `fail`, so `--strict` and the exit code are unchanged.
 - No telemetry, no analytics, no phone-home to qiick or any third party. The only exception is the opt-in push to the user's own `excubia-app` (section 13), which is off until the user configures an app URL and token.
 - Opt-in runtime monitoring (`runtime.enabled` in `excubia.json`, off by default, #75) sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs` and its `sampleRate` (`docs/runtime-schema.json`):
   - requests: route name (or `unnamed`), HTTP method, status class (`2xx`…);
@@ -163,7 +171,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
   - `context`: `request` + route name (`unnamed` without one), `job` + job class, `command` + Artisan command name without arguments, or `unknown`;
   - `environment` (`app.env`), `count`, `firstSeen` and `lastSeen`.
 
-  **Masking (D17)**, applied before anything is written to the local buffer: first the user's `exceptions.maskPatterns` (→ `[masked]`), then absolute paths (project root removed, other paths reduced to the file name), URL credentials (removed) and query strings and fragments (→ `?[query]`), quoted SQL literals when the message carries SQL (→ `?`), database `Host` / `Socket` / `Port` / `Database` details (→ `[masked]`), JWTs (`[jwt]`), `Bearer` / `Basic` credentials (`[token]`), `password=`, `secret:`, `token=`, `api_key=`… values (`[masked]`), emails (`[email]`), IPv4 and IPv6 addresses (`[ip]`), UUIDs (`[uuid]`), hex strings of 32+ characters and 20+ character strings mixing letters and digits such as API keys (`[token]`), card-like runs of 13–19 digits and any number longer than four digits (`[number]`). Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. Never sent: request payloads, headers, cookies, users, IP addresses, query bindings, `.env` values or absolute paths.
+  **Masking (D17)**, applied before anything is written to the local buffer: first the user's `exceptions.maskPatterns` (→ `[masked]`), then absolute paths, also Windows drive and UNC paths (project root removed, other paths reduced to the file name), URL credentials (removed), URL hosts and ports (→ `[host]`) and query strings and fragments (→ `?[query]`), quoted SQL literals when the message carries SQL (→ `?`), database `Host` / `Socket` / `Port` / `Database` details (→ `[masked]`), JWTs (`[jwt]`), `Bearer` / `Basic` credentials (`[token]`), any other `Authorization` / `Proxy-Authorization` value (`[masked]`), host names after `host:`, `hostname=`, `resolve host` or `getaddrinfo for` (`[host]`), `password=`, `secret:`, `token=`, `api_key=`… values (`[masked]`), emails (`[email]`), IPv4 and IPv6 addresses (`[ip]`), UUIDs (`[uuid]`), hex strings of 32+ characters and 20+ character strings mixing letters and digits such as API keys (`[token]`), phone-like numbers (`+` and 8 or more digits), US social security numbers, card-like runs of 13–19 digits and any number longer than four digits (`[number]`). Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. Never sent: request payloads, headers, cookies, users, IP addresses, query bindings, `.env` values or absolute paths.
 - `GITHUB_TOKEN` is optional, read from the environment only, never printed or written to the cache or report.
 - The response cache defaults to a per-user directory in the system temp directory and is skipped when that directory is a symlink, owned by another user or writable by others. The threat model of every data path is `docs/SECURITY-MODEL.md`.
 - All HTTP over TLS with timeouts (connect 5 s, total 15 s) and limited retries with backoff; respects `HTTPS_PROXY`.

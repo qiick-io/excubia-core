@@ -35,9 +35,9 @@ final class ComposerAbandonedCheck implements HealthCheckContract
 
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData
     {
-        $findings = [];
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($projectSnapshot->composerPackages), 'Packagist');
 
-        foreach ($projectSnapshot->composerPackages as $package) {
+        foreach ($configuration->publicPackages($projectSnapshot->composerPackages) as $package) {
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {

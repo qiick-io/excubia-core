@@ -4,7 +4,7 @@ In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excu
 
 ## Prerequisites
 
-- The package installed without `--dev`: `composer require qiick/excubia-core -W`.
+- The package installed without `--dev`: `composer require qiick/excubia-core`.
 - An `excubia-app` URL and project token, set up as in [Push to excubia-app](./excubia-app.md#2-configure) (`EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` or `app` in `excubia.json`).
 - The Laravel scheduler running: `* * * * * php artisan schedule:run` from cron, or `php artisan schedule:work`.
 

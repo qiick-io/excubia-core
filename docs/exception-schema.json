@@ -61,7 +61,7 @@
                 "message": {
                     "type": "string",
                     "maxLength": 1000,
-                    "description": "Masked message, at most 1000 characters (a longer one is cut and ends with an ellipsis): emails, JWTs, bearer tokens, key=value secrets, API-key-like strings, UUIDs, long hex strings, card-like numbers, numbers longer than four digits, IP addresses, URL credentials and query strings, quoted SQL literals and database host details are replaced by placeholders ([email], [jwt], [token], [masked], [uuid], [number], [ip], ?[query]), then exceptions.maskPatterns matches by [masked]. Query errors carry the SQL without bindings. The first occurrence's message is kept."
+                    "description": "Masked message, at most 1000 characters (a longer one is cut and ends with an ellipsis): emails, JWTs, bearer tokens, key=value secrets, API-key-like strings, UUIDs, long hex strings, phone-like and card-like numbers, numbers longer than four digits, IP addresses, URL credentials, hosts and query strings, host names in host: phrases, Authorization values of any scheme, quoted SQL literals and database host details are replaced by placeholders ([email], [jwt], [token], [masked], [uuid], [number], [ip], [host], ?[query]); absolute paths (also Windows and UNC) become relative or a file name, then exceptions.maskPatterns matches by [masked]. Query errors carry the SQL without bindings. The first occurrence's message is kept."
                 },
                 "frames": {
                     "type": "array",

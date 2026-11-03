@@ -25,10 +25,15 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * minutes and failed jobs older than 24 hours (high instead of medium).
  * `runtime` is the opt-in runtime monitoring key (`RuntimeConfigurationData`),
  * `exceptions` the separate opt-in exception capture key (`ExceptionConfigurationData`).
+ * `skippedPackagePatterns` is `privacy.skipPackages`: globs (`*`, `?`) of
+ * package names that are never sent to a public data source, on top of the
+ * packages the lockfile already marks private.
  */
 final readonly class ExcubiaConfigurationData
 {
     public const DEFAULT_HEALTH_ENDPOINT_PATH = 'excubia/health';
+
+    private const PACKAGE_PATTERN_SYNTAX = '#^[A-Za-z0-9@/._~*?-]+$#';
 
     /**
      * @param  list<array{
@@ -38,6 +43,7 @@ final readonly class ExcubiaConfigurationData
      *     reason: string,
      *     until: string|null
      * }>  $ignoreRules
+     * @param  list<string>  $skippedPackagePatterns
      */
     public function __construct(
         public ?SeverityEnum $failOnSeverity,
@@ -59,6 +65,7 @@ final readonly class ExcubiaConfigurationData
         public int $failedJobHighSeverityAfterHours = 24,
         public RuntimeConfigurationData $runtime = new RuntimeConfigurationData,
         public ExceptionConfigurationData $exceptions = new ExceptionConfigurationData,
+        public array $skippedPackagePatterns = [],
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -87,6 +94,12 @@ final readonly class ExcubiaConfigurationData
         foreach ($this->ignoreRules as $ignoreRule) {
             $this->assertIgnoreRule($ignoreRule);
         }
+
+        foreach ($this->skippedPackagePatterns as $index => $pattern) {
+            if (preg_match(self::PACKAGE_PATTERN_SYNTAX, $pattern) !== 1) {
+                throw new InvalidConfigurationException('privacy.skipPackages['.$index.'] must be a package name glob: letters, digits, @ / . _ ~ - and the wildcards * and ?.');
+            }
+        }
     }
 
     public static function defaults(): self
@@ -102,6 +115,59 @@ final readonly class ExcubiaConfigurationData
             cacheDirectory: null,
             cacheTtlHours: 24,
         );
+    }
+
+    /**
+     * True when the package must not reach a public data source: the
+     * lockfile marks it private, or a `privacy.skipPackages` glob matches
+     * its name (case-insensitive; `*` also matches `/`).
+     */
+    public function isPrivatePackage(LockedPackageData $package): bool
+    {
+        if ($package->isPrivate) {
+            return true;
+        }
+
+        foreach ($this->skippedPackagePatterns as $pattern) {
+            $expression = '#^'.strtr(preg_quote($pattern, '#'), ['\*' => '.*', '\?' => '.']).'$#i';
+
+            if (preg_match($expression, $package->name) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The packages whose names may be sent to a public data source.
+     *
+     * @param  list<LockedPackageData>  $packages
+     * @return list<LockedPackageData>
+     */
+    public function publicPackages(array $packages): array
+    {
+        return array_values(array_filter($packages, fn (LockedPackageData $package): bool => ! $this->isPrivatePackage($package)));
+    }
+
+    /**
+     * Unique names of the packages kept away from public data sources, in
+     * lockfile order. They stay in the local report only.
+     *
+     * @param  list<LockedPackageData>  $packages
+     * @return list<string>
+     */
+    public function privatePackageNames(array $packages): array
+    {
+        $names = [];
+
+        foreach ($packages as $package) {
+            if ($this->isPrivatePackage($package)) {
+                $names[$package->name] = $package->name;
+            }
+        }
+
+        return array_values($names);
     }
 
     /**

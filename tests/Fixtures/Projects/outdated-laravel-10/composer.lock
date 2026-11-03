@@ -2,7 +2,8 @@
     "packages": [
         {
             "name": "laravel/framework",
-            "version": "v10.48.22"
+            "version": "v10.48.22",
+            "notification-url": "https://packagist.org/downloads/"
         }
     ],
     "packages-dev": [],
