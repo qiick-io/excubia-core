@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Configuration;
 
+use Qiick\Excubia\Data\ExceptionConfigurationData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -43,7 +44,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -73,7 +74,47 @@ final class ExcubiaConfigurationLoader
             schedulerHeartbeatStaleAfterMinutes: $checks['schedulerHeartbeatStaleAfterMinutes'],
             failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
             runtime: $this->runtime($document['runtime'] ?? []),
+            exceptions: $this->exceptions($document['exceptions'] ?? []),
         );
+    }
+
+    /**
+     * Opt-in exception capture (`docs/exception-schema.json`), independent of
+     * `runtime`. The app URL and token are the shared `app` keys.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function exceptions(mixed $exceptions): ExceptionConfigurationData
+    {
+        if (! is_array($exceptions)) {
+            throw new InvalidConfigurationException('exceptions must be an object.');
+        }
+
+        $this->rejectUnknownKeys($exceptions, ['enabled', 'maskPatterns', 'ignore', 'bufferMaxBytes'], 'exceptions');
+
+        return new ExceptionConfigurationData(
+            isEnabled: array_key_exists('enabled', $exceptions) ? $this->boolean($exceptions['enabled'], 'exceptions.enabled') : false,
+            maskPatterns: $this->stringList($exceptions['maskPatterns'] ?? [], 'exceptions.maskPatterns'),
+            ignoredClasses: array_map(static fn (string $class): string => ltrim($class, '\\'), $this->stringList($exceptions['ignore'] ?? [], 'exceptions.ignore')),
+            bufferMaxBytes: array_key_exists('bufferMaxBytes', $exceptions) ? $this->integer($exceptions['bufferMaxBytes'], 'exceptions.bufferMaxBytes') : ExceptionConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function stringList(mixed $value, string $label): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new InvalidConfigurationException($label.' must be a list of strings.');
+        }
+
+        foreach ($value as $index => $item) {
+            $this->requiredString($item, $label.'['.$index.']');
+        }
+
+        /** @var list<string> $value */
+        return $value;
     }
 
     /**

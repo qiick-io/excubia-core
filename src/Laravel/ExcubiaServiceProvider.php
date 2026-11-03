@@ -14,14 +14,16 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * Registers `php artisan excubia:check`, `excubia:push`, `excubia:heartbeat` and
  * `excubia:push-runtime` when this package is installed in a Laravel app, schedules
  * the heartbeat every minute for the `laravel-scheduler-heartbeat` check, and
- * registers the opt-in health endpoint and the opt-in runtime monitoring. The
- * provider does not boot the scanned project.
+ * registers the opt-in health endpoint, the opt-in runtime monitoring and the
+ * opt-in exception capture. The provider does not boot the scanned project.
  *
  * The endpoint route exists only when `excubia.json` has `healthEndpoint.enabled: true` and
  * `EXCUBIA_HEALTH_SECRET` is set; enabled without a secret, the route is not registered.
  * Runtime listeners and the every-minute `excubia:push-runtime` schedule exist only when
- * `runtime.enabled` is true; otherwise nothing is listened to and nothing runs.
- * An invalid `excubia.json` disables both: booting the app never fails on Excubia config.
+ * `runtime.enabled` is true. The `reportable()` callback on the exception handler and its
+ * context listeners exist only when `exceptions.enabled` is true; `excubia:push-runtime` is
+ * scheduled when either is on. Otherwise nothing is listened to and nothing runs.
+ * An invalid `excubia.json` disables all of them: booting the app never fails on Excubia config.
  *
  * ponytail: this reads `excubia.json` once per boot (one small file); with
  * `route:cache` the route is baked into the cache when it is built.
@@ -49,6 +51,8 @@ final class ExcubiaServiceProvider extends ServiceProvider
 
         $this->registerHealthEndpoint($configuration);
         $this->registerRuntimeMonitoring($configuration);
+        $this->registerExceptionCapture($configuration);
+        $this->schedulePushRuntime($configuration);
     }
 
     private function configuration(): ?ExcubiaConfigurationData
@@ -78,6 +82,26 @@ final class ExcubiaServiceProvider extends ServiceProvider
         }
 
         RuntimeCollectorService::register($this->app, $configuration->runtime);
+    }
+
+    private function registerExceptionCapture(ExcubiaConfigurationData $configuration): void
+    {
+        if (! $configuration->exceptions->isEnabled) {
+            return;
+        }
+
+        ExceptionCollectorService::register($this->app, $configuration->exceptions);
+    }
+
+    /**
+     * One every-minute `excubia:push-runtime` sends both buffers, so it is
+     * scheduled when either opt-in is on.
+     */
+    private function schedulePushRuntime(ExcubiaConfigurationData $configuration): void
+    {
+        if (! $configuration->runtime->isEnabled && ! $configuration->exceptions->isEnabled) {
+            return;
+        }
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
             $schedule->command('excubia:push-runtime')->everyMinute();

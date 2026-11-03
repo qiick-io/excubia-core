@@ -39,8 +39,8 @@ qiick-io/excubia-core
 │   │   ├── PackagistApiService.php          # metadata + security advisories
 │   │   ├── GitHubRepositoryApiService.php   # archived flag, last push
 │   │   ├── OsvApiService.php                # OSV.dev batch query
-│   │   ├── ReportPushService.php            # push envelopes to excubia-app: report + runtime batch (SPEC §13)
-│   │   ├── RuntimeBufferService.php         # size-capped NDJSON buffer + claimed batch files (storage/excubia/runtime/)
+│   │   ├── ReportPushService.php            # push envelopes to excubia-app: report, runtime batch, exception batch (SPEC §13)
+│   │   ├── RuntimeBufferService.php         # size-capped NDJSON buffer + claimed batch files (storage/excubia/runtime/ and storage/excubia/exceptions/)
 │   │   ├── HealthResultStoreService.php     # last Oh Dear health payload (storage/excubia/health.json)
 │   │   └── ResponseCacheService.php         # file cache with TTL, offline mode
 │   ├── Parsers/
@@ -63,7 +63,8 @@ qiick-io/excubia-core
 │   │   ├── HealthReportData.php
 │   │   ├── UpgradeStepData.php
 │   │   ├── ExcubiaConfigurationData.php
-│   │   └── RuntimeConfigurationData.php     # runtime key: switches, sample rates, threshold, buffer cap
+│   │   ├── RuntimeConfigurationData.php     # runtime key: switches, sample rates, threshold, buffer cap
+│   │   └── ExceptionConfigurationData.php   # exceptions key: switch, mask patterns, ignored classes, buffer cap
 │   ├── Enums/
 │   │   ├── SeverityEnum.php                 # critical..info, comparable
 │   │   ├── FindingStatusEnum.php            # pass|warn|fail|skipped
@@ -78,13 +79,15 @@ qiick-io/excubia-core
 │   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, opt-in runtime listeners + excubia:push-runtime schedule
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
 │   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
 │   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
 │   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
 │   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat
-│   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → RuntimeBufferService + ReportPushService
+│   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → both buffers + ReportPushService
 │   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
+│   │   ├── ExceptionCollectorService.php    # reportable() callback, context (job/route/command), in-memory groups, flush
+│   │   ├── ExceptionPayloadService.php      # masking, relative frames, fingerprint, group merge (pure)
 │   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache)
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
@@ -93,7 +96,7 @@ qiick-io/excubia-core
 ├── tests/{Unit,Feature,Arch,Fixtures}
 ├── excubia.schema.json                      # JSON Schema of the config file
 ├── action.yml                               # composite GitHub Action: SARIF upload to code scanning (v0.3.0, D6)
-├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,runtime-schema.json,checks/*.md}
+├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,runtime-schema.json,exception-schema.json,checks/*.md}
 └── .github/workflows/ci.yml                 # calls qiick-io/.github reusable workflow
 ```
 
@@ -136,6 +139,25 @@ flowchart LR
 - `runtime.enabled: false` (the default) means the provider registers no listener, no terminating callback and no schedule.
 - Every listener and the flush catch `Throwable`: a broken buffer directory never reaches the host app. Nothing is sent from a request.
 - Buffer writes, claims and trims hold one `flock` on `storage/excubia/runtime/.lock`. Over `runtime.bufferMaxBytes`, whole lines are dropped from the oldest file first. A claimed batch keeps its `batchId` in its file name until the app answers 2xx.
+
+### Exception capture (opt-in, #77)
+
+```mermaid
+flowchart LR
+  APPEX[app reports an exception] --> HANDLER[Laravel exception handler]
+  HANDLER -->|reportable, returns nothing| COLX[ExceptionCollectorService]
+  HANDLER --> OWN[app's own reporting, unchanged]
+  COLX -->|mask, frames, fingerprint| PAY[ExceptionPayloadService]
+  COLX -->|terminating / queue Looping / 100 groups| BUFX[RuntimeBufferService: storage/excubia/exceptions/]
+  SCHED2[scheduler, every minute] --> PRT2[excubia:push-runtime]
+  PRT2 -->|claim, merge groups| PUSHX[ReportPushService::pushExceptions]
+  PUSHX -->|POST /api/exceptions| APP2[excubia-app]
+```
+
+- `exceptions.enabled` is its own switch: with it off nothing is added to the handler and no listener exists, whatever `runtime.enabled` says. `excubia:push-runtime` is scheduled when either is on and sends each enabled buffer; a failure on one does not stop the other.
+- The callback returns nothing (a `false` would stop the app's own reporting) and every step catches `Throwable`.
+- Context comes from `JobExceptionOccurred` / `JobFailed` (a `WeakMap` keyed by the exception), the matched route, or `CommandStarting` / `CommandFinished` (the last failed command covers uncaught command exceptions, which the console kernel reports after `CommandFinished`).
+- Masking happens before the buffer write, so no unmasked message ever reaches disk. The exception buffer reuses `RuntimeBufferService` (same lock, cap and batch files) on its own directory and is read with `readEntries()` plus `ExceptionPayloadService::merge()`.
 
 ## 3. Key contracts
 

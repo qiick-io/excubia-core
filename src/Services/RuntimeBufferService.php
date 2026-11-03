@@ -8,7 +8,10 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
 /**
  * Local, size-capped buffer of runtime aggregates (`docs/runtime-schema.json`)
- * between the Laravel collector and `excubia:push-runtime`.
+ * between the Laravel collector and `excubia:push-runtime`. Exception capture
+ * uses a second instance on its own directory (`storage/excubia/exceptions/`)
+ * with the same files, lock, cap and batch ids, and reads it with
+ * `readEntries()`.
  *
  * Layout of the directory (`storage/excubia/runtime/` in a Laravel app):
  *
@@ -118,24 +121,36 @@ final class RuntimeBufferService
      */
     public function read(string $batchPath): array
     {
+        return self::merge(array_values(array_filter($this->readEntries($batchPath), self::isAggregate(...))));
+    }
+
+    /**
+     * Every JSON object line of one batch file, unmerged. Exception capture
+     * stores its groups in a buffer of its own and merges them itself.
+     * Lines that are not JSON objects are skipped.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function readEntries(string $batchPath): array
+    {
         $contents = is_file($batchPath) ? file_get_contents($batchPath) : false;
 
         if ($contents === false) {
             return [];
         }
 
-        $aggregates = [];
+        $entries = [];
 
         foreach (explode("\n", $contents) as $line) {
-            $aggregate = $line === '' ? null : json_decode($line, true);
+            $entry = $line === '' ? null : json_decode($line, true);
 
-            if (is_array($aggregate) && self::isAggregate($aggregate)) {
-                /** @var array<string, mixed> $aggregate */
-                $aggregates[] = $aggregate;
+            if (is_array($entry) && ! array_is_list($entry)) {
+                /** @var array<string, mixed> $entry */
+                $entries[] = $entry;
             }
         }
 
-        return self::merge($aggregates);
+        return $entries;
     }
 
     /**

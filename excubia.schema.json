@@ -209,6 +209,38 @@
                     "description": "Calls made with Laravel's HTTP client: host, status class, duration."
                 }
             }
+        },
+        "exceptions": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Opt-in exception capture for your excubia-app (docs/exception-schema.json), independent of runtime. Off by default; when off the Laravel provider registers nothing on the exception handler. Reported exceptions are masked, grouped by fingerprint, buffered under storage/excubia/exceptions/ and sent every minute by php artisan excubia:push-runtime to POST {app.url}/api/exceptions with the app token (EXCUBIA_APP_URL / EXCUBIA_APP_TOKEN win). The app's own exception reporting is never changed.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Turn exception capture on. Default false."
+                },
+                "maskPatterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "description": "Extra PCRE patterns with delimiters, for example \"/ORD-[0-9]+/\". Matches in exception messages become [masked], before the built-in masking. Default []."
+                },
+                "ignore": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "description": "Exception classes never captured, subclasses included, for example \"App\\\\Exceptions\\\\PaymentDeclinedException\". Exceptions the app does not report (dontReport) are never captured either. Default []."
+                },
+                "bufferMaxBytes": {
+                    "type": "integer",
+                    "minimum": 4096,
+                    "description": "Size cap of the local exception buffer; the oldest entries are dropped first. Default 1048576 (1 MiB)."
+                }
+            }
         }
     },
     "$defs": {
