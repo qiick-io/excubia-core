@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
     "title": "Excubia push envelope",
-    "description": "Protocol version 1 of the body that excubia push sends to POST {appUrl}/api/reports with Authorization: Bearer <project token>. The app stores a repeated batchId once. Runtime batches (php artisan excubia:push-runtime) use the same protocol version with type runtime and a runtime payload instead of report, sent to POST {appUrl}/api/runtime: see $defs.runtimeEnvelope and docs/runtime-schema.json. Frozen at 1.0.0.",
+    "description": "Protocol version 1 of the body that excubia push sends to POST {appUrl}/api/reports with Authorization: Bearer <project token>. The app stores a repeated batchId once. Runtime batches (php artisan excubia:push-runtime) use the same protocol version with type runtime and a runtime payload instead of report, sent to POST {appUrl}/api/runtime: see $defs.runtimeEnvelope and docs/runtime-schema.json. Exception batches (same command) use type exceptions and an exceptions payload, sent to POST {appUrl}/api/exceptions: see $defs.exceptionsEnvelope and docs/exception-schema.json. Frozen at 1.0.0.",
     "type": "object",
     "additionalProperties": false,
     "required": ["protocolVersion", "batchId", "sentAt", "report"],
@@ -23,7 +23,7 @@
     "$defs": {
         "batchId": {
             "type": "string",
-            "description": "Random UUID version 4, new for every run (report) or every claimed buffer (runtime). A retry of the same send keeps it.",
+            "description": "Random UUID version 4, new for every run (report) or every claimed buffer (runtime, exceptions). A retry of the same send keeps it.",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
         "sentAt": {
@@ -51,6 +51,29 @@
                 },
                 "runtime": {
                     "$ref": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json"
+                }
+            }
+        },
+        "exceptionsEnvelope": {
+            "type": "object",
+            "description": "Body of POST {appUrl}/api/exceptions. A batch the app did not acknowledge with 2xx is sent again with the same batchId.",
+            "additionalProperties": false,
+            "required": ["protocolVersion", "type", "batchId", "sentAt", "exceptions"],
+            "properties": {
+                "protocolVersion": {
+                    "const": 1
+                },
+                "type": {
+                    "const": "exceptions"
+                },
+                "batchId": {
+                    "$ref": "#/$defs/batchId"
+                },
+                "sentAt": {
+                    "$ref": "#/$defs/sentAt"
+                },
+                "exceptions": {
+                    "$ref": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json"
                 }
             }
         }

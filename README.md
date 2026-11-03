@@ -38,6 +38,7 @@
 - **GitHub Action** — `qiick-io/excubia-core@v1` uploads findings to GitHub code scanning
 - **Config** — project-root `excubia.json` with JSON Schema
 - **Push** — `excubia push` sends the report to your own self-hosted `excubia-app` (opt-in)
+- **Runtime monitoring and exception capture** — separate opt-ins for Laravel apps, sent to your `excubia-app`, masked and never slowing the app down
 
 **Non-goals (v0.1.x):** no web scanner yet (planned v0.2.0), no uptime or runtime monitoring yet (Phase B, planned as opt-in inside excubia-core), no auto-fix of the scanned project, no source-code analysis, no telemetry.
 
@@ -201,6 +202,30 @@ Only `runtime.enabled` is needed; the other keys show the defaults. `sampleRate`
 
 What is sent: route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with quoted literals replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions or `artisan <command>`, with paths made relative; the host of outgoing calls. Never URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
 
+## Exception capture
+
+In a Laravel app, Excubia can also send the exceptions your app reports to your own `excubia-app`, grouped by fingerprint. It is a **separate opt-in, off by default**, and works with runtime monitoring on or off; while it is off, nothing is registered on the exception handler.
+
+```json
+{
+  "app": { "url": "https://excubia.example.com" },
+  "exceptions": {
+    "enabled": true,
+    "maskPatterns": ["/ORD-[0-9]+/"],
+    "ignore": ["App\\Exceptions\\PaymentDeclinedException"],
+    "bufferMaxBytes": 1048576
+  }
+}
+```
+
+Only `exceptions.enabled` is needed. `maskPatterns` are extra regular expressions whose matches become `[masked]`; `ignore` lists exception classes (and subclasses) never captured. Exceptions your app does not report (`dontReport`) are never captured either.
+
+- Excubia adds one `reportable()` callback to Laravel's exception handler. It returns nothing, so your own reporting (log channels, Sentry, Flare, other callbacks) runs exactly as before, and an error inside Excubia never reaches your app.
+- Each occurrence is masked, grouped in memory and written to `storage/excubia/exceptions/` when the request, command or job loop ends. The same every-minute `php artisan excubia:push-runtime` sends it to `POST {url}/api/exceptions` (envelope `protocolVersion` `1`, `type` `exceptions`, [`docs/exception-schema.json`](./docs/exception-schema.json)) with the same retries, `batchId` reuse and exit codes as the runtime batches.
+- The fingerprint is a sha256 of the class and the in-app stack frames (file relative to the project and `Class::method`, without line numbers), so moving code does not split a group; vendor frames are ignored.
+
+What is sent per group: class, fingerprint, masked message, stack frames (relative file, line, function, in-app flag; never arguments or local variables), the classes of chained exceptions, the context (route name, job class or Artisan command name), the environment, the count and first and last seen times. Messages are masked before they are written to disk: emails, JWTs, bearer tokens, `password=` / `token=` / `api_key=` values, API-key-like strings, UUIDs, card-like and long numbers, IP addresses, URL credentials and query strings, quoted SQL literals, database hosts and absolute paths become placeholders. Never request payloads, headers, cookies, users, IP addresses, `.env` values or absolute paths. The full list is SPEC §7.
+
 ## Health endpoint (Oh Dear)
 
 In a Laravel app, Excubia can serve its latest result in the [Oh Dear application health](https://ohdear.app/docs/features/application-health-monitoring) JSON format (also read by monitors built for `spatie/laravel-health`). It is off by default.
@@ -299,7 +324,7 @@ JSON report schema: [`docs/report-schema.json`](./docs/report-schema.json).
 
 ## Privacy
 
-Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. The only other destination is your own `excubia-app`, and only when you run `excubia push` or turn on [runtime monitoring](#runtime-monitoring) (aggregated route, job, task and host names, durations, counts and SQL without bindings; the list above is exhaustive); the project token is never printed, cached or written to a report. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
+Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. The only other destination is your own `excubia-app`, and only when you run `excubia push` or turn on [runtime monitoring](#runtime-monitoring) (aggregated route, job, task and host names, durations, counts and SQL without bindings; the list above is exhaustive) or [exception capture](#exception-capture) (class, fingerprint, masked message, relative stack frames without arguments, context and counts; masked before it is written to disk); the project token is never printed, cached or written to a report. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
 
 ## Versioning and support
 

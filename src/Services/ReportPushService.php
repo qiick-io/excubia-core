@@ -13,7 +13,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Renderers\JsonReportRenderer;
 
 /**
- * Sends a report, or a batch of runtime aggregates, to the user's own
+ * Sends a report, a batch of runtime aggregates or a batch of exception
+ * groups to the user's own
  * `excubia-app` (`docs/SPEC.md` section 13).
  *
  * The envelope (`docs/push-schema.json`) carries a fresh `batchId`, so a
@@ -32,6 +33,10 @@ final class ReportPushService
     public const RUNTIME_TYPE = 'runtime';
 
     public const RUNTIME_BUCKET_SECONDS = 60;
+
+    public const EXCEPTIONS_PATH = '/api/exceptions';
+
+    public const EXCEPTIONS_TYPE = 'exceptions';
 
     public function __construct(private readonly HttpClientContract $httpClient) {}
 
@@ -86,6 +91,35 @@ final class ReportPushService
             'runtime' => [
                 'bucketSeconds' => self::RUNTIME_BUCKET_SECONDS,
                 'aggregates' => $aggregates,
+            ],
+        ], $appUrl, $appToken);
+    }
+
+    /**
+     * Send one batch of exception groups (`docs/exception-schema.json`) to
+     * `POST {url}/api/exceptions`, with the same envelope rules as runtime
+     * batches: the caller owns the batch id and resends it unchanged.
+     *
+     * @param  list<array<string, mixed>>  $groups
+     *
+     * @throws InvalidConfigurationException when the URL or token is missing, or the URL is not HTTPS
+     * @throws DataSourceUnavailableException when the app rejects the token or does not accept the batch
+     */
+    public function pushExceptions(
+        array $groups,
+        string $batchId,
+        ?string $appUrl,
+        #[\SensitiveParameter]
+        ?string $appToken,
+        DateTimeImmutable $sentAt,
+    ): void {
+        $this->send(self::EXCEPTIONS_PATH, 'the exception batch', [
+            'protocolVersion' => self::PROTOCOL_VERSION,
+            'type' => self::EXCEPTIONS_TYPE,
+            'batchId' => $batchId,
+            'sentAt' => self::sentAt($sentAt),
+            'exceptions' => [
+                'groups' => $groups,
             ],
         ], $appUrl, $appToken);
     }

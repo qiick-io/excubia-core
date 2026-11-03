@@ -1,0 +1,106 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
+    "title": "Excubia exception batch",
+    "description": "The exceptions payload of a push envelope with type exceptions (docs/push-schema.json, $defs.exceptionsEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/exceptions when exceptions.enabled is true. One entry per occurrence group: occurrences with the same fingerprint, context and environment within the batch are merged. Groups are additive: the app adds count and widens firstSeen / lastSeen for the same fingerprint, also across batches. Masked before it is written to the local buffer; nothing else is sent: no request payloads, headers, cookies, users, IP addresses, stack arguments, local variables, .env values or absolute paths.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["groups"],
+    "properties": {
+        "groups": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/group" }
+        }
+    },
+    "$defs": {
+        "timestamp": {
+            "type": "string",
+            "description": "UTC time, Y-m-d\\TH:i:s\\Z.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "className": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Fully qualified class name. Anonymous classes are reported as Parent@anonymous, without their file path."
+        },
+        "frame": {
+            "type": "object",
+            "description": "One stack frame, innermost first: the file and line where the code ran and the function it ran in. Never arguments or local variables.",
+            "additionalProperties": false,
+            "required": ["file", "line", "function", "inApp"],
+            "properties": {
+                "file": {
+                    "type": ["string", "null"],
+                    "description": "Path relative to the project root (vendor/<package>/... for dependencies), the bare file name for a file outside the project, null for internal frames. Never absolute."
+                },
+                "line": {
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                },
+                "function": {
+                    "type": ["string", "null"],
+                    "description": "Class::method or function name; {closure:...} without its line; null for the top-level script."
+                },
+                "inApp": {
+                    "type": "boolean",
+                    "description": "True for project code: inside the project root and not under vendor/."
+                }
+            }
+        },
+        "group": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["class", "fingerprint", "message", "frames", "previous", "context", "environment", "count", "firstSeen", "lastSeen"],
+            "properties": {
+                "class": { "$ref": "#/$defs/className" },
+                "fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "sha256 of the class and the in-app frames as file|function lines, without line numbers (the top frame when there is no in-app frame). Stable across edits that only move code; the app groups issues by it."
+                },
+                "message": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "description": "Masked message, at most 1000 characters (a longer one is cut and ends with an ellipsis): emails, JWTs, bearer tokens, key=value secrets, API-key-like strings, UUIDs, long hex strings, card-like numbers, numbers longer than four digits, IP addresses, URL credentials and query strings, quoted SQL literals and database host details are replaced by placeholders ([email], [jwt], [token], [masked], [uuid], [number], [ip], ?[query]), then exceptions.maskPatterns matches by [masked]. Query errors carry the SQL without bindings. The first occurrence's message is kept."
+                },
+                "frames": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "description": "The first occurrence's stack, innermost first, at most 50 frames.",
+                    "items": { "$ref": "#/$defs/frame" }
+                },
+                "previous": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "description": "Classes of the previous exceptions in the chain, nearest first. No messages.",
+                    "items": { "$ref": "#/$defs/className" }
+                },
+                "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["kind", "name"],
+                    "properties": {
+                        "kind": {
+                            "enum": ["request", "job", "command", "unknown"]
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Route name (unnamed for a route without a name or a request without a matched route), job class, Artisan command name without arguments, or unknown."
+                        }
+                    }
+                },
+                "environment": {
+                    "type": "string",
+                    "description": "The Laravel environment (app.env), for example production."
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Occurrences in this batch."
+                },
+                "firstSeen": { "$ref": "#/$defs/timestamp" },
+                "lastSeen": { "$ref": "#/$defs/timestamp" }
+            }
+        }
+    }
+}
