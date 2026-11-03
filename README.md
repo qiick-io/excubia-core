@@ -45,11 +45,11 @@
 
 | Requirement | Notes |
 | --- | --- |
-| **PHP ^8.2** | Package floor so it installs as a dev dependency in Laravel 11 / 12 / 13 apps. |
+| **PHP ^8.2** | Package floor so it installs as a dev dependency in Laravel 12 / 13 apps. |
 | **Composer 2** | Scans `composer.lock` (required). |
-| **Laravel 11–13** (optional) | Needed only for the Artisan alias via package discovery. |
+| **Laravel 12–13** (optional) | Needed only for the Artisan alias via package discovery. |
 
-Pest / CI jobs run on PHP 8.3+. The Artisan integration (`excubia:check`, `excubia:push`) is tested in CI on Laravel 12 and 13 with PHP 8.3, 8.4 and 8.5. Laravel 11 is supported on PHP 8.2 to 8.4 but no longer in the CI matrix: it is past security support and Composer blocks its releases by default. Scanned projects may be any Composer app; Laravel-specific checks are skipped when `laravel/framework` is not locked.
+Pest / CI jobs run on PHP 8.3+. The Artisan integration (`excubia:check`, `excubia:push`) is tested in CI on Laravel 12 and 13 with PHP 8.3, 8.4 and 8.5. Laravel 11 is not supported for the Artisan integration: it is past security support and Composer blocks its releases by default (D19). The standalone CLI still scans Laravel 11 projects and reports them as end of life. Scanned projects may be any Composer app; Laravel-specific checks are skipped when `laravel/framework` is not locked.
 
 ## Install
 

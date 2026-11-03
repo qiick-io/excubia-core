@@ -59,7 +59,7 @@ This is the proposed policy for 1.0 onwards.
 | | Supported |
 | --- | --- |
 | PHP | `^8.2` (the package floor; see `docs/SPEC.md` section 6) |
-| Laravel, for the Artisan integration | 11, 12 and 13 |
+| Laravel, for the Artisan integration | 12 and 13 |
 | Scanned projects | Any Composer 2 project |
 
 Raising the PHP floor or dropping a Laravel version from the Artisan integration happens only in a major.
