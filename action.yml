@@ -57,6 +57,9 @@ runs:
     # repository, in a temporary directory outside the scanned project, so the
     # installed version always matches the ref the action is used at and the
     # project's own code and dependencies are never installed or executed.
+    # The dependencies come from the committed lock in .github/action-install
+    # (resolved for PHP 8.2), so a SHA-pinned action runs exactly the reviewed
+    # versions; plugins and scripts are off because nothing needs them.
     - name: Install Excubia
       shell: bash
       env:
@@ -66,19 +69,9 @@ runs:
         set -euo pipefail
         mkdir -p "$INSTALL_DIR"
         cd "$INSTALL_DIR"
-        cat > composer.json <<JSON
-        {
-          "repositories": [
-            {
-              "type": "path",
-              "url": "$ACTION_PATH",
-              "options": { "symlink": false, "versions": { "qiick/excubia-core": "dev-action" } }
-            }
-          ],
-          "require": { "qiick/excubia-core": "dev-action" }
-        }
-        JSON
-        composer install --no-interaction --no-progress --prefer-dist --no-dev
+        cp "$ACTION_PATH/.github/action-install/composer.json" "$ACTION_PATH/.github/action-install/composer.lock" .
+        ln -sfn "$ACTION_PATH" excubia-core
+        composer install --no-interaction --no-progress --prefer-dist --no-dev --no-plugins --no-scripts
         echo "EXCUBIA_BIN=$INSTALL_DIR/vendor/bin/excubia" >> "$GITHUB_ENV"
 
     - name: Run Excubia
