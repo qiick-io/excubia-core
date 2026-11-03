@@ -38,9 +38,10 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
 
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData
     {
+        $packages = $configuration->publicPackages($projectSnapshot->composerPackages);
         $names = [];
 
-        foreach ($projectSnapshot->composerPackages as $package) {
+        foreach ($packages as $package) {
             $names[] = $package->name;
         }
 
@@ -50,9 +51,9 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'composer', 'Packagist security advisories did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
-        $findings = [];
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($projectSnapshot->composerPackages), 'Packagist');
 
-        foreach ($projectSnapshot->composerPackages as $package) {
+        foreach ($packages as $package) {
             foreach ($advisories as $advisory) {
                 if ($advisory->packageName !== $package->name) {
                     continue;

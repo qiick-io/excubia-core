@@ -16,11 +16,29 @@ There is no telemetry, no analytics and no phone-home to qiick or any third part
 
 `excubia check` and the Artisan commands send only package **names and versions**, and runtime versions, to the public APIs of the checks: endoflife.date, Packagist (metadata and security advisories), OSV.dev and the GitHub API. No file contents, `.env` values, source code, paths or hostnames.
 
+- Private packages are never sent: see [below](#private-packages).
 - `GITHUB_TOKEN` is optional, read from the environment only, sent only to the GitHub API as a bearer header, and never printed or written to the cache or the report.
 - All HTTP is over TLS with timeouts (connect 5 s, total 15 s) and limited retries; `HTTPS_PROXY` is respected.
 - Excubia never writes to the scanned project except the `--output` file, and `vendor/bin/excubia` never executes project code.
 - The Artisan commands run inside the booted app. The posture checks read it without writing, except the scheduler heartbeat cache key `excubia:scheduler-heartbeat`, and their findings carry only booleans, counts, ages and names: never `.env` values, DSNs, hostnames, paths or exception messages.
 - The response cache stores public API responses only, in the system temporary directory unless `cache.directory` says otherwise.
+
+### Private packages
+
+Only packages the lockfile shows as served by the public registries are sent (#108):
+
+| Lockfile | Sent | Not sent |
+| --- | --- | --- |
+| `composer.lock` | `notification-url` is `https://packagist.org/downloads/` | `path` or `artifact` dist, VCS repositories, Satis, Private Packagist (another `notification-url`), no `notification-url` |
+| `package-lock.json` | `resolved` starts with `https://registry.npmjs.org/` | `link: true`, `file:` and VCS dependencies, workspace members (no `resolved`), any other registry |
+
+The lockfile cannot tell a private package on the public npm registry, or one fetched through Packagist, from a public one. Name those in `privacy.skipPackages` with globs such as `"acme/*"` or `"@acme/*"` ([configuration](./configuration.md#privacy)):
+
+```json
+{ "privacy": { "skipPackages": ["acme/*", "@acme/*"] } }
+```
+
+Each check that would send names (`composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`) reports the skipped packages in one `skipped` row with subject `private packages`, `skipReason` `not-applicable` and a message such as `2 private packages not sent to Packagist: acme/billing, acme/ui.` The names come from your own lockfile and stay in the local report; with the opt-in push they reach only your own `excubia-app`, and the health endpoint shows the subject without the message. A check with no other finding then reports `skipped`; it never fails and `--strict` ignores it. Private packages are not checked for advisories, abandonment or staleness: watch them yourself.
 
 ## Push
 
@@ -78,7 +96,7 @@ Query exceptions are rebuilt from the driver message, the connection name and th
 
 ## Health endpoint
 
-Off until `healthEndpoint.enabled` is true and `EXCUBIA_HEALTH_SECRET` is set. It sends nothing by itself; it answers a `GET` that carries the secret, with check ids, check names, statuses, severities, counts and package or runtime names. Finding messages, fix hints and evidence URLs are not included, so no path, hostname, token or `.env` value reaches the response. A wrong or missing secret gets `404`.
+Off until `healthEndpoint.enabled` is true and `EXCUBIA_HEALTH_SECRET` is set to at least 32 characters. It sends nothing by itself; it answers a `GET` that carries the secret, with check ids, check names, statuses, severities, counts and package or runtime names. Finding messages, fix hints and evidence URLs are not included, so no path, hostname, token or `.env` value reaches the response. A wrong or missing secret gets `404`, and the route is throttled (60 requests a minute per client IP).
 
 ## Local files
 

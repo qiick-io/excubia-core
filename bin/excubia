@@ -34,7 +34,6 @@ if (class_exists(InstalledVersions::class) && InstalledVersions::isInstalled('qi
 }
 
 $application = new Application('Excubia', $version);
-$application->add(new CheckCommand);
-$application->add(new ClearCacheCommand);
-$application->add(new PushCommand);
+// addCommands() exists on Symfony Console 7.2 through 8.x; add() was removed in 8.0.
+$application->addCommands([new CheckCommand, new ClearCacheCommand, new PushCommand]);
 exit($application->run());

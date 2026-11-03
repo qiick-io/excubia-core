@@ -44,7 +44,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -75,7 +75,27 @@ final class ExcubiaConfigurationLoader
             failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
             runtime: $this->runtime($document['runtime'] ?? []),
             exceptions: $this->exceptions($document['exceptions'] ?? []),
+            skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
         );
+    }
+
+    /**
+     * `privacy.skipPackages`: package name globs never sent to a public data
+     * source. The glob syntax is checked by `ExcubiaConfigurationData`.
+     *
+     * @return list<string>
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function skippedPackagePatterns(mixed $privacy): array
+    {
+        if (! is_array($privacy)) {
+            throw new InvalidConfigurationException('privacy must be an object.');
+        }
+
+        $this->rejectUnknownKeys($privacy, ['skipPackages'], 'privacy');
+
+        return $this->stringList($privacy['skipPackages'] ?? [], 'privacy.skipPackages');
     }
 
     /**

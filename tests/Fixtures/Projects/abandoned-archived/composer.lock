@@ -2,11 +2,13 @@
     "packages": [
         {
             "name": "jenssegers/agent",
-            "version": "v2.6.4"
+            "version": "v2.6.4",
+            "notification-url": "https://packagist.org/downloads/"
         },
         {
             "name": "symfony/polyfill-php80",
-            "version": "v1.31.0"
+            "version": "v1.31.0",
+            "notification-url": "https://packagist.org/downloads/"
         }
     ],
     "packages-dev": [],

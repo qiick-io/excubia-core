@@ -37,6 +37,7 @@ It describes `develop` as reviewed for #82 (November 2026). Released `0.1.x` con
 Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`.
 
 **Controls.**
+- Private packages are never sent (#108, SPEC §7): a Composer package is sent only when its `composer.lock` entry has Packagist's `notification-url` (`https://packagist.org/downloads/`) and no `path` or `artifact` dist; an npm package only when `resolved` is on `https://registry.npmjs.org/` and it is not a link. `privacy.skipPackages` globs exclude more names. `ExcubiaConfigurationData::publicPackages()` filters every check before a request is built; the GitHub lookup uses the source URL of the Packagist metadata, so it never runs for a private package. The skipped names appear only in the local report as a `skipped` row (`private packages`).
 - Names are validated before a URL is built: Composer names must match `vendor/name` in lower case, GitHub owners and names must be `[A-Za-z0-9_.-]+` and not `.` or `..`, npm names must not contain `..` or a newline. Anything else is skipped, not sent.
 - `HttpClientContract` is the only HTTP boundary. `SymfonyHttpClientService` refuses any URL that is not HTTPS (plain HTTP only to `localhost`, `127.0.0.1`, `[::1]`), uses TLS peer verification (Symfony default), a 5 s idle timeout, a 15 s total, two retries with backoff, and honours `HTTPS_PROXY`.
 - `GITHUB_TOKEN` is read from the environment at call time, sent only as a header to `api.github.com`, never part of a URL, cache key, cache file, message or report. On a redirect Symfony keeps `Authorization` only for the same scheme and host.
@@ -108,7 +109,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | Stored | `storage/excubia/health.json`, written atomically (temporary file and rename). |
 | Credentials | header `oh-dear-health-check-secret` compared with `EXCUBIA_HEALTH_SECRET` (environment only) using `hash_equals`. |
 
-**Controls.** Without a secret the route is not registered. A missing, empty or wrong secret gets the app's normal `404`, so the route cannot be told apart from a missing page. The request never runs checks and reads one fixed file. Responses carry `Cache-Control: no-store, private`. The route has no session or CSRF middleware, so it sets no cookie.
+**Controls.** Without a secret, or with one shorter than 32 characters, the route is not registered; `excubia:check` and `excubia:push` warn about a short secret. The route is throttled with Laravel's `ThrottleRequests` (60 requests a minute per client IP), so guessing is slow. A missing, empty or wrong secret gets the app's normal `404`, so the route cannot be told apart from a missing page. The request never runs checks and reads one fixed file. Responses carry `Cache-Control: no-store, private`. The route has no session or CSRF middleware, so it sets no cookie.
 
 **Turn it off.** `healthEndpoint.enabled: false` (default), or unset `EXCUBIA_HEALTH_SECRET`. Rebuild `route:cache` after a change.
 
@@ -140,9 +141,9 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Information disclosure**: secrets in exception messages | 5 | masking before buffering, fail-closed regexes, user patterns; hosts, Windows and UNC paths and every `Authorization` scheme masked (#104) | Host names in free text without a `host` keyword or URL, and secrets in forms no mask recognises; add `exceptions.maskPatterns` |
 | **Information disclosure**: values in SQL | 4, 5 | bindings never read; quoted literals masked | Inline numeric, hex and dollar-quoted literals survive (#106) |
 | **Information disclosure**: secrets in scheduled task commands | 4 | paths relative; exception masks applied | Unrecognisable forms such as `-pSECRET` or positional arguments (#109) |
-| **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist | Private package names are still sent (#108) |
+| **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist; packages the lockfile does not show as served by Packagist or the public npm registry are never sent, nor names matching `privacy.skipPackages` (#108) | A private package the lockfile cannot tell apart (a private package on the public npm registry, or one served through Packagist) is sent unless `privacy.skipPackages` names it |
 | **Information disclosure**: token or credentials in logs | 1, 3 | headers never logged, URL credentials removed, no response bodies in messages | — |
-| **Information disclosure**: health result | 6 | secret, 404 on mismatch, `no-store` | Short secrets accepted, no rate limit (#107) |
+| **Information disclosure**: health result | 6 | secret of at least 32 characters, 404 on mismatch, rate limit, `no-store` (#107) | A long secret that leaks (logs, monitor configuration) gives read access until it is rotated |
 | **Information disclosure**: hosts of outgoing calls | 4 | host only, no URL | Internal hostnames reach the user's own app (by design) |
 | **Denial of service** of the host app | 4, 5 | never sends during a request, caps on buffer size, pending aggregates and groups, errors swallowed | A full buffer drops the oldest data |
 | **Denial of service** through huge messages | 5 | regex work is linear in practice (5 MB message ≈ 20 ms); failures mask the whole message | — |
@@ -163,8 +164,6 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | Issue | Severity | Summary |
 | --- | --- | --- |
 | #106 | low | Slow-query SQL keeps numeric, hex and dollar-quoted literals |
-| #107 | low | Health endpoint accepts short secrets and has no rate limit |
-| #108 | low | Private package names are sent to Packagist and OSV |
 | #109 | low | Decide whether scheduled task names keep their arguments |
 | #110 | low | Warn when the project token is read from `excubia.json` |
 | #111 | low | GitHub Action resolves Excubia's dependencies unlocked at run time |

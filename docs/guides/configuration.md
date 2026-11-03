@@ -35,6 +35,7 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     }
   ],
   "cache": { "directory": null, "ttlHours": 24 },
+  "privacy": { "skipPackages": [] },
   "app": { "url": "https://excubia.example.com" },
   "healthEndpoint": { "enabled": false, "path": "excubia/health" },
   "runtime": {
@@ -109,6 +110,15 @@ Data-source responses are cached on disk so repeated runs and `--offline` work w
 
 `--no-cache` bypasses the cache for one run. `vendor/bin/excubia cache:clear` deletes the cache entries (only files named like cache entries).
 
+## Privacy
+
+Packages the lockfile shows as not served by Packagist or the public npm registry are never sent to a public data source; see [private packages](./privacy.md#private-packages). `privacy.skipPackages` adds names the lockfile cannot tell apart, such as a private package published on the public npm registry.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `privacy` | object | | What the checks may send to public data sources. |
+| `privacy.skipPackages` | list of strings | `[]` | Package name globs never sent to Packagist, OSV.dev or GitHub, for example `"acme/*"` or `"@acme/*"`. `*` matches any characters (`/` included), `?` exactly one; the whole name must match, case-insensitively. Only letters, digits, `@ / . _ ~ -` and the two wildcards are allowed. Matching packages appear in one `skipped` row per check. |
+
 ## excubia-app
 
 The target of `excubia push`, `excubia:push` and `excubia:push-runtime`. See the [push guide](./excubia-app.md).
@@ -126,7 +136,7 @@ See the [health endpoint guide](./health-endpoint.md). The secret is not a key: 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `healthEndpoint` | object | | Oh Dear-compatible endpoint, Laravel only. |
-| `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route (only when `EXCUBIA_HEALTH_SECRET` is set too). |
+| `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route (only when `EXCUBIA_HEALTH_SECRET` is set too, at least 32 characters). |
 | `healthEndpoint.path` | string | `excubia/health` | URL path of the route. Leading and trailing `/` are ignored. Letters, digits, `.`, `_`, `~`, `-` and `/` only. |
 
 ## Runtime monitoring
@@ -175,7 +185,7 @@ Excubia reads these from the process environment (`getenv()`), never from Larave
 | --- | --- | --- |
 | `EXCUBIA_APP_URL` | `push`, `excubia:push`, `excubia:push-runtime` | Base URL of your `excubia-app`. Wins over `app.url`. |
 | `EXCUBIA_APP_TOKEN` | `push`, `excubia:push`, `excubia:push-runtime` | Project push token. Wins over `app.token`. Never printed, cached or written to a report. |
-| `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header. Without it the route is not registered. |
+| `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header, at least 32 characters. Without it, or when it is shorter, the route is not registered. |
 | `GITHUB_TOKEN` | `composer-stale` | Optional. Raises the GitHub API rate limit for the archived-repository lookup. Sent only to `api.github.com`; never printed, cached or written to a report. |
 | `HTTPS_PROXY` | all HTTP requests | Proxy for the data sources and the push, read by Symfony HttpClient. |
 | `NO_COLOR` | `table` format | Turns colours off. |

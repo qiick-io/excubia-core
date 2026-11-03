@@ -6,7 +6,7 @@ It does not replace your error tracker: your own reporting (log channels, Sentry
 
 ## Prerequisites
 
-- The package installed without `--dev`: `composer require qiick/excubia-core -W`.
+- The package installed without `--dev`: `composer require qiick/excubia-core`.
 - An `excubia-app` URL and project token, set up as in [Push to excubia-app](./excubia-app.md#2-configure).
 - The Laravel scheduler running (`schedule:run` from cron, or `schedule:work`).
 
