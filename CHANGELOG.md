@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Composite GitHub Action (`action.yml`, `qiick-io/excubia-core@v1` once tagged): installs Excubia from the action's own checkout in `$RUNNER_TEMP`, outside the scanned project, runs `excubia check --format=sarif`, writes the Markdown report to the job summary and uploads the SARIF log with `github/codeql-action/upload-sarif`. Inputs `path`, `fail-on` (default `critical`), `only`, `skip`, `github-token`, `upload-sarif` (default `true`) and `php-version` (default `8.4`); the step fails according to `fail-on` after the upload. Tested by `.github/workflows/action-test.yml`.
 - Opt-in health endpoint in the Oh Dear application health JSON format for Laravel apps (`docs/health-endpoint.md`): `excubia.json` keys `healthEndpoint.enabled` (default `false`) and `healthEndpoint.path` (default `excubia/health`), secret from `EXCUBIA_HEALTH_SECRET` (the route is not registered without it), checked against the `oh-dear-health-check-secret` header with `hash_equals`; a wrong or missing secret gets `404`. The endpoint serves the result the last `excubia:check` / `excubia:push` stored in `storage/excubia/health.json` and never runs checks in the request. `pass` → `ok`, `warn` → `warning`, `fail` → `failed`, `skipped` → `skipped`, a run without a report → one `crashed` entry; no stored result yet → one `skipped` entry.
 
+### Security
+
+- Threat model of every outgoing and stored data path: `docs/SECURITY-MODEL.md` (#82). `SECURITY.md` names the supported versions for 1.x.
+- The default response cache directory is per user (`<temp>/qiick-excubia-<uid>`) and is skipped when it is a symlink, owned by another user or writable by group or others, so another local user cannot plant responses that hide advisories. `cache:clear` deletes only files named like cache entries.
+- `push` and `excubia:push-runtime` no longer follow redirects: a 3xx from the app is an error, so the envelope is never resent to another host or over plain HTTP.
+- URL credentials (`https://user:password@…`) are removed from the app URL in error messages and in the `-v` request list.
+- Exception masking also covers `'key' => 'value'` dumps, quoted values with spaces, unterminated quotes and the `pass`, `cookie`, `session`, `dsn` and `private_key` key names.
+- Scheduled task names in runtime data go through the same masks, so `--password=…` and similar arguments are not buffered or sent.
+- GitHub owner and repository names `.` and `..` are refused before a request is built.
+
 ## [0.1.1] - 2026-11-01
 
 ### Added
