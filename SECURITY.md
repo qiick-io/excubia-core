@@ -2,7 +2,12 @@
 
 ## Supported versions
 
-Excubia is pre-release. Security fixes go to the latest `0.x` release.
+| Version | Supported |
+| --- | --- |
+| Latest `0.x` minor | Yes, until 1.0.0 |
+| Older `0.x` minors | No |
+
+From 1.0.0, the support window for each major is in [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Reporting a vulnerability
 

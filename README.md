@@ -171,6 +171,10 @@ JSON report schema: [`docs/report-schema.json`](./docs/report-schema.json).
 
 Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. The only other destination is your own `excubia-app`, and only when you run `excubia push`; the project token is never printed, cached or written to a report. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
 
+## Versioning and support
+
+Excubia follows SemVer. Public contracts (report JSON, check ids, exit codes, CLI and Artisan commands, `excubia.json`, push payloads) change only in a major; deprecated options keep working with a warning for at least one minor. In `0.x`, minors may still break and only the latest minor gets fixes. Policy and supported PHP / Laravel versions: [`docs/VERSIONING.md`](./docs/VERSIONING.md).
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md). Scope is defined by [`docs/SPEC.md`](./docs/SPEC.md); new ideas need a `needs-decision` issue first.

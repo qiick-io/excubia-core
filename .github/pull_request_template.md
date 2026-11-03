@@ -15,6 +15,7 @@ Closes #
 - [ ] Pest, Pint and PHPStan pass locally
 - [ ] Acceptance criteria in the issue are ticked
 - [ ] Docs updated if behaviour changed
+- [ ] Changes a public contract (see docs/VERSIONING.md); if ticked, the summary says what changes and the CHANGELOG lists it
 
 ## Test notes
 
