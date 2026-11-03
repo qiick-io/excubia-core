@@ -275,7 +275,7 @@ it('aggregates processed and failed jobs by class, queue and outcome without the
         ->and(rawBuffer($this->app))->not->toContain('job-exception-secret');
 });
 
-it('aggregates scheduled tasks by name and outcome, once per failed command, without absolute paths', function () {
+it('aggregates scheduled tasks by name and outcome, once per failed command, without arguments or absolute paths', function () {
     $project = bootRuntimeProject($this->app, ['enabled' => true]);
     $schedule = $this->app->make(Schedule::class);
     $command = $schedule->command('inspire');
@@ -295,17 +295,19 @@ it('aggregates scheduled tasks by name and outcome, once per failed command, wit
     $tasks = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->keyBy('task');
     $raw = rawBuffer($this->app);
 
-    expect($tasks->keys()->all())->toEqualCanonicalizing(['artisan inspire', 'artisan migrate --force', 'Closure', 'nightly cleanup', 'backup.sh --target=storage/backups'])
+    expect($tasks->keys()->all())->toEqualCanonicalizing(['artisan inspire', 'artisan migrate', 'Closure', 'nightly cleanup', 'backup.sh'])
         ->and($tasks['artisan inspire'])->toMatchArray(['outcome' => 'finished', 'count' => 1, 'errorCount' => 0, 'totalMs' => 250.0])
-        ->and($tasks['artisan migrate --force'])->toMatchArray(['outcome' => 'failed', 'count' => 1, 'errorCount' => 1, 'totalMs' => 1500.0])
+        ->and($tasks['artisan migrate'])->toMatchArray(['outcome' => 'failed', 'count' => 1, 'errorCount' => 1, 'totalMs' => 1500.0])
         ->and($tasks['Closure'])->toMatchArray(['outcome' => 'failed', 'errorCount' => 1])
         ->and($tasks['nightly cleanup'])->toMatchArray(['outcome' => 'skipped', 'totalMs' => 0.0])
         ->and($raw)->not->toContain('exception-secret')
         ->and($raw)->not->toContain(PHP_BINARY)
-        ->and($raw)->not->toContain($project);
+        ->and($raw)->not->toContain($project)
+        ->and($raw)->not->toContain('--force')
+        ->and($raw)->not->toContain('storage/backups');
 });
 
-it('masks secrets in scheduled task command lines and descriptions', function () {
+it('drops the arguments of scheduled commands and masks secrets in descriptions', function () {
     bootRuntimeProject($this->app, ['enabled' => true]);
     $schedule = $this->app->make(Schedule::class);
     $command = $schedule->command('backup:run', ['--password' => 'task-password-secret']);
@@ -319,11 +321,32 @@ it('masks secrets in scheduled task command lines and descriptions', function ()
     $tasks = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->pluck('task')->all();
     $raw = rawBuffer($this->app);
 
-    expect($tasks)->toEqualCanonicalizing(["artisan backup:run --password='[masked]'", 'mysqldump --password=[masked] shop', 'sync with token=[masked]']);
+    expect($tasks)->toEqualCanonicalizing(['artisan backup:run', 'mysqldump', 'sync with token=[masked]']);
 
-    foreach (['task-password-secret', 'dump-password-secret', 'description-token-secret'] as $secret) {
+    foreach (['task-password-secret', 'dump-password-secret', 'description-token-secret', 'shop'] as $secret) {
         expect($raw)->not->toContain($secret);
     }
+});
+
+it('keeps no secret that the masks cannot recognise in scheduled command names', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $schedule = $this->app->make(Schedule::class);
+    $tasks = [
+        $schedule->command('tenant:sync hunter2-positional'),
+        $schedule->exec('/usr/bin/mysqldump -phunter2-short shop'),
+        $schedule->exec("'/opt/my tools/run report.sh' --key hunter2-quoted"),
+        $schedule->exec('API_KEY=hunter2-env FLAG="a b" /srv/bin/sync.sh now'),
+        $schedule->exec('C:\\tools\\backup.exe /p:hunter2-windows'),
+    ];
+
+    foreach ($tasks as $task) {
+        event(new ScheduledTaskFinished($task, 0.1));
+    }
+
+    $names = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->pluck('task')->all();
+
+    expect($names)->toEqualCanonicalizing(['artisan tenant:sync', 'mysqldump', 'run report.sh', 'sync.sh', 'backup.exe'])
+        ->and(rawBuffer($this->app))->not->toContain('hunter2');
 });
 
 it('aggregates outgoing HTTP by host and status class only', function () {

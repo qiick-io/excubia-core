@@ -160,7 +160,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
   - requests: route name (or `unnamed`), HTTP method, status class (`2xx`…);
   - slow queries: SQL text without bindings, with inline literals (single-quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name;
   - jobs: job class, queue and connection names, `processed` or `failed`;
-  - scheduled tasks: description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it), secrets masked as in exception messages; `finished`, `failed` or `skipped`;
+  - scheduled tasks: the developer's description (paths relative to the project, secrets masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, without any argument, else `Closure`; `finished`, `failed` or `skipped`;
   - outgoing HTTP (Laravel's HTTP client): host and status class.
 
   Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
