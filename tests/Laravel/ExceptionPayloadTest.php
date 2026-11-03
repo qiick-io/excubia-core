@@ -79,7 +79,12 @@ it('masks a corpus of real-looking messages so no secret survives', function (st
     'long numbers' => ['Order 12345678 for phone 3471234567 not found', ['12345678', '3471234567'], ['Order [number]']],
     'IPv4 and IPv6' => ['Blocked 203.0.113.77 and 2001:db8:85a3::8a2e:370:7334 and fe80::1', ['203.0.113.77', '2001:db8:85a3::8a2e:370:7334', 'fe80::1'], ['[ip]']],
     'UUID' => ['Model not found: 3b241101-e2bb-4255-8caf-4136c566a962', ['3b241101-e2bb-4255-8caf-4136c566a962'], ['[uuid]']],
-    'URL with credentials and token' => ['cURL error 28 for https://admin:pa55word@api.example.test/v1/charges?api_key=query-secret&user=7#frag', ['admin', 'pa55word', 'query-secret', 'frag'], ['https://api.example.test/v1/charges?[query]', 'cURL error 28']],
+    'URL with credentials and token' => ['cURL error 28 for https://admin:pa55word@api.example.test/v1/charges?api_key=query-secret&user=7#frag', ['admin', 'pa55word', 'query-secret', 'frag', 'api.example.test'], ['https://[host]/v1/charges?[query]', 'cURL error 28']],
+    'host in a URL' => ['cURL error 6 for https://api.internal.corp:8443/v1 and redis://cache.internal.corp', ['api.internal.corp', '8443', 'cache.internal.corp'], ['https://[host]/v1', 'redis://[host]', 'cURL error 6']],
+    'host in a phrase' => ['cURL error 6: Could not resolve host: db.internal.corp; php_network_getaddresses: getaddrinfo for redis.internal failed; hostname="queue.internal"', ['db.internal.corp', 'redis.internal', 'queue.internal'], ['resolve host: [host]', 'getaddrinfo for [host] failed', 'hostname="[host]"']],
+    'Windows paths' => ['include(C:\\Users\\luca\\app\\storage\\file.php): failed; also D:/Projects/secret-client/notes.txt and \\\\fileserver\\share\\luca\\report.xlsx', ['C:\\Users', 'luca', 'fileserver', 'D:/', 'secret-client'], ['include(file.php)', 'notes.txt', 'report.xlsx']],
+    'any Authorization scheme' => ["Rejected Authorization: Token abc123xyz\nProxy-Authorization: Digest username=\"luca\", response=\"6629fae49393a05397450978507c4ef1\"\nheaders ['Authorization' => 'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261103/eu/s3, Signature=fe5f80f7']", ['abc123xyz', 'luca', '6629fae4', 'AKIDEXAMPLE', 'fe5f80f7', 'Token', 'Digest'], ['Authorization: [masked]', 'Proxy-Authorization: [masked]', "'Authorization' => '[masked]'"]],
+    'phone and social security numbers' => ['Call +39 333 123 4567 or +1 (555) 010-9999 for SSN 123-45-6789', ['333 123 4567', '555', '010-9999', '123-45-6789'], ['Call [number] or [number] for SSN [number]']],
     'SQL with values' => ["SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'luigi@example.test' for key 'users_email_unique' (Connection: mysql, Host: db.internal, Port: 3306, Database: shop_prod, SQL: insert into users (name) values ('Luigi Verdi'))", ['luigi', 'Luigi Verdi', 'db.internal', 'shop_prod', '3306'], ['SQLSTATE[23000]', 'Duplicate entry ? for key ?', 'Connection: mysql']],
     'PHP array dump' => ["Login failed for ['password' => 'hunter2', 'token' => \"tok-123\"]", ['hunter2', 'tok-123'], ["'password' => '[masked]'", "'token' => \"[masked]\""]],
     'quoted value with spaces' => ['Vault rejected secret="correct horse battery" and password: \'two words\'', ['correct', 'horse', 'battery', 'two words'], ['secret="[masked]"', "password: '[masked]'"]],
@@ -90,6 +95,12 @@ it('masks a corpus of real-looking messages so no secret survives', function (st
 
 it('keeps class names, method calls and short numbers readable', function () {
     $message = 'Call to undefined method App\\Models\\Feed::add() on line 1234 with status 404';
+
+    expect(ExceptionPayloadService::mask($message, PAYLOAD_PROJECT_ROOT))->toBe($message);
+});
+
+it('keeps namespaces, dates and Bearer placeholders readable next to the new masks', function () {
+    $message = 'App\\Jobs\\SyncHost::handle() failed on 2026-11-03 at 10:15 after Authorization: Bearer [token] with host: [masked]';
 
     expect(ExceptionPayloadService::mask($message, PAYLOAD_PROJECT_ROOT))->toBe($message);
 });

@@ -97,7 +97,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | Stored | `storage/excubia/exceptions/`, same buffer format, lock and cap (`exceptions.bufferMaxBytes`) as runtime data. |
 | Sent | the same `excubia:push-runtime` run → `POST {app.url}/api/exceptions`. |
 
-**Masking (D17)**, `ExceptionPayloadService::mask()`, before anything is buffered: user `exceptions.maskPatterns` first, then the project root and other absolute paths, URL credentials and query strings, quoted SQL literals (when the message carries SQL), database `Host` / `Socket` / `Port` / `Database`, JWTs, `Bearer` / `Basic` credentials, `key=value`, `key: value` and `'key' => 'value'` secrets (keys containing `pass`, `pwd`, `secret`, `token`, `api_key`, `access_key`, `private_key`, `auth`, `signature`, `credential`, `cookie`, `session`, `dsn`; quoted values masked whole), emails, IPv4 and IPv6 addresses, UUIDs, long hex strings and API-key-like strings, card-like and long numbers. Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. A regular expression that fails (for example on the PCRE backtrack limit) replaces the whole message with `[masked]`, so masking fails closed.
+**Masking (D17)**, `ExceptionPayloadService::mask()`, before anything is buffered: user `exceptions.maskPatterns` first, then the project root and other absolute paths (`/…`, `C:\…`, `\\server\share\…`), URL credentials, hosts (`[host]`) and query strings, quoted SQL literals (when the message carries SQL), database `Host` / `Socket` / `Port` / `Database`, JWTs, `Bearer` / `Basic` credentials, any other `Authorization` / `Proxy-Authorization` value, host names after `host:`, `hostname=`, `resolve host` and `getaddrinfo for`, `key=value`, `key: value` and `'key' => 'value'` secrets (keys containing `pass`, `pwd`, `secret`, `token`, `api_key`, `access_key`, `private_key`, `auth`, `signature`, `credential`, `cookie`, `session`, `dsn`; quoted values masked whole), emails, IPv4 and IPv6 addresses, UUIDs, long hex strings and API-key-like strings, phone-like (`+` and 8 or more digits), US social security, card-like and long numbers. Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. A regular expression that fails (for example on the PCRE backtrack limit) replaces the whole message with `[masked]`, so masking fails closed.
 
 **Turn it off.** `exceptions.enabled: false` (default) attaches nothing to the exception handler. `exceptions.ignore` skips classes; `exceptions.maskPatterns` adds project-specific masks.
 
@@ -138,7 +138,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Tampering** with buffered data | 4, 5 | `flock`, JSON-encoded lines, strict batch names, app-side additivity | Anyone who can write `storage/` can alter data before it is sent (same as the app's logs) |
 | **Tampering** in CI through a fork PR | 8 | project code never runs; inputs via env; SHA-pinned actions | Excubia's own dependencies are resolved at run time (#111) |
 | **Repudiation** | 3–5 | `batchId`, `sentAt`, the app stores per project token | No signing of payloads (not needed for the user's own app) |
-| **Information disclosure**: secrets in exception messages | 5 | masking before buffering, fail-closed regexes, user patterns | Hostnames, Windows paths and some auth schemes survive (#104) |
+| **Information disclosure**: secrets in exception messages | 5 | masking before buffering, fail-closed regexes, user patterns; hosts, Windows and UNC paths and every `Authorization` scheme masked (#104) | Host names in free text without a `host` keyword or URL, and secrets in forms no mask recognises; add `exceptions.maskPatterns` |
 | **Information disclosure**: values in SQL | 4, 5 | bindings never read; quoted literals masked | Inline numeric, hex and dollar-quoted literals survive (#106) |
 | **Information disclosure**: secrets in scheduled task commands | 4 | paths relative; exception masks applied | Unrecognisable forms such as `-pSECRET` or positional arguments (#109) |
 | **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist; packages the lockfile does not show as served by Packagist or the public npm registry are never sent, nor names matching `privacy.skipPackages` (#108) | A private package the lockfile cannot tell apart (a private package on the public npm registry, or one served through Packagist) is sent unless `privacy.skipPackages` names it |
@@ -163,7 +163,6 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 
 | Issue | Severity | Summary |
 | --- | --- | --- |
-| #104 | low | Exception masking keeps hostnames, Windows paths and non-Bearer auth schemes |
 | #106 | low | Slow-query SQL keeps numeric, hex and dollar-quoted literals |
 | #109 | low | Decide whether scheduled task names keep their arguments |
 | #110 | low | Warn when the project token is read from `excubia.json` |
