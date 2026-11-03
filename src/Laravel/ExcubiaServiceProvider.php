@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Laravel;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Registers `php artisan excubia:check` and `excubia:push` when this package is installed in
- * a Laravel app, and the opt-in health endpoint. The provider does not boot the scanned project.
+ * Registers `php artisan excubia:check`, `excubia:push` and `excubia:heartbeat`
+ * when this package is installed in a Laravel app, schedules the heartbeat
+ * every minute for the `laravel-scheduler-heartbeat` check, and registers the
+ * opt-in health endpoint. The provider does not boot the scanned project.
  *
  * The endpoint route exists only when `excubia.json` has `healthEndpoint.enabled: true` and
  * `EXCUBIA_HEALTH_SECRET` is set; enabled without a secret, the route is not registered.
@@ -23,7 +26,12 @@ final class ExcubiaServiceProvider extends ServiceProvider
         $this->commands([
             ExcubiaCheckCommand::class,
             ExcubiaPushCommand::class,
+            ExcubiaHeartbeatCommand::class,
         ]);
+
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            $schedule->command('excubia:heartbeat')->everyMinute();
+        });
 
         $this->registerHealthEndpoint();
     }

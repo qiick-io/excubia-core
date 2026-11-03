@@ -24,7 +24,7 @@ Changing any of these in an incompatible way is a breaking change, so it waits f
 - Check ids and their meaning.
 - Exit codes of `check` and `push`.
 - CLI commands and options of `bin/excubia`.
-- Artisan commands (`excubia:check`, `excubia:push`, `excubia:push-runtime`, cache commands) and their options.
+- Artisan commands (`excubia:check`, `excubia:push`, `excubia:heartbeat` and the cache key it writes, `excubia:push-runtime`, cache commands) and their options.
 - The `excubia.json` schema (`excubia.schema.json`) and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `GITHUB_TOKEN`).
 - The push envelope (`docs/push-schema.json`, `protocolVersion`) and the runtime and exception batch payloads.
 - The health endpoint response and its config keys.

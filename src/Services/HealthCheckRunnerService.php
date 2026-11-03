@@ -8,8 +8,14 @@ use DateTimeImmutable;
 use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
+use Qiick\Excubia\Checks\LaravelDebugModeCheck;
 use Qiick\Excubia\Checks\LaravelEndOfLifeCheck;
+use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
+use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelNextMajorBlockerCheck;
+use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
+use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
+use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
 use Qiick\Excubia\Checks\NodeEndOfLifeCheck;
 use Qiick\Excubia\Checks\NpmAdvisoriesCheck;
 use Qiick\Excubia\Checks\PhpEndOfLifeCheck;
@@ -19,6 +25,7 @@ use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
+use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
@@ -44,6 +51,9 @@ final class HealthCheckRunnerService
     ) {}
 
     /**
+     * `$laravelPosture` is passed by the Artisan commands only; without it
+     * the `laravel-*` posture checks are skipped ("requires Artisan").
+     *
      * @param  list<string>|null  $onlyCheckIds
      * @param  list<string>|null  $skippedCheckIds
      * @return array{report: HealthReportData, expiredIgnoreWarnings: list<string>}
@@ -58,9 +68,10 @@ final class HealthCheckRunnerService
         ?array $skippedCheckIds,
         bool $isOffline,
         bool $isCacheBypassed,
+        ?LaravelPostureData $laravelPosture = null,
     ): array {
         return $this->runForSnapshot(
-            $this->projectSnapshot->snapshot($projectRoot, $configuration),
+            $this->projectSnapshot->snapshot($projectRoot, $configuration)->withLaravelPosture($laravelPosture),
             $configuration,
             $onlyCheckIds,
             $skippedCheckIds,
@@ -176,6 +187,12 @@ final class HealthCheckRunnerService
             new ComposerAbandonedCheck($packagist),
             new ComposerStaleCheck($packagist, new GitHubRepositoryApiService($this->httpClient, $cache), $this->today),
             new LaravelNextMajorBlockerCheck($packagist, $constraints),
+            new LaravelDebugModeCheck,
+            new LaravelProductionCachesCheck,
+            new LaravelPendingMigrationsCheck,
+            new LaravelFailedJobsCheck,
+            new LaravelSchedulerHeartbeatCheck,
+            new LaravelMaintenanceModeCheck,
         ];
     }
 }

@@ -60,6 +60,30 @@ it('rejects an unknown key', function () {
         ->toThrow(InvalidConfigurationException::class, 'Unknown excubia.json key [telemetry].');
 });
 
+it('loads the posture thresholds and defaults them to 10 minutes and 24 hours', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 30}, "laravel-failed-jobs": {"highSeverityAfterHours": 6}}}',
+    ]);
+
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+
+    expect($configuration->schedulerHeartbeatStaleAfterMinutes)->toBe(30)
+        ->and($configuration->failedJobHighSeverityAfterHours)->toBe(6)
+        ->and(ExcubiaConfigurationData::defaults()->schedulerHeartbeatStaleAfterMinutes)->toBe(10)
+        ->and(ExcubiaConfigurationData::defaults()->failedJobHighSeverityAfterHours)->toBe(24);
+});
+
+it('rejects posture thresholds below one and unknown posture keys', function (string $document, string $message) {
+    $root = temporaryProject(['excubia.json' => $document]);
+
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $root))
+        ->toThrow(InvalidConfigurationException::class, $message);
+})->with([
+    'heartbeat zero' => ['{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 0}}}', 'staleAfterMinutes must be at least 1.'],
+    'failed jobs zero' => ['{"checks": {"laravel-failed-jobs": {"highSeverityAfterHours": 0}}}', 'highSeverityAfterHours must be at least 1.'],
+    'unknown key' => ['{"checks": {"laravel-failed-jobs": {"maxCount": 3}}}', 'Unknown checks.laravel-failed-jobs key [maxCount].'],
+]);
+
 it('rejects an ignore rule without a reason', function () {
     $root = temporaryProject([
         'excubia.json' => '{"ignore":[{"checkId":"php-eol","subject":"php"}]}',

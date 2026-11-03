@@ -13,6 +13,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `php artisan excubia:push`. Same engine as `vendor/bin/excubia push`,
  * with the path fixed to the application base path. With the health
  * endpoint enabled, the scan result is stored for it (`HealthEndpointService`).
+ * with the path fixed to the application base path and the posture of the
+ * booted app attached, as for `excubia:check`.
  *
  * ponytail: the URL and token come from the process environment or
  * `excubia.json`, not from Laravel config, so `config:cache` does not
@@ -35,8 +37,9 @@ final class ExcubiaPushCommand extends Command
         }
 
         $configPath = $config === '' ? null : $config;
+        $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel());
 
-        return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new PushCommand(reportListener: $reportListener))->runWithOptions(
+        return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new PushCommand(reportListener: $reportListener, laravelPosture: $laravelPosture))->runWithOptions(
             ExcubiaCheckCommand::applicationBasePath($this->getLaravel()),
             ['config' => $configPath, 'strict' => (bool) $this->option('strict')],
             $this->output,

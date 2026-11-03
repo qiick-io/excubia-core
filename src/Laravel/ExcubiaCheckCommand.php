@@ -13,6 +13,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `php artisan excubia:check`. Same engine as `vendor/bin/excubia check`,
  * with the path fixed to the application base path. With the health
  * endpoint enabled, the result is stored for it (`HealthEndpointService`).
+ * with the path fixed to the application base path and the posture of the
+ * booted app (`LaravelPostureService`) attached for the `laravel-*` checks.
  */
 final class ExcubiaCheckCommand extends Command
 {
@@ -34,8 +36,9 @@ final class ExcubiaCheckCommand extends Command
     public function handle(): int
     {
         $configPath = $this->stringOption('config');
+        $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel());
 
-        return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new CheckCommand(reportListener: $reportListener))->runWithOptions(self::applicationBasePath($this->getLaravel()), [
+        return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new CheckCommand(reportListener: $reportListener, laravelPosture: $laravelPosture))->runWithOptions(self::applicationBasePath($this->getLaravel()), [
             'format' => $this->stringOption('format'),
             'output' => $this->stringOption('output'),
             'fail-on' => $this->stringOption('fail-on'),

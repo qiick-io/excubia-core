@@ -55,6 +55,12 @@ Severity levels: `critical` > `high` > `medium` > `low` > `info`. Each finding h
 | `composer-abandoned` | Abandoned packages | Packagist `abandoned` flag of each locked package | Packagist metadata | Abandoned, direct dependency (**high**) | Abandoned, transitive (**medium**) | Not abandoned | "Replace with `<suggested replacement>`" (from Packagist), or "no replacement suggested" |
 | `composer-stale` | Stale packages | Last release date (Packagist) and GitHub `archived` / last push | Packagist metadata + GitHub API (unauthenticated, optional `GITHUB_TOKEN`) | Repository archived (**high**) | No release for > 24 months (**low**, threshold configurable) | Recent release | "Consider a maintained alternative." Demo case: `jenssegers/agent` |
 | `laravel-next-blocker` | Next-major blockers | For each direct dependency requiring `illuminate/*` or `laravel/framework`: does its **latest** release allow the next Laravel major (today `^13`)? | Packagist metadata | Latest release does not allow next major (**medium**) | Allows it only in a pre-release (**low**) | Allows it / not Laravel-dependent | "No release supports Laravel N yet; watch / replace / fork." |
+| `laravel-debug-mode` | Debug mode | `app.debug` and the environment of the booted app (Artisan only) | Booted app | `app.debug` true outside `local` / `testing` (**high**) | — | Debug off, or `local` / `testing` | "Set APP_DEBUG=false outside local and testing, then run php artisan config:cache." |
+| `laravel-production-caches` | Production caches | Config, route and event cache of the booted app (Artisan only), one row per cache (subjects `config-cache`, `route-cache`, `event-cache`) | Booted app | — | Cache missing in `production` (**low**) | All cached / `skipped` outside `production` | "Run php artisan config:cache (or php artisan optimize) on deploy." |
+| `laravel-pending-migrations` | Pending migrations | Migration files vs. the migrations table of the default connection (Artisan only) | Migrator | Migrations not run (**medium**); count and up to three names | — | All run / `skipped` if the database cannot be read | "Run php artisan migrate --force as part of the deploy." |
+| `laravel-failed-jobs` | Failed jobs | Count and oldest `failed_at` of the failed job store (Artisan only) | Failed job provider | — | Failed jobs exist (**medium**; **high** when the oldest is 24 hours old or more, configurable) | None / `skipped` with the `null` driver or an unreadable store | "Inspect them with php artisan queue:failed, then retry or remove them." |
+| `laravel-scheduler-heartbeat` | Scheduler heartbeat | Cache key `excubia:scheduler-heartbeat`, written every minute by the scheduled `excubia:heartbeat` command (Artisan only) | Default cache store | — | Heartbeat older than 10 minutes (configurable) or never written (**medium**) | Recent heartbeat / `skipped` if the cache cannot be read | "Run php artisan schedule:run every minute." |
+| `laravel-maintenance-mode` | Maintenance mode | Maintenance mode of the booted app (Artisan only) | Booted app | — | App is down (**medium**) | App is up | "Run php artisan up when the maintenance is over." |
 | `upgrade-plan` | Upgrade order | Combines the above into an ordered list: security fixes → runtime EOL (PHP) → blockers → Laravel major → stale/abandoned replacements | Derived | — (always `info`) | — | — | Ordered, numbered steps |
 
 Notes:
@@ -62,6 +68,7 @@ Notes:
 - `upgrade-plan` is a report section, never changes the exit code.
 - Node version precedence is `.nvmrc` > `.node-version` > `package.json` `engines.node`.
 - The next Laravel major is the locked `laravel/framework` major plus one, not a fixed `^13`.
+- The six `laravel-*` posture checks (#73, approved for 1.0.0-beta on 2026-11-03) need the booted app, so only `php artisan excubia:check` and `excubia:push` run them: the Artisan command reads the posture through the container into `LaravelPostureData` and attaches it to the snapshot. `vendor/bin/excubia` cannot boot the app and reports all six as `skipped` with "requires Artisan" (`skipReason` `not-applicable`). They are read-only except the heartbeat key, add no per-request hook, and their findings carry only booleans, counts, ages and names. The service provider schedules `excubia:heartbeat` every minute; it stores the Unix time under `excubia:scheduler-heartbeat` in the default cache store. The posture checks do not feed the upgrade plan.
 - Not in v0.1.0 (D8): `env-example-sync` (keys in `.env.example` vs. `config/*.php` `env()` calls) and `qiick-recommendations` (suggest `qiick/*` replacements) are mentioned in the knowledge base only as ideas ("better as a Health Check check", "Specula Health Check Recommendations"). They become `needs-decision` proposal issues, not code.
 
 ## 4. CLI UX
@@ -114,7 +121,9 @@ Table output: grouped by severity, coloured (no colour when not a TTY or `NO_COL
     "composer-stale": { "staleAfterMonths": 24 },
     "php-eol": { "warnDaysBeforeEol": 180 },
     "laravel-eol": { "warnDaysBeforeEol": 180 },
-    "node-eol": { "enabled": true }
+    "node-eol": { "enabled": true },
+    "laravel-scheduler-heartbeat": { "staleAfterMinutes": 10 },
+    "laravel-failed-jobs": { "highSeverityAfterHours": 24 }
   },
   "ignore": [
     { "checkId": "composer-advisories", "subject": "vendor/package", "advisoryId": "GHSA-xxxx", "reason": "Not reachable", "until": "2027-01-31" }
@@ -140,7 +149,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 - No telemetry, no analytics, no phone-home to qiick or any third party. The only exception is the opt-in push to the user's own `excubia-app` (section 13), which is off until the user configures an app URL and token.
 - `GITHUB_TOKEN` is optional, read from the environment only, never printed or written to the cache or report.
 - All HTTP over TLS with timeouts (connect 5 s, total 15 s) and limited retries with backoff; respects `HTTPS_PROXY`.
-- The tool never writes to the scanned project except `--output` and never executes project code (no app boot for `vendor/bin/excubia`).
+- The tool never writes to the scanned project except `--output` and never executes project code (no app boot for `vendor/bin/excubia`). The Artisan commands run inside the already booted app; the posture checks read it without writing, except the scheduler heartbeat cache key, and never report `.env` values, DSNs, hostnames, paths or exception messages.
 - `SECURITY.md` with private vulnerability reporting.
 
 ## 8. Testing, CI, release

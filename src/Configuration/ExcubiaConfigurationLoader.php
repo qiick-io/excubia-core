@@ -68,6 +68,8 @@ final class ExcubiaConfigurationLoader
             isStrict: array_key_exists('strict', $document) ? $this->boolean($document['strict'], 'strict') : $defaults->isStrict,
             isHealthEndpointEnabled: $healthEndpoint['enabled'],
             healthEndpointPath: $healthEndpoint['path'],
+            schedulerHeartbeatStaleAfterMinutes: $checks['schedulerHeartbeatStaleAfterMinutes'],
+            failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
         );
     }
 
@@ -119,7 +121,9 @@ final class ExcubiaConfigurationLoader
      *     staleAfterMonths: int,
      *     phpWarnDaysBeforeEndOfLife: int,
      *     laravelWarnDaysBeforeEndOfLife: int,
-     *     isNodeEndOfLifeCheckEnabled: bool
+     *     isNodeEndOfLifeCheckEnabled: bool,
+     *     schedulerHeartbeatStaleAfterMinutes: int,
+     *     failedJobHighSeverityAfterHours: int
      * }
      */
     private function checks(mixed $checks, ExcubiaConfigurationData $defaults): array
@@ -128,13 +132,15 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs'], 'checks');
 
         return [
             'staleAfterMonths' => $this->integerSetting($checks, 'composer-stale', 'staleAfterMonths', $defaults->staleAfterMonths),
             'phpWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'php-eol', 'warnDaysBeforeEol', $defaults->phpWarnDaysBeforeEndOfLife),
             'laravelWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'laravel-eol', 'warnDaysBeforeEol', $defaults->laravelWarnDaysBeforeEndOfLife),
             'isNodeEndOfLifeCheckEnabled' => $this->booleanSetting($checks, 'node-eol', 'enabled', $defaults->isNodeEndOfLifeCheckEnabled),
+            'schedulerHeartbeatStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-scheduler-heartbeat', 'staleAfterMinutes', $defaults->schedulerHeartbeatStaleAfterMinutes),
+            'failedJobHighSeverityAfterHours' => $this->integerSetting($checks, 'laravel-failed-jobs', 'highSeverityAfterHours', $defaults->failedJobHighSeverityAfterHours),
         ];
     }
 
