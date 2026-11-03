@@ -46,7 +46,7 @@ composer analyse   # PHPStan
 php bin/excubia check --no-banner        # dogfood on this repo
 ```
 
-Run all three before every push. CI (`.github/workflows/ci.yml`) runs PHP 8.3/8.4/8.5 × lowest/stable, Pint, PHPStan, Pest with coverage, a `src/Checks` coverage gate and a dogfood run.
+Run all three before every push. CI (`.github/workflows/ci.yml`) runs PHP 8.3/8.4/8.5 × lowest/stable, Pint, PHPStan, Pest with coverage, a coverage gate (≥ 90 % on `src/Checks` and on all of `src/`) and a dogfood run.
 
 ## Code conventions ("Codice Perfetto")
 
