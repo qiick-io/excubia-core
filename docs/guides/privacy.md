@@ -53,9 +53,9 @@ Each check that would send names (`composer-advisories`, `npm-advisories`, `comp
 Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs` and its `sampleRate` (`docs/runtime-schema.json`):
 
 - requests: route name (or `unnamed`), HTTP method, status class (`2xx`, …);
-- slow queries: SQL text without bindings, with quoted string literals replaced by `?`, and the connection name;
+- slow queries: SQL text without bindings, with inline literals (single-quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`; double-quoted and backtick-quoted identifiers stay, and the connection name;
 - jobs: job class, queue and connection names, `processed` or `failed`;
-- scheduled tasks: the description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it), secrets such as `--password=…` masked as in exception messages; `finished`, `failed` or `skipped`;
+- scheduled tasks: the description you set (paths relative to the project, secrets such as `token=…` masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, never their arguments, else `Closure`; `finished`, `failed` or `skipped`;
 - outgoing HTTP (Laravel's HTTP client): host and status class.
 
 Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
@@ -75,25 +75,28 @@ Masking, applied before anything is written to the local buffer, in this order:
 | What | Becomes |
 | --- | --- |
 | Matches of `exceptions.maskPatterns` | `[masked]` |
-| Absolute paths | project root removed; other paths reduced to the file name |
+| Absolute paths (`/…`, `C:\…`, `\\server\share\…`) | project root removed; other paths reduced to the file name |
 | URL credentials | removed |
+| URL hosts and ports | `[host]` (the scheme and path stay) |
 | URL query strings and fragments | `?[query]` |
 | Quoted SQL literals, when the message carries SQL | `?` |
 | Database `Host`, `Socket`, `Port`, `Database` details | `[masked]` |
 | JWTs | `[jwt]` |
 | `Bearer` / `Basic` credentials | `[token]` |
+| Any other `Authorization` / `Proxy-Authorization` value (`Token`, `Digest`, `AWS4-HMAC-SHA256`…) | `[masked]` |
+| Host names after `host:`, `hostname=`, `resolve host` or `getaddrinfo for` | `[host]` |
 | `password=`, `secret:`, `token=`, `api_key=` and similar values | `[masked]` |
 | Emails | `[email]` |
 | IPv4 and IPv6 addresses | `[ip]` |
 | UUIDs | `[uuid]` |
 | Hex strings of 32+ characters, 20+ character strings mixing letters and digits (API keys) | `[token]` |
-| Card-like runs of 13–19 digits, any number longer than four digits | `[number]` |
+| Phone-like numbers (`+` and 8 or more digits with separators), US social security numbers, card-like runs of 13–19 digits, any number longer than four digits | `[number]` |
 
 Query exceptions are rebuilt from the driver message, the connection name and the SQL without bindings. Never sent: request payloads, headers, cookies, users, IP addresses, query bindings, `.env` values or absolute paths.
 
 ## Health endpoint
 
-Off until `healthEndpoint.enabled` is true and `EXCUBIA_HEALTH_SECRET` is set. It sends nothing by itself; it answers a `GET` that carries the secret, with check ids, check names, statuses, severities, counts and package or runtime names. Finding messages, fix hints and evidence URLs are not included, so no path, hostname, token or `.env` value reaches the response. A wrong or missing secret gets `404`.
+Off until `healthEndpoint.enabled` is true and `EXCUBIA_HEALTH_SECRET` is set to at least 32 characters. It sends nothing by itself; it answers a `GET` that carries the secret, with check ids, check names, statuses, severities, counts and package or runtime names. Finding messages, fix hints and evidence URLs are not included, so no path, hostname, token or `.env` value reaches the response. A wrong or missing secret gets `404`, and the route is throttled (60 requests a minute per client IP).
 
 ## Local files
 
