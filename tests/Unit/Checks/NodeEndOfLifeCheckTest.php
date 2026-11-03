@@ -73,3 +73,11 @@ it('passes a supported release and skips a data-source outage', function () {
     expect($supported->status)->toBe(FindingStatusEnum::Pass)
         ->and($offline->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the matched cycle and its support end dates in details', function () {
+    $failed = nodeEndOfLifeCheck()->run(nodeSnapshot('18'), ExcubiaConfigurationData::defaults());
+    $warned = nodeEndOfLifeCheck()->run(nodeSnapshot('20.11.0'), ExcubiaConfigurationData::defaults());
+
+    expect($failed->findings[0]->details)->toBe(['cycle' => '18', 'securitySupportEndsOn' => '2025-04-30', 'activeSupportEndsOn' => '2023-10-18'])
+        ->and($warned->findings[0]->details)->toBe(['cycle' => '20', 'securitySupportEndsOn' => '2027-02-01', 'activeSupportEndsOn' => '2026-04-01']);
+});

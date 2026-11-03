@@ -154,7 +154,7 @@ final class SarifRenderer implements ReportRendererContract
                     ],
                 ],
             ],
-            'partialFingerprints' => [self::FINGERPRINT_KEY => $this->fingerprint($finding)],
+            'partialFingerprints' => [self::FINGERPRINT_KEY => $finding->fingerprint()],
             'properties' => $properties,
         ];
     }
@@ -189,15 +189,5 @@ final class SarifRenderer implements ReportRendererContract
         }
 
         return self::MANIFEST_BY_CHECK_ID[$checkId] ?? 'composer.lock';
-    }
-
-    /**
-     * Check id, subject and advisory id only. Messages and fix hints carry
-     * dates and recommended versions that move over time, so they are left
-     * out to keep GitHub from reopening the same alert on every run.
-     */
-    private function fingerprint(FindingData $finding): string
-    {
-        return hash('sha256', implode("\0", [$finding->checkId, $finding->subject, $finding->advisoryId ?? '']));
     }
 }

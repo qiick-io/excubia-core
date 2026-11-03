@@ -98,6 +98,26 @@ vendor/bin/excubia --version
 
 In the JSON report every `skipped` finding has a `skipReason`: `data-source-failure`, `offline` (`--offline` found no cached response) or `not-applicable` (the check does not apply or is disabled).
 
+The JSON report also carries, as optional fields of schema version 1:
+
+- top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with the `php`, `laravel` and `node` versions (each `null` when not declared; no name, path or hostname);
+- per finding: `fingerprint` (sha256 of `checkId`, `subject` and `advisoryId` joined by a NUL byte, the same value as the SARIF `partialFingerprints`, stable across runs), `advisoryId` on advisory findings, and `details` with check-specific values so you do not parse `message`:
+
+| `checkId` | `details` keys |
+| --- | --- |
+| `composer-advisories` | `package`, `lockedVersion`, `affectedVersions` (Composer constraint), `fixedVersions` (list: the exclusive upper bound of each affected range) |
+| `npm-advisories` | `package`, `lockedVersion`, `fixedVersions` (always empty for now: the OSV batch answer has ids only) |
+| `php-eol`, `laravel-eol`, `node-eol` | `cycle`, `securitySupportEndsOn`, `activeSupportEndsOn` (`Y-m-d` or `null`) |
+| `composer-abandoned` | `package`, `lockedVersion`, `replacement` (or `null`) |
+| `composer-stale` | `package`, `lockedVersion` |
+| `laravel-next-blocker` | `package`, `lockedVersion`, `targetMajor` (integer) |
+| `laravel-pending-migrations` | `count` |
+| `laravel-failed-jobs` | `count`, `oldestAgeHours` (or `null`) |
+| `laravel-scheduler-heartbeat` | `minutesSinceLastRun` (`null`: never ran) |
+| private packages row of the five checks that send names | `count` |
+
+`laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).
+
 ## CLI
 
 ```

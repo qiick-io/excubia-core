@@ -54,8 +54,10 @@ it('posts the envelope with the bearer token and exits 0', function () {
         ->and($payload['protocolVersion'])->toBe(1)
         ->and($payload['batchId'])->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/')
         ->and($payload['sentAt'])->toBe('2026-11-02T08:00:00Z')
-        ->and(array_keys($payload['report']))->toBe(['schemaVersion', 'checks', 'upgradePlan'])
+        ->and(array_keys($payload['report']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
         ->and($payload['report']['schemaVersion'])->toBe(1)
+        ->and($payload['report']['generatedAt'])->toBe('2026-11-02T08:00:00Z')
+        ->and($payload['report']['project'])->toBe(['php' => '8.1.0', 'laravel' => 'v10.48.22', 'node' => null])
         ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain(PUSH_TOKEN)
         ->and($tester->getDisplay())->toContain($payload['batchId'])
         ->and($tester->getDisplay())->not->toContain(PUSH_TOKEN);

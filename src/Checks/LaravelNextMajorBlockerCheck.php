@@ -74,27 +74,32 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
             }
 
             if ($preReleaseAllows) {
-                $findings[] = $this->finding($package->name, FindingStatusEnum::Warn, SeverityEnum::Low, $nextMajor);
+                $findings[] = $this->finding($package, FindingStatusEnum::Warn, SeverityEnum::Low, $nextMajor);
 
                 continue;
             }
 
-            $findings[] = $this->finding($package->name, FindingStatusEnum::Fail, SeverityEnum::Medium, $nextMajor);
+            $findings[] = $this->finding($package, FindingStatusEnum::Fail, SeverityEnum::Medium, $nextMajor);
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), $findings);
     }
 
-    private function finding(string $packageName, FindingStatusEnum $status, SeverityEnum $severity, int $nextMajor): FindingData
+    private function finding(LockedPackageData $package, FindingStatusEnum $status, SeverityEnum $severity, int $nextMajor): FindingData
     {
         return new FindingData(
             checkId: $this->id(),
             severity: $severity,
             status: $status,
-            subject: $packageName,
+            subject: $package->name,
             message: 'Latest release does not allow Laravel '.$nextMajor.'.',
             fixHint: 'No release supports Laravel '.$nextMajor.' yet; watch / replace / fork.',
-            evidenceUrl: 'https://packagist.org/packages/'.$packageName,
+            evidenceUrl: 'https://packagist.org/packages/'.$package->name,
+            details: [
+                'package' => $package->name,
+                'lockedVersion' => $package->version,
+                'targetMajor' => $nextMajor,
+            ],
         );
     }
 

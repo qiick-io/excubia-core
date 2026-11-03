@@ -62,6 +62,11 @@ final class ComposerAbandonedCheck implements HealthCheckContract
                     ? 'Replace with '.$abandoned.'.'
                     : 'no replacement suggested',
                 evidenceUrl: 'https://packagist.org/packages/'.$package->name,
+                details: [
+                    'package' => $package->name,
+                    'lockedVersion' => $package->version,
+                    'replacement' => is_string($abandoned) ? $abandoned : null,
+                ],
             );
         }
 

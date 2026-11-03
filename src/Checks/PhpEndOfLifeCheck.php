@@ -71,6 +71,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
         if ($hasActiveSupportEnded && $isSecuritySupportEndingSoon) {
             return CheckResultData::fromFindings($this->id(), $this->name(), [
                 $this->finding(
+                    $cycle,
                     FindingStatusEnum::Warn,
                     SeverityEnum::Medium,
                     'Active support ended. Security support ends '.$securityEnds->format('Y-m-d').'.',
@@ -93,6 +94,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
 
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             $this->finding(
+                $cycle,
                 FindingStatusEnum::Fail,
                 SeverityEnum::Critical,
                 'Security support ended on '.$endedOn.'.',
@@ -101,7 +103,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
         ]);
     }
 
-    private function finding(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): FindingData
+    private function finding(EndOfLifeCycleData $cycle, FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): FindingData
     {
         return new FindingData(
             checkId: $this->id(),
@@ -111,6 +113,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
             message: $message,
             fixHint: $fixHint,
             evidenceUrl: 'https://endoflife.date/php',
+            details: $cycle->findingDetails(),
         );
     }
 

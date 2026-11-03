@@ -108,3 +108,14 @@ it('passes a recent release and skips when a data source is down', function () {
     expect($passed->status)->toBe(FindingStatusEnum::Pass)
         ->and($offline->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the package and locked version in details', function () {
+    $result = staleCheck([
+        'https://repo.packagist.org/p2/jenssegers/agent.json' => metadata('jenssegers/agent', 'v2.6.4', '2020-06-13T08:05:20+00:00', 'https://github.com/jenssegers/agent.git'),
+        'https://api.github.com/repos/jenssegers/agent' => ['full_name' => 'jenssegers/agent', 'archived' => false, 'pushed_at' => '2024-08-05T12:34:44Z'],
+    ])->run(new ProjectSnapshotData(null, null, [
+        new LockedPackageData('jenssegers/agent', 'v2.6.3', true, false),
+    ], [], null), ExcubiaConfigurationData::defaults());
+
+    expect($result->findings[0]->details)->toBe(['package' => 'jenssegers/agent', 'lockedVersion' => 'v2.6.3']);
+});

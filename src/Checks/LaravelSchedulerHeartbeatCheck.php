@@ -44,7 +44,7 @@ final class LaravelSchedulerHeartbeatCheck implements HealthCheckContract
         }
 
         if ($posture->schedulerHeartbeatAt === null) {
-            return $this->warned('The scheduler has never run excubia:heartbeat.');
+            return $this->warned('The scheduler has never run excubia:heartbeat.', null);
         }
 
         $ageMinutes = intdiv(max(0, $posture->collectedAt->getTimestamp() - $posture->schedulerHeartbeatAt->getTimestamp()), 60);
@@ -53,10 +53,13 @@ final class LaravelSchedulerHeartbeatCheck implements HealthCheckContract
             return CheckResultData::fromFindings($this->id(), $this->name(), []);
         }
 
-        return $this->warned('The scheduler last ran '.$ageMinutes.' minutes ago.');
+        return $this->warned('The scheduler last ran '.$ageMinutes.' minutes ago.', $ageMinutes);
     }
 
-    private function warned(string $message): CheckResultData
+    /**
+     * `$minutesSinceLastRun` is null when the heartbeat was never written.
+     */
+    private function warned(string $message, ?int $minutesSinceLastRun): CheckResultData
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             new FindingData(
@@ -67,6 +70,7 @@ final class LaravelSchedulerHeartbeatCheck implements HealthCheckContract
                 message: $message,
                 fixHint: 'Run php artisan schedule:run every minute (cron) or keep php artisan schedule:work running.',
                 evidenceUrl: 'https://laravel.com/docs/scheduling#running-the-scheduler',
+                details: ['minutesSinceLastRun' => $minutesSinceLastRun],
             ),
         ]);
     }

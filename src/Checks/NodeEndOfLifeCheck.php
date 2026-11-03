@@ -81,11 +81,11 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
         $fixHint = 'Move to Node LTS '.$this->recommendedLts($cycles, $today).'.';
 
         if ($ends !== null && $today > $ends) {
-            return $this->singleFindingResult(FindingStatusEnum::Fail, SeverityEnum::High, 'Node '.$majorVersion.' is end of life.', $fixHint);
+            return $this->singleFindingResult($cycle, FindingStatusEnum::Fail, SeverityEnum::High, 'Node '.$majorVersion.' is end of life.', $fixHint);
         }
 
         if ($ends !== null && $this->calendarDate->daysUntil($today, $ends) <= self::WARN_DAYS) {
-            return $this->singleFindingResult(FindingStatusEnum::Warn, SeverityEnum::Low, 'Maintenance for Node '.$majorVersion.' ends on '.$ends->format('Y-m-d').'.', $fixHint);
+            return $this->singleFindingResult($cycle, FindingStatusEnum::Warn, SeverityEnum::Low, 'Maintenance for Node '.$majorVersion.' ends on '.$ends->format('Y-m-d').'.', $fixHint);
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), []);
@@ -94,10 +94,10 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
     /**
      * One finding for the `node` subject.
      */
-    private function singleFindingResult(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
+    private function singleFindingResult(EndOfLifeCycleData $cycle, FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
-            new FindingData($this->id(), $severity, $status, 'node', $message, $fixHint, 'https://endoflife.date/nodejs'),
+            new FindingData($this->id(), $severity, $status, 'node', $message, $fixHint, 'https://endoflife.date/nodejs', details: $cycle->findingDetails()),
         ]);
     }
 

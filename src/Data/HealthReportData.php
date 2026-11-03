@@ -15,7 +15,9 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * `schemaVersion` is always 1 for this milestone. Ignore rules are applied
  * by `withoutIgnoredFindings` before `exitCodeFor` is called. Upgrade steps
  * are kept as given; the upgrade-plan service rebuilds them from the
- * findings that remain.
+ * findings that remain. `generatedAt`, `excubiaVersion` and `project` are
+ * set by the runner; a hand-built report may leave them null, and the JSON
+ * renderer then omits them (optional fields, schema version 1).
  */
 final readonly class HealthReportData
 {
@@ -30,6 +32,9 @@ final readonly class HealthReportData
     public function __construct(
         public array $checkResults,
         public array $upgradeSteps,
+        public ?DateTimeImmutable $generatedAt = null,
+        public ?string $excubiaVersion = null,
+        public ?ProjectVersionsData $project = null,
     ) {
         $this->schemaVersion = self::SCHEMA_VERSION;
     }
@@ -111,7 +116,7 @@ final readonly class HealthReportData
             );
         }
 
-        return new self($checkResults, $this->upgradeSteps);
+        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project);
     }
 
     /**
