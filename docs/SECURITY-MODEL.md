@@ -65,7 +65,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | --- | --- |
 | Destination | `POST {app.url}/api/reports` on the user's own `excubia-app` |
 | What is sent | the envelope of `docs/push-schema.json`: `protocolVersion`, a random `batchId`, `sentAt`, and the JSON report (check ids, statuses, package names, versions, finding messages, fix hints, evidence URLs, upgrade plan). Posture checks add only booleans, counts, ages, cache names and migration names. |
-| Credentials | `Authorization: Bearer <token>` from `EXCUBIA_APP_TOKEN` or `app.token`. |
+| Credentials | `Authorization: Bearer <token>` from `EXCUBIA_APP_TOKEN` or `app.token`. A token in `excubia.json` gets a warning on stderr on every `check`, `push` and `push-runtime` run. |
 
 **Controls.**
 - HTTPS only, plain HTTP only to loopback hosts. A non-HTTPS app URL is a configuration error (exit 2) before anything is sent.
@@ -134,7 +134,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Spoofing** a data source to hide advisories | 1 | HTTPS with peer verification; no plain HTTP except loopback | A compromised public source is trusted (by design) |
 | **Spoofing** responses through a planted cache | 2 | per-user default directory, owner/mode/symlink check, `--no-cache` | A configured shared `cache.directory` is the user's responsibility |
 | **Spoofing** the app to collect pushes | 3–5 | HTTPS only; no redirects on POST; token only to the configured origin | Whoever controls `EXCUBIA_APP_URL` receives the data |
-| **Spoofing** a project toward the app (forged pushes) | 3–5 | Bearer token per project | A token committed in `excubia.json` (#110) |
+| **Spoofing** a project toward the app (forged pushes) | 3–5 | Bearer token per project; warning when `app.token` is set in `excubia.json` (#110) | A token committed despite the warning; rotate it in `excubia-app` |
 | **Tampering** with buffered data | 4, 5 | `flock`, JSON-encoded lines, strict batch names, app-side additivity | Anyone who can write `storage/` can alter data before it is sent (same as the app's logs) |
 | **Tampering** in CI through a fork PR | 8 | project code never runs; inputs via env; SHA-pinned actions | Excubia's own dependencies are resolved at run time (#111) |
 | **Repudiation** | 3–5 | `batchId`, `sentAt`, the app stores per project token | No signing of payloads (not needed for the user's own app) |
@@ -163,7 +163,6 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 
 | Issue | Severity | Summary |
 | --- | --- | --- |
-| #110 | low | Warn when the project token is read from `excubia.json` |
 | #111 | low | GitHub Action resolves Excubia's dependencies unlocked at run time |
 
 No finding of severity high or critical is open.

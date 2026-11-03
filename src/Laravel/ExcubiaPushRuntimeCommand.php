@@ -9,6 +9,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Console\Command;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
+use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
@@ -60,6 +61,8 @@ final class ExcubiaPushRuntimeCommand extends Command
 
             return ExitCodeEnum::UsageOrConfigurationError->value;
         }
+
+        CheckCommand::warnAboutTokenInFile($configuration, $this->output);
 
         if (! $configuration->runtime->isEnabled && ! $configuration->exceptions->isEnabled) {
             $this->line('Runtime monitoring is disabled (runtime.enabled in excubia.json), and so is exception capture (exceptions.enabled).');
