@@ -10,7 +10,7 @@ use Qiick\Excubia\Laravel\HealthEndpointService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Symfony\Component\Console\Tester\CommandTester;
 
-const HEALTH_SECRET = 'test-health-secret';
+const HEALTH_SECRET = 'test-health-secret-0123456789abcdef';
 
 /**
  * Point the app at a temporary project and storage, then boot the provider
@@ -85,6 +85,50 @@ it('is not registered when enabled without a secret', function () {
     bootHealthProject($this->app, ['enabled' => true]);
 
     expect(hasHealthRoute())->toBeFalse();
+});
+
+it('is not registered with a secret shorter than 32 characters, and the commands say so', function () {
+    putenv(HealthEndpointService::SECRET_VARIABLE.'='.str_repeat('s', HealthEndpointService::MIN_SECRET_LENGTH - 1));
+    bootHealthProject($this->app, ['enabled' => true], [
+        'composer.json' => '{}',
+        'composer.lock' => '{"packages": [], "packages-dev": []}',
+    ]);
+
+    expect(hasHealthRoute())->toBeFalse()
+        ->and(HealthEndpointService::hasShortSecret())->toBeTrue();
+    $this->get('/excubia/health', [HealthEndpointService::SECRET_HEADER => str_repeat('s', HealthEndpointService::MIN_SECRET_LENGTH - 1)])->assertNotFound();
+    $this->artisan('excubia:check', ['--offline' => true, '--no-banner' => true, '--fail-on' => 'none'])
+        ->expectsOutputToContain(HealthEndpointService::SHORT_SECRET_WARNING)
+        ->assertExitCode(0);
+});
+
+it('registers the route with a secret of exactly 32 characters and prints no warning', function () {
+    $secret = str_repeat('s', HealthEndpointService::MIN_SECRET_LENGTH);
+    putenv(HealthEndpointService::SECRET_VARIABLE.'='.$secret);
+    bootHealthProject($this->app, ['enabled' => true], [
+        'composer.json' => '{}',
+        'composer.lock' => '{"packages": [], "packages-dev": []}',
+    ]);
+
+    expect(hasHealthRoute())->toBeTrue();
+    $this->get('/excubia/health', [HealthEndpointService::SECRET_HEADER => $secret])->assertOk();
+    $this->artisan('excubia:check', ['--offline' => true, '--no-banner' => true, '--fail-on' => 'none'])
+        ->doesntExpectOutputToContain(HealthEndpointService::SHORT_SECRET_WARNING)
+        ->assertExitCode(0);
+});
+
+it('throttles secret guesses with the throttle middleware', function () {
+    bootHealthProject($this->app, ['enabled' => true]);
+
+    $route = collect(Route::getRoutes()->getRoutes())->first(fn (Illuminate\Routing\Route $route): bool => $route->uri() === 'excubia/health');
+
+    expect($route?->middleware())->toContain(HealthEndpointService::THROTTLE_MIDDLEWARE);
+
+    for ($attempt = 0; $attempt < 60; $attempt++) {
+        $this->get('/excubia/health', [HealthEndpointService::SECRET_HEADER => 'guess-'.$attempt])->assertNotFound();
+    }
+
+    $this->get('/excubia/health', [HealthEndpointService::SECRET_HEADER => HEALTH_SECRET])->assertTooManyRequests();
 });
 
 it('is not registered when excubia.json is invalid, and the app still boots', function () {

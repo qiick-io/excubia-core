@@ -126,7 +126,7 @@ See the [health endpoint guide](./health-endpoint.md). The secret is not a key: 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `healthEndpoint` | object | | Oh Dear-compatible endpoint, Laravel only. |
-| `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route (only when `EXCUBIA_HEALTH_SECRET` is set too). |
+| `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route (only when `EXCUBIA_HEALTH_SECRET` is set too, at least 32 characters). |
 | `healthEndpoint.path` | string | `excubia/health` | URL path of the route. Leading and trailing `/` are ignored. Letters, digits, `.`, `_`, `~`, `-` and `/` only. |
 
 ## Runtime monitoring
@@ -175,7 +175,7 @@ Excubia reads these from the process environment (`getenv()`), never from Larave
 | --- | --- | --- |
 | `EXCUBIA_APP_URL` | `push`, `excubia:push`, `excubia:push-runtime` | Base URL of your `excubia-app`. Wins over `app.url`. |
 | `EXCUBIA_APP_TOKEN` | `push`, `excubia:push`, `excubia:push-runtime` | Project push token. Wins over `app.token`. Never printed, cached or written to a report. |
-| `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header. Without it the route is not registered. |
+| `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header, at least 32 characters. Without it, or when it is shorter, the route is not registered. |
 | `GITHUB_TOKEN` | `composer-stale` | Optional. Raises the GitHub API rate limit for the archived-repository lookup. Sent only to `api.github.com`; never printed, cached or written to a report. |
 | `HTTPS_PROXY` | all HTTP requests | Proxy for the data sources and the push, read by Symfony HttpClient. |
 | `NO_COLOR` | `table` format | Turns colours off. |
