@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Services;
 
+use Composer\InstalledVersions;
 use DateTimeImmutable;
 use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
@@ -27,6 +28,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
+use Qiick\Excubia\Data\ProjectVersionsData;
 use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
@@ -125,16 +127,32 @@ final class HealthCheckRunnerService
             $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
-        $raw = new HealthReportData($checkResults, []);
+        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot));
         $report = $raw->withoutIgnoredFindings($configuration, $this->today);
 
         return [
             'report' => new HealthReportData(
                 $report->checkResults,
                 $this->upgradePlan->plan($snapshot, $report->findings()),
+                $report->generatedAt,
+                $report->excubiaVersion,
+                $report->project,
             ),
             'expiredIgnoreWarnings' => $configuration->expiredIgnoreWarnings($raw->findings(), $this->today),
         ];
+    }
+
+    /**
+     * The installed package version, the same value `bin/excubia --version`
+     * prints; `dev` when Composer does not know it.
+     */
+    public static function excubiaVersion(): string
+    {
+        if (! class_exists(InstalledVersions::class) || ! InstalledVersions::isInstalled('qiick/excubia-core')) {
+            return 'dev';
+        }
+
+        return InstalledVersions::getPrettyVersion('qiick/excubia-core') ?? 'dev';
     }
 
     /**
@@ -163,6 +181,7 @@ final class HealthCheckRunnerService
                 evidenceUrl: $finding->evidenceUrl,
                 advisoryId: $finding->advisoryId,
                 skipReason: SkipReasonEnum::Offline,
+                details: $finding->details,
             );
         }
 

@@ -14,10 +14,15 @@ use Qiick\Excubia\Enums\SkipReasonEnum;
  * The required fields are the v0.1.0 finding shape. `advisoryId` is optional
  * so an ignore rule can name one advisory. It is omitted from the required
  * JSON schema fields. `skipReason` is set on skipped rows only and tells a
- * data-source failure apart from a deliberate skip.
+ * data-source failure apart from a deliberate skip. `details` holds the
+ * check-specific values excubia-app reads instead of parsing the message
+ * (keys per check id in `docs/report-schema.json`); empty means none.
  */
 final readonly class FindingData
 {
+    /**
+     * @param  array<string, string|int|bool|list<string>|null>  $details
+     */
     public function __construct(
         public string $checkId,
         public SeverityEnum $severity,
@@ -28,6 +33,7 @@ final readonly class FindingData
         public ?string $evidenceUrl,
         public ?string $advisoryId = null,
         public ?SkipReasonEnum $skipReason = null,
+        public array $details = [],
     ) {}
 
     /**
@@ -58,7 +64,20 @@ final readonly class FindingData
             fixHint: '',
             evidenceUrl: null,
             skipReason: SkipReasonEnum::NotApplicable,
+            details: ['count' => $count],
         )];
+    }
+
+    /**
+     * Stable identity of the finding across reports: sha256 of check id,
+     * subject and advisory id joined by NUL. Messages and fix hints carry
+     * dates and recommended versions that move over time, so they are left
+     * out. The JSON `fingerprint` and the SARIF `partialFingerprints` entry
+     * both use this value.
+     */
+    public function fingerprint(): string
+    {
+        return hash('sha256', implode("\0", [$this->checkId, $this->subject, $this->advisoryId ?? '']));
     }
 
     /**

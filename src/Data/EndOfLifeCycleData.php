@@ -39,4 +39,19 @@ final readonly class EndOfLifeCycleData
     {
         return (new CalendarDateService)->parseUtcDate($this->activeSupportEndsOn);
     }
+
+    /**
+     * The `details` of an end-of-life finding: the matched cycle and its
+     * support end dates as `Y-m-d`, null when there is no end date.
+     *
+     * @return array{cycle: string, securitySupportEndsOn: string|null, activeSupportEndsOn: string|null}
+     */
+    public function findingDetails(): array
+    {
+        return [
+            'cycle' => $this->cycle,
+            'securitySupportEndsOn' => $this->securitySupportEndDate()?->format('Y-m-d'),
+            'activeSupportEndsOn' => $this->activeSupportEndDate()?->format('Y-m-d'),
+        ];
+    }
 }

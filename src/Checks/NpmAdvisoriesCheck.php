@@ -62,6 +62,13 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
                 fixHint: 'Update '.$vulnerability->packageName.' to ≥ fixed version.',
                 evidenceUrl: 'https://osv.dev/vulnerability/'.$vulnerability->id,
                 advisoryId: $vulnerability->id,
+                // ponytail: the OSV batch answer carries ids only, so fixedVersions stays empty;
+                // fetching each vulnerability (GET /v1/vulns/{id}) would fill it at one request per id.
+                details: [
+                    'package' => $vulnerability->packageName,
+                    'lockedVersion' => $vulnerability->version,
+                    'fixedVersions' => [],
+                ],
             );
         }
 

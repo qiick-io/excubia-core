@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Data\CheckResultData;
+use Qiick\Excubia\Data\EndOfLifeCycleData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
@@ -65,14 +66,14 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
         $fixHint = 'Upgrade to Laravel '.$nextMajor.'; security fixes for your version end '.$securityDate.'.';
 
         if ($securityEnds !== null && $today > $securityEnds) {
-            return $this->singleFindingResult(FindingStatusEnum::Fail, SeverityEnum::Critical, 'Security fixes ended on '.$securityDate.'.', $fixHint);
+            return $this->singleFindingResult($cycle, FindingStatusEnum::Fail, SeverityEnum::Critical, 'Security fixes ended on '.$securityDate.'.', $fixHint);
         }
 
         $haveBugFixesEnded = $bugFixesEnd !== null && $today > $bugFixesEnd;
         $isSecuritySupportEndingSoon = $securityEnds !== null && $this->calendarDate->daysUntil($today, $securityEnds) <= $configuration->laravelWarnDaysBeforeEndOfLife;
 
         if ($haveBugFixesEnded || $isSecuritySupportEndingSoon) {
-            return $this->singleFindingResult(FindingStatusEnum::Warn, SeverityEnum::Medium, 'Bug fixes ended or security fixes end within '.$configuration->laravelWarnDaysBeforeEndOfLife.' days.', $fixHint);
+            return $this->singleFindingResult($cycle, FindingStatusEnum::Warn, SeverityEnum::Medium, 'Bug fixes ended or security fixes end within '.$configuration->laravelWarnDaysBeforeEndOfLife.' days.', $fixHint);
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), []);
@@ -81,10 +82,10 @@ final class LaravelEndOfLifeCheck implements HealthCheckContract
     /**
      * One finding for the locked laravel/framework subject.
      */
-    private function singleFindingResult(FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
+    private function singleFindingResult(EndOfLifeCycleData $cycle, FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): CheckResultData
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
-            new FindingData($this->id(), $severity, $status, 'laravel/framework', $message, $fixHint, 'https://endoflife.date/laravel'),
+            new FindingData($this->id(), $severity, $status, 'laravel/framework', $message, $fixHint, 'https://endoflife.date/laravel', details: $cycle->findingDetails()),
         ]);
     }
 

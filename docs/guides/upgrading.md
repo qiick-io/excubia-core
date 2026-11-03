@@ -33,7 +33,13 @@ The service provider now schedules `php artisan excubia:heartbeat` every minute.
 
 ## New report fields
 
-The JSON report keeps `schemaVersion` `1`. New optional field: `skipReason` on every `skipped` finding (`data-source-failure`, `offline`, `not-applicable`). Consumers must ignore fields they do not know, as [`docs/VERSIONING.md`](../VERSIONING.md) says.
+The JSON report keeps `schemaVersion` `1`. New optional fields:
+
+- `skipReason` on every `skipped` finding (`data-source-failure`, `offline`, `not-applicable`);
+- top level `generatedAt`, `excubiaVersion` and `project` (`php`, `laravel`, `node` versions) (#92);
+- per finding `fingerprint` (the SARIF fingerprint, stable across runs), `advisoryId` on advisory findings and `details` with check-specific values (#92). The keys per check id are in the [README](../../README.md#formats) and [`docs/report-schema.json`](../report-schema.json).
+
+Table, Markdown and SARIF output are unchanged. Consumers must ignore fields they do not know, as [`docs/VERSIONING.md`](../VERSIONING.md) says.
 
 ## Strict mode and exit code 3
 

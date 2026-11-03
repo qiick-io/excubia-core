@@ -13,7 +13,9 @@
                     "subject": "php",
                     "message": "Security support ended.",
                     "fixHint": "Upgrade PHP to 8.3 (supported until 2027-12-31).",
-                    "evidenceUrl": null
+                    "evidenceUrl": null,
+                    "fingerprint": "201dd43b1d3edcdfcc7cdd2ca035b1b55d04045530032c9e248829f028341135",
+                    "advisoryId": "GHSA-hidden"
                 },
                 {
                     "checkId": "php-eol",
@@ -22,7 +24,8 @@
                     "subject": "php",
                     "message": "Supported.",
                     "fixHint": "",
-                    "evidenceUrl": null
+                    "evidenceUrl": null,
+                    "fingerprint": "0922da86f591a753fea108fa63f903b45018c654703247dff64c5cd727e8ec79"
                 }
             ]
         },
@@ -38,7 +41,8 @@
                     "subject": "vendor/package",
                     "message": "Known vulnerability.",
                     "fixHint": "Update vendor/package.",
-                    "evidenceUrl": "https://example.test/advisory"
+                    "evidenceUrl": "https://example.test/advisory",
+                    "fingerprint": "709cc8673c654b5ca2a654d2d2c1dc91a934eb1786ae396666d9a0ae3a0e72e7"
                 }
             ]
         }

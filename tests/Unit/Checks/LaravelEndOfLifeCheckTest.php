@@ -70,3 +70,11 @@ it('passes for a supported release and skips when the source is down', function 
     expect($supported->status)->toBe(FindingStatusEnum::Pass)
         ->and($offline->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the matched cycle and its support end dates in details', function () {
+    $failed = laravelEndOfLifeCheck()->run(laravelSnapshot('v10.48.22'), ExcubiaConfigurationData::defaults());
+    $warned = laravelEndOfLifeCheck()->run(laravelSnapshot('v12.0.0'), ExcubiaConfigurationData::defaults());
+
+    expect($failed->findings[0]->details)->toBe(['cycle' => '10', 'securitySupportEndsOn' => '2025-02-04', 'activeSupportEndsOn' => '2024-08-06'])
+        ->and($warned->findings[0]->details)->toBe(['cycle' => '12', 'securitySupportEndsOn' => '2026-12-01', 'activeSupportEndsOn' => '2026-02-01']);
+});

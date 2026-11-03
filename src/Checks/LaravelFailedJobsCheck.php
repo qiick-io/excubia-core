@@ -69,6 +69,7 @@ final class LaravelFailedJobsCheck implements HealthCheckContract
                 message: $message,
                 fixHint: 'Inspect them with php artisan queue:failed, then retry (queue:retry) or remove them (queue:forget, queue:flush).',
                 evidenceUrl: 'https://laravel.com/docs/queues#dealing-with-failed-jobs',
+                details: ['count' => $count, 'oldestAgeHours' => $ageHours],
             ),
         ]);
     }

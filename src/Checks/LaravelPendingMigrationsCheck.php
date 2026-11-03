@@ -61,6 +61,7 @@ final class LaravelPendingMigrationsCheck implements HealthCheckContract
                 message: $count.' pending '.($count === 1 ? 'migration' : 'migrations').': '.$named.$more.'.',
                 fixHint: 'Run php artisan migrate --force as part of the deploy.',
                 evidenceUrl: 'https://laravel.com/docs/migrations#running-migrations',
+                details: ['count' => $count],
             ),
         ]);
     }

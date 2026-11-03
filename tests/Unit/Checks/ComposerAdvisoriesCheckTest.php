@@ -73,3 +73,25 @@ it('skips when Packagist does not respond', function () {
 
     expect($result->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the package, locked version, affected range and fixed versions in details', function () {
+    $result = composerAdvisoriesCheck([
+        'advisories' => [
+            'laravel/framework' => [[
+                'advisoryId' => 'PKSA-ranges',
+                'packageName' => 'laravel/framework',
+                'affectedVersions' => '>=8.0.0,<8.0.1|>=10.0.0 <10.48.23|>=11.0.0,<=11.2.0|<7.15.2',
+                'severity' => 'high',
+            ]],
+        ],
+    ])->run(new ProjectSnapshotData(null, null, [
+        new LockedPackageData('laravel/framework', 'v10.48.22', true, false),
+    ], [], null), ExcubiaConfigurationData::defaults());
+
+    expect($result->findings[0]->details)->toBe([
+        'package' => 'laravel/framework',
+        'lockedVersion' => 'v10.48.22',
+        'affectedVersions' => '>=8.0.0,<8.0.1|>=10.0.0 <10.48.23|>=11.0.0,<=11.2.0|<7.15.2',
+        'fixedVersions' => ['8.0.1', '10.48.23', '7.15.2'],
+    ]);
+});

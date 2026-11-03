@@ -9,6 +9,7 @@ use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ComposerAdvisoryData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
+use Qiick\Excubia\Data\LockedPackageData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
@@ -63,14 +64,14 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
                     continue;
                 }
 
-                $findings[] = $this->finding($advisory);
+                $findings[] = $this->finding($advisory, $package);
             }
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), $findings);
     }
 
-    private function finding(ComposerAdvisoryData $advisory): FindingData
+    private function finding(ComposerAdvisoryData $advisory, LockedPackageData $package): FindingData
     {
         return new FindingData(
             checkId: $this->id(),
@@ -81,6 +82,12 @@ final class ComposerAdvisoriesCheck implements HealthCheckContract
             fixHint: 'Update '.$advisory->packageName.' to ≥ fixed version ('.$advisory->advisoryId.').',
             evidenceUrl: $advisory->link,
             advisoryId: $advisory->advisoryId,
+            details: [
+                'package' => $package->name,
+                'lockedVersion' => $package->version,
+                'affectedVersions' => $advisory->affectedVersions,
+                'fixedVersions' => $advisory->fixedVersions(),
+            ],
         );
     }
 

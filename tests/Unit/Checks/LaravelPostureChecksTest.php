@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use Qiick\Excubia\Checks\LaravelDebugModeCheck;
 use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
+use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
+use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
+use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
@@ -46,4 +50,33 @@ it('reports failed jobs at medium when their age is unknown', function () {
 
     expect($finding->message)->toBe('3 failed jobs.')
         ->and($finding->severity->value)->toBe('medium');
+});
+
+it('puts only counts and ages in the posture details', function () {
+    $collectedAt = new DateTimeImmutable('2026-11-03 12:00:00', new DateTimeZone('UTC'));
+    $posture = (new ProjectSnapshotData(null, null, [], [], null))->withLaravelPosture(new LaravelPostureData(
+        environment: 'production',
+        isDebugModeEnabled: true,
+        isConfigurationCached: false,
+        areRoutesCached: true,
+        areEventsCached: true,
+        isMaintenanceModeActive: true,
+        pendingMigrations: ['2026_01_01_000000_create_orders_table', '2026_01_02_000000_add_status'],
+        failedJobCount: 4,
+        oldestFailedJobAt: $collectedAt->modify('-30 hours'),
+        isSchedulerHeartbeatReadable: true,
+        schedulerHeartbeatAt: $collectedAt->modify('-45 minutes'),
+        collectedAt: $collectedAt,
+    ));
+    $configuration = ExcubiaConfigurationData::defaults();
+    $neverRan = (new LaravelSchedulerHeartbeatCheck)->run(handBuiltPosture(), $configuration)->findings[0];
+
+    expect((new LaravelPendingMigrationsCheck)->run($posture, $configuration)->findings[0]->details)->toBe(['count' => 2])
+        ->and((new LaravelFailedJobsCheck)->run($posture, $configuration)->findings[0]->details)->toBe(['count' => 4, 'oldestAgeHours' => 30])
+        ->and((new LaravelFailedJobsCheck)->run(handBuiltPosture(failedJobCount: 1), $configuration)->findings[0]->details)->toBe(['count' => 1, 'oldestAgeHours' => null])
+        ->and((new LaravelSchedulerHeartbeatCheck)->run($posture, $configuration)->findings[0]->details)->toBe(['minutesSinceLastRun' => 45])
+        ->and($neverRan->details)->toBe(['minutesSinceLastRun' => null])
+        ->and((new LaravelDebugModeCheck)->run($posture, $configuration)->findings[0]->details)->toBe([])
+        ->and((new LaravelProductionCachesCheck)->run($posture, $configuration)->findings[0]->details)->toBe([])
+        ->and((new LaravelMaintenanceModeCheck)->run($posture, $configuration)->findings[0]->details)->toBe([]);
 });
