@@ -18,7 +18,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * opt-in exception capture. The provider does not boot the scanned project.
  *
  * The endpoint route exists only when `excubia.json` has `healthEndpoint.enabled: true` and
- * `EXCUBIA_HEALTH_SECRET` is set; enabled without a secret, the route is not registered.
+ * `EXCUBIA_HEALTH_SECRET` is set to at least 32 characters; enabled without a secret, or with a
+ * shorter one, the route is not registered.
  * Runtime listeners and the every-minute `excubia:push-runtime` schedule exist only when
  * `runtime.enabled` is true. The `reportable()` callback on the exception handler and its
  * context listeners exist only when `exceptions.enabled` is true; `excubia:push-runtime` is
@@ -72,6 +73,7 @@ final class ExcubiaServiceProvider extends ServiceProvider
 
         $this->app->make('router')
             ->get($configuration->healthEndpointPath, HealthEndpointService::class)
+            ->middleware(HealthEndpointService::THROTTLE_MIDDLEWARE)
             ->name('excubia.health');
     }
 

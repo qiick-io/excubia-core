@@ -19,10 +19,12 @@ The package must be installed without `--dev`: `composer require qiick/excubia-c
 ## 2. Set the secret
 
 ```bash
-EXCUBIA_HEALTH_SECRET=a-long-random-string
+EXCUBIA_HEALTH_SECRET=$(openssl rand -hex 32)
 ```
 
-The secret is read from the process environment only, never from `excubia.json`, so it is not committed. With `php artisan config:cache`, `.env` is not loaded into the process, so set it in the real environment (PHP-FPM pool, container, systemd unit). Enabled without a secret, the provider does not register the route, so it cannot be left open by mistake.
+The secret must be at least 32 characters long; use a random value.
+
+The secret is read from the process environment only, never from `excubia.json`, so it is not committed. With `php artisan config:cache`, `.env` is not loaded into the process, so set it in the real environment (PHP-FPM pool, container, systemd unit). Enabled without a secret, or with a secret shorter than 32 characters, the provider does not register the route, so it cannot be left open by mistake; with a short secret `excubia:check` and `excubia:push` print a warning on stderr.
 
 Check that the route exists:
 
@@ -58,7 +60,7 @@ In Oh Dear, enable Application health monitoring with the URL `https://your-app.
 curl -s -H "oh-dear-health-check-secret: $EXCUBIA_HEALTH_SECRET" https://your-app.example/excubia/health
 ```
 
-A missing or wrong secret gets your app's normal `404`, so the route looks like a missing page. Before the first stored run, the answer is `200` with one `skipped` entry ("Not run yet").
+A missing or wrong secret gets your app's normal `404`, so the route looks like a missing page. The route is throttled with Laravel's `ThrottleRequests` middleware at 60 requests a minute per client IP (your app's default cache store); more answer `429`. Before the first stored run, the answer is `200` with one `skipped` entry ("Not run yet").
 
 ## Notes
 
