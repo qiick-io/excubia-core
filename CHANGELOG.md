@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - URL credentials (`https://user:password@…`) are removed from the app URL in error messages and in the `-v` request list.
 - Exception masking also covers `'key' => 'value'` dumps, quoted values with spaces, unterminated quotes and the `pass`, `cookie`, `session`, `dsn` and `private_key` key names.
 - Scheduled task names in runtime data go through the same masks, so `--password=…` and similar arguments are not buffered or sent.
+- Scheduled task names in runtime data (#109) drop every argument: an Artisan command is `artisan <command name>` and an `exec()` task is the executable's file name (leading `VAR=value` assignments skipped), so secrets in forms no mask recognises (`-pSECRET`, positional arguments) are never buffered or sent, and arguments no longer create new aggregates. A task description set by the developer is kept, masked as before. This changes the documented `task` value in `docs/runtime-schema.json` and SPEC §7.
 - GitHub owner and repository names `.` and `..` are refused before a request is built.
 
 ## [0.1.1] - 2026-11-01

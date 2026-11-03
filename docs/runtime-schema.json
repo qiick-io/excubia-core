@@ -116,7 +116,7 @@
                 "type": { "const": "scheduledTask" },
                 "bucket": { "$ref": "#/$defs/bucket" },
                 "sampleRate": { "$ref": "#/$defs/sampleRate" },
-                "task": { "type": "string", "minLength": 1, "description": "Task description, else the command (artisan <command> without the PHP and Artisan binaries), else Closure. Paths are relative to the project, or a file name outside it; secrets such as --password=… are masked as in exception messages." },
+                "task": { "type": "string", "minLength": 1, "description": "Task description as set by the developer, with paths relative to the project (a file name outside it) and secrets masked as in exception messages; else artisan <command name> for an Artisan command or the executable's file name for an exec() task, without any argument; else Closure." },
                 "outcome": { "enum": ["finished", "failed", "skipped"] },
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },

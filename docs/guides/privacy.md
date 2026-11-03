@@ -55,7 +55,7 @@ Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute,
 - requests: route name (or `unnamed`), HTTP method, status class (`2xx`, …);
 - slow queries: SQL text without bindings, with quoted string literals replaced by `?`, and the connection name;
 - jobs: job class, queue and connection names, `processed` or `failed`;
-- scheduled tasks: the description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it), secrets such as `--password=…` masked as in exception messages; `finished`, `failed` or `skipped`;
+- scheduled tasks: the description you set (paths relative to the project, secrets such as `token=…` masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, never their arguments, else `Closure`; `finished`, `failed` or `skipped`;
 - outgoing HTTP (Laravel's HTTP client): host and status class.
 
 Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
