@@ -111,6 +111,12 @@ it('rebuilds query errors from the SQL without bindings and without connection d
     expect($message)->toBe('SQLSTATE[HY000]: General error (Connection: mysql, SQL: select * from users where email = ? and token = ?)');
 });
 
+it('masks inline literals in the SQL of query errors', function () {
+    $exception = new QueryException('pgsql', 'select * from orders where user_id = 1234 and token = 0x5f3a9c and note = $$inline-secret$$', [], new PDOException('SQLSTATE[HY000]: General error'));
+
+    expect(capturedGroup($exception)['message'])->toBe('SQLSTATE[HY000]: General error (Connection: pgsql, SQL: select * from orders where user_id = ? and token = ? and note = ?)');
+});
+
 it('keeps the fingerprint across line-number changes in the same code path', function () {
     $first = capturedGroup(exceptionFromSameFunction(false));
     $later = capturedGroup(exceptionFromSameFunction(true));

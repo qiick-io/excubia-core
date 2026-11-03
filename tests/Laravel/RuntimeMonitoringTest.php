@@ -243,6 +243,15 @@ it('masks quoted literals and truncates long SQL', function () {
         ->and(mb_strlen(RuntimeCollectorService::maskSql(str_repeat('x', 5000))))->toBe(RuntimeCollectorService::MAX_SQL_LENGTH);
 });
 
+it('masks inline numeric, hex and dollar-quoted literals', function (string $sql, string $expected) {
+    expect(RuntimeCollectorService::maskSql($sql))->toBe($expected);
+})->with([
+    'numbers' => ['select * from orders where user_id = 48213 and total > 19.99 and id in (1, 2) limit 10', 'select * from orders where user_id = ? and total > ? and id in (?, ?) limit ?'],
+    'hex' => ["select * from tokens where token = 0x5f3a9c or hash = X'0aFF' or hash = x''", 'select * from tokens where token = ? or hash = ? or hash = ?'],
+    'dollar-quoted' => ['select * from notes where note = $$secret$$ or body = $body$it\'s 42 $1$body$', 'select * from notes where note = ? or body = ?'],
+    'placeholders and identifiers' => ['select t1.col_2, "Column 3" from t1 join t2 on t1.id = t2.t1_id where a = $1 and b = ? and c = :name1', 'select t1.col_2, "Column 3" from t1 join t2 on t1.id = t2.t1_id where a = $1 and b = ? and c = :name1'],
+]);
+
 it('aggregates processed and failed jobs by class, queue and outcome without the exception message', function () {
     bootRuntimeProject($this->app, ['enabled' => true]);
     config(['queue.default' => 'sync']);
@@ -388,7 +397,7 @@ it('flushes a long-running process before it holds too many aggregates', functio
     bootRuntimeProject($this->app, ['enabled' => true, 'slowQueries' => ['thresholdMs' => 0]]);
 
     for ($i = 0; $i < RuntimeCollectorService::MAX_PENDING_AGGREGATES; $i++) {
-        DB::select('select '.$i);
+        DB::select('select 1 as column_'.$i); // distinct identifiers: inline numbers are masked to one aggregate
     }
 
     expect(bufferedRuntime($this->app))->toHaveCount(RuntimeCollectorService::MAX_PENDING_AGGREGATES);

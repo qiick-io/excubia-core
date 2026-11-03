@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exception masking also covers `'key' => 'value'` dumps, quoted values with spaces, unterminated quotes and the `pass`, `cookie`, `session`, `dsn` and `private_key` key names.
 - Scheduled task names in runtime data go through the same masks, so `--password=…` and similar arguments are not buffered or sent.
 - GitHub owner and repository names `.` and `..` are refused before a request is built.
+- Slow-query SQL in runtime data and the SQL of captured query exceptions (#106) also replace standalone numbers, hex literals (`0x…`, `X'…'`) and dollar-quoted bodies (`$$…$$`, `$tag$…$tag$`) with `?`, not only single-quoted strings. Placeholders (`$1`, `?`), identifiers such as `t1` and double-quoted or backtick-quoted identifiers stay. This changes the documented `sql` value in `docs/runtime-schema.json` and SPEC §7: queries that differed only by an inline value now share one aggregate.
 
 ## [0.1.1] - 2026-11-01
 
