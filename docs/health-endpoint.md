@@ -4,48 +4,17 @@ An opt-in HTTP endpoint that serves the latest Excubia result in the [Oh Dear ap
 
 The response shape and the config keys below are a public contract (`docs/VERSIONING.md`), frozen with the other contracts at 1.0.0-beta (#76).
 
-## Enable it
+## Configuration
 
-The endpoint is registered by `Qiick\Excubia\Laravel\ExcubiaServiceProvider`, so it exists only in Laravel apps. It is off by default.
+The endpoint is registered by `Qiick\Excubia\Laravel\ExcubiaServiceProvider`, so it exists only in Laravel apps. It is off by default. Setup, scheduling and Oh Dear configuration are in the [health endpoint guide](guides/health-endpoint.md).
 
-1. Turn it on in `excubia.json` at the project root:
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route. |
+| `healthEndpoint.path` | string | `excubia/health` | URL path of the route. Leading and trailing `/` are ignored. Letters, digits, `.`, `_`, `~`, `-` and `/` only. |
+| `EXCUBIA_HEALTH_SECRET` (environment) | string | — | Expected value of the request header. Read from the process environment only. Without it the route is not registered. |
 
-   ```json
-   {
-     "healthEndpoint": { "enabled": true, "path": "excubia/health" }
-   }
-   ```
-
-   | Key | Type | Default | Meaning |
-   | --- | --- | --- | --- |
-   | `healthEndpoint.enabled` | boolean | `false` | Register the `GET` route. |
-   | `healthEndpoint.path` | string | `excubia/health` | URL path of the route. Leading and trailing `/` are ignored. Letters, digits, `.`, `_`, `~`, `-` and `/` only. |
-
-2. Set the secret in the environment:
-
-   ```bash
-   EXCUBIA_HEALTH_SECRET=a-long-random-string
-   ```
-
-   The secret is read from the process environment only (like `EXCUBIA_APP_TOKEN`), never from `excubia.json`, so it is not committed. With `php artisan config:cache`, `.env` is not loaded, so set it in the real process environment (PHP-FPM pool, container, systemd unit). **Enabled without a secret, the provider does not register the route**, so it cannot be left open by mistake.
-
-3. Store a result on a schedule. The endpoint never runs checks in the request; it serves what the last `php artisan excubia:check` or `php artisan excubia:push` stored:
-
-   ```php
-   // routes/console.php
-   use Illuminate\Support\Facades\Schedule;
-
-   Schedule::command('excubia:push')->daily();                                      // fills the response cache
-   Schedule::command('excubia:check --offline --fail-on=none --no-banner')->everyFiveMinutes();
-   ```
-
-   Oh Dear reports stale results when `finishedAt` is older than 10 minutes, so a frequent run is needed. `--offline` keeps that run cheap: it reads the response cache (TTL 24 h by default) and sends no request. `bin/excubia` does not store a result; only the Artisan commands do, and only while the endpoint is enabled.
-
-4. In Oh Dear, enable Application health monitoring with the URL `https://your-app.example/excubia/health` and the same secret.
-
-`excubia.json` invalid at boot? The route is not registered and the app boots normally; `excubia:check` reports the configuration error.
-
-The provider reads the default `excubia.json` of the app base path. A `--config` file passed to the commands decides whether that run stores a result, but not whether the route exists. With `php artisan route:cache` the route is part of the cache: rebuild it after changing `healthEndpoint`.
+The endpoint serves what the last `php artisan excubia:check` or `php artisan excubia:push` stored; it never runs checks in the request. `bin/excubia` does not store a result.
 
 ## Request
 
@@ -87,7 +56,7 @@ The header is compared with `hash_equals`. A missing, empty or wrong secret gets
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `finishedAt` | integer | Unix timestamp (UTC) when the stored run finished. For the "not run yet" answer, the time of the request. |
-| `checkResults[]` | list | One entry per check of the stored run, in report order (at most 8, or the single `excubia-run` entry). |
+| `checkResults[]` | list | One entry per check of the stored run, in report order (at most 14, one per check id, or the single `excubia-run` entry). |
 | `name` | string | Check id (`php-eol`, …), or `excubia-run`. |
 | `label` | string | Check name as in the report. |
 | `status` | string | `ok`, `warning`, `failed`, `crashed` or `skipped` (mapping below). |
