@@ -15,7 +15,7 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 final class ExcubiaCheckCommand extends Command
 {
     protected $signature = 'excubia:check
-        {--format= : table, json, or markdown}
+        {--format= : table, json, markdown, or sarif}
         {--output= : Write the report to this file}
         {--fail-on= : critical, high, medium, low, or none}
         {--only= : Comma-separated check ids to run}

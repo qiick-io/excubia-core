@@ -107,6 +107,24 @@ final class ProjectSnapshotService
     }
 
     /**
+     * Project-relative name of the file the Node declaration comes from, in
+     * the same order as `snapshot`: `.nvmrc`, `.node-version`, then
+     * `package.json`. The SARIF renderer uses it as the `node-eol` location.
+     */
+    public function nodeVersionManifest(string $projectRoot): string
+    {
+        foreach (['.nvmrc', '.node-version'] as $fileName) {
+            $contents = $this->optionalText($projectRoot.DIRECTORY_SEPARATOR.$fileName);
+
+            if ($this->nodeVersionParser->declarationFrom($contents, null, null) !== null) {
+                return $fileName;
+            }
+        }
+
+        return 'package.json';
+    }
+
+    /**
      * @param  list<LockedPackageData>  $packages
      * @return list<LockedPackageData>
      */

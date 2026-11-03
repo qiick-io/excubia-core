@@ -76,7 +76,7 @@ it('exits 2 for a missing lock, an unknown check, and a bad format', function ()
 
     expect($tester->execute([
         'path' => outdatedProject(),
-        '--format' => 'sarif',
+        '--format' => 'xml',
         '--no-banner' => true,
         '--only' => 'php-eol',
         '--no-cache' => true,

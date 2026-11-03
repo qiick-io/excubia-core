@@ -17,9 +17,11 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
 use Qiick\Excubia\Renderers\JsonReportRenderer;
 use Qiick\Excubia\Renderers\MarkdownReportRenderer;
+use Qiick\Excubia\Renderers\SarifRenderer;
 use Qiick\Excubia\Renderers\TableReportRenderer;
 use Qiick\Excubia\Services\HealthCheckRunnerService;
 use Qiick\Excubia\Services\NotifyingHttpClientService;
+use Qiick\Excubia\Services\ProjectSnapshotService;
 use Qiick\Excubia\Services\SymfonyHttpClientService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -46,7 +48,7 @@ final class CheckCommand extends Command
         $this->setName('check')
             ->setDescription('Health checks for Laravel apps.')
             ->addArgument('path', InputArgument::OPTIONAL, 'Project directory')
-            ->addOption('format', null, InputOption::VALUE_REQUIRED, 'table, json, or markdown')
+            ->addOption('format', null, InputOption::VALUE_REQUIRED, 'table, json, markdown, or sarif')
             ->addOption('output', null, InputOption::VALUE_REQUIRED, 'Write the report to this file')
             ->addOption('fail-on', null, InputOption::VALUE_REQUIRED, 'critical, high, medium, low, or none')
             ->addOption('only', null, InputOption::VALUE_REQUIRED, 'Comma-separated check ids to run')
@@ -132,7 +134,7 @@ final class CheckCommand extends Command
     private function render(?string $path, array $options, OutputInterface $output): int
     {
         $scan = $this->scan($path, $options, $output);
-        $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null)->render($scan['report']);
+        $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null, $path)->render($scan['report']);
         $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
 
         return $scan['report']->exitCodeFor($scan['configuration']->failOnSeverity)->value;
@@ -306,20 +308,25 @@ final class CheckCommand extends Command
 
     /**
      * Pick a renderer for `--format`. Table uses decoration only when writing to stdout.
+     * SARIF gets the project-relative file that declares the Node version.
      *
      * @throws InvalidConfigurationException
      */
-    private function renderer(?string $format, OutputInterface $output, ?string $outputFile): ReportRendererContract
+    private function renderer(?string $format, OutputInterface $output, ?string $outputFile, ?string $path): ReportRendererContract
     {
         $selected = $format ?? ReportFormatEnum::Table->value;
         $reportFormat = ReportFormatEnum::tryFrom($selected);
 
         if ($reportFormat === null) {
-            throw new InvalidConfigurationException('--format must be table, json, or markdown.');
+            throw new InvalidConfigurationException('--format must be table, json, markdown, or sarif.');
         }
 
         if ($reportFormat === ReportFormatEnum::Json) {
             return new JsonReportRenderer;
+        }
+
+        if ($reportFormat === ReportFormatEnum::Sarif) {
+            return new SarifRenderer((new ProjectSnapshotService)->nodeVersionManifest($this->projectRoot($path)));
         }
 
         if ($reportFormat === ReportFormatEnum::Markdown) {
