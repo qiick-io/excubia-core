@@ -1,6 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
+    "x-excubia-version": 1,
+    "$comment": "Contract version of the excubia.json schema. Stable from 1.0.0-beta (docs/CONTRACTS.md): a new optional key keeps the version, a removed or narrowed key waits for a major.",
     "title": "Excubia configuration",
     "type": "object",
     "additionalProperties": false,

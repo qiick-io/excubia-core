@@ -11,10 +11,10 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
 /**
  * `php artisan excubia:check`. Same engine as `vendor/bin/excubia check`,
- * with the path fixed to the application base path. With the health
- * endpoint enabled, the result is stored for it (`HealthEndpointService`).
  * with the path fixed to the application base path and the posture of the
  * booted app (`LaravelPostureService`) attached for the `laravel-*` checks.
+ * With the health endpoint enabled, the result is stored for it
+ * (`HealthEndpointService`).
  */
 final class ExcubiaCheckCommand extends Command
 {
