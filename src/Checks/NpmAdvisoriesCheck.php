@@ -40,7 +40,7 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
 
         $packages = [];
 
-        foreach ($projectSnapshot->npmPackages as $package) {
+        foreach ($configuration->publicPackages($projectSnapshot->npmPackages) as $package) {
             $packages[] = ['name' => $package->name, 'version' => $package->version];
         }
 
@@ -50,7 +50,7 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'OSV.dev did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
-        $findings = [];
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($projectSnapshot->npmPackages), 'OSV.dev');
 
         foreach ($vulnerabilities as $vulnerability) {
             $findings[] = new FindingData(

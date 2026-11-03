@@ -31,6 +31,37 @@ final readonly class FindingData
     ) {}
 
     /**
+     * One skipped row naming the private packages a check did not send to
+     * `$dataSource`, or no row when there are none.
+     *
+     * The names come from the local lockfile and stay in the report; the
+     * subject is the fixed `private packages` so an ignore rule can target
+     * the row. `not-applicable`, so `--strict` does not exit 3.
+     *
+     * @param  list<string>  $packageNames
+     * @return list<self>
+     */
+    public static function privatePackagesSkipped(string $checkId, array $packageNames, string $dataSource): array
+    {
+        if ($packageNames === []) {
+            return [];
+        }
+
+        $count = count($packageNames);
+
+        return [new self(
+            checkId: $checkId,
+            severity: SeverityEnum::Info,
+            status: FindingStatusEnum::Skipped,
+            subject: 'private packages',
+            message: $count.' private '.($count === 1 ? 'package' : 'packages').' not sent to '.$dataSource.': '.implode(', ', $packageNames).'.',
+            fixHint: '',
+            evidenceUrl: null,
+            skipReason: SkipReasonEnum::NotApplicable,
+        )];
+    }
+
+    /**
      * True when this row is a check skipped because a data source failed.
      */
     public function isDataSourceFailure(): bool

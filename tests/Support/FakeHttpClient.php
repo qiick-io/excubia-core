@@ -23,6 +23,13 @@ final class FakeHttpClient implements HttpClientContract
 
     public ?string $lastPostUrl = null;
 
+    /**
+     * Every request as `METHOD url json`, so a test can assert what left the machine.
+     *
+     * @var list<string>
+     */
+    public array $requests = [];
+
     /** @var list<array<string, mixed>> */
     public array $postedPayloads = [];
 
@@ -40,6 +47,7 @@ final class FakeHttpClient implements HttpClientContract
         $this->calls++;
         $this->lastHeaders = $headers;
         $this->lastQuery = $queryParameters;
+        $this->requests[] = 'GET '.$url.' '.json_encode($queryParameters, JSON_UNESCAPED_SLASHES);
 
         return $this->responseFor($url);
     }
@@ -50,6 +58,7 @@ final class FakeHttpClient implements HttpClientContract
         $this->lastHeaders = $headers;
         $this->lastPostUrl = $url;
         $this->postedPayloads[] = $payload;
+        $this->requests[] = 'POST '.$url.' '.json_encode($payload, JSON_UNESCAPED_SLASHES);
 
         return $this->responseFor($url);
     }

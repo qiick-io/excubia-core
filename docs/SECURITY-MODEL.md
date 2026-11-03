@@ -37,6 +37,7 @@ It describes `develop` as reviewed for #82 (November 2026). Released `0.1.x` con
 Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`.
 
 **Controls.**
+- Private packages are never sent (#108, SPEC §7): a Composer package is sent only when its `composer.lock` entry has Packagist's `notification-url` (`https://packagist.org/downloads/`) and no `path` or `artifact` dist; an npm package only when `resolved` is on `https://registry.npmjs.org/` and it is not a link. `privacy.skipPackages` globs exclude more names. `ExcubiaConfigurationData::publicPackages()` filters every check before a request is built; the GitHub lookup uses the source URL of the Packagist metadata, so it never runs for a private package. The skipped names appear only in the local report as a `skipped` row (`private packages`).
 - Names are validated before a URL is built: Composer names must match `vendor/name` in lower case, GitHub owners and names must be `[A-Za-z0-9_.-]+` and not `.` or `..`, npm names must not contain `..` or a newline. Anything else is skipped, not sent.
 - `HttpClientContract` is the only HTTP boundary. `SymfonyHttpClientService` refuses any URL that is not HTTPS (plain HTTP only to `localhost`, `127.0.0.1`, `[::1]`), uses TLS peer verification (Symfony default), a 5 s idle timeout, a 15 s total, two retries with backoff, and honours `HTTPS_PROXY`.
 - `GITHUB_TOKEN` is read from the environment at call time, sent only as a header to `api.github.com`, never part of a URL, cache key, cache file, message or report. On a redirect Symfony keeps `Authorization` only for the same scheme and host.
@@ -140,7 +141,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Information disclosure**: secrets in exception messages | 5 | masking before buffering, fail-closed regexes, user patterns | Hostnames, Windows paths and some auth schemes survive (#104) |
 | **Information disclosure**: values in SQL | 4, 5 | bindings never read; quoted literals masked | Inline numeric, hex and dollar-quoted literals survive (#106) |
 | **Information disclosure**: secrets in scheduled task commands | 4 | paths relative; exception masks applied | Unrecognisable forms such as `-pSECRET` or positional arguments (#109) |
-| **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist | Private package names are still sent (#108) |
+| **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist; packages the lockfile does not show as served by Packagist or the public npm registry are never sent, nor names matching `privacy.skipPackages` (#108) | A private package the lockfile cannot tell apart (a private package on the public npm registry, or one served through Packagist) is sent unless `privacy.skipPackages` names it |
 | **Information disclosure**: token or credentials in logs | 1, 3 | headers never logged, URL credentials removed, no response bodies in messages | — |
 | **Information disclosure**: health result | 6 | secret of at least 32 characters, 404 on mismatch, rate limit, `no-store` (#107) | A long secret that leaks (logs, monitor configuration) gives read access until it is rotated |
 | **Information disclosure**: hosts of outgoing calls | 4 | host only, no URL | Internal hostnames reach the user's own app (by design) |
@@ -164,7 +165,6 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | --- | --- | --- |
 | #104 | low | Exception masking keeps hostnames, Windows paths and non-Bearer auth schemes |
 | #106 | low | Slow-query SQL keeps numeric, hex and dollar-quoted literals |
-| #108 | low | Private package names are sent to Packagist and OSV |
 | #109 | low | Decide whether scheduled task names keep their arguments |
 | #110 | low | Warn when the project token is read from `excubia.json` |
 | #111 | low | GitHub Action resolves Excubia's dependencies unlocked at run time |

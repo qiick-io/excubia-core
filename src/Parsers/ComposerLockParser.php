@@ -13,9 +13,16 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * Packages from `packages-dev` are marked as development dependencies.
  * Direct versus transitive is decided by the caller, which knows
  * `composer.json`.
+ *
+ * A package is public only when Composer recorded Packagist's download
+ * notification URL for it. Path and artifact dists, VCS repositories, Satis,
+ * Private Packagist and entries without that URL are private, so their names
+ * are never sent to Packagist or GitHub.
  */
 final class ComposerLockParser
 {
+    private const PACKAGIST_NOTIFICATION_URL = 'https://packagist.org/downloads/';
+
     /**
      * @param  array<string, mixed>  $document
      * @param  list<string>  $directPackageNames
@@ -67,10 +74,28 @@ final class ComposerLockParser
                 version: $version,
                 isDirectDependency: isset($directPackageNames[$name]),
                 isDevelopmentDependency: $isDevelopmentDependency,
+                isPrivate: $this->isPrivate($package),
             );
         }
 
         return $lockedPackages;
+    }
+
+    /**
+     * True unless Packagist served the entry. A local dist type wins over the
+     * notification URL; a missing URL counts as private.
+     *
+     * @param  array<mixed>  $package
+     */
+    private function isPrivate(array $package): bool
+    {
+        $dist = $package['dist'] ?? null;
+
+        if (is_array($dist) && in_array($dist['type'] ?? null, ['path', 'artifact'], true)) {
+            return true;
+        }
+
+        return ($package['notification-url'] ?? null) !== self::PACKAGIST_NOTIFICATION_URL;
     }
 
     /**

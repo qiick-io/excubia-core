@@ -8,6 +8,7 @@ use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
+use Qiick\Excubia\Data\LockedPackageData;
 use Qiick\Excubia\Data\PackagistVersionData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
@@ -47,13 +48,13 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
 
         $nextMajor = (int) $matches[1] + 1;
         $target = $nextMajor.'.0.0';
-        $findings = [];
+        $directPackages = array_values(array_filter(
+            $projectSnapshot->composerPackages,
+            static fn (LockedPackageData $package): bool => $package->isDirectDependency && $package->name !== 'laravel/framework',
+        ));
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($directPackages), 'Packagist');
 
-        foreach ($projectSnapshot->composerPackages as $package) {
-            if (! $package->isDirectDependency || $package->name === 'laravel/framework') {
-                continue;
-            }
-
+        foreach ($configuration->publicPackages($directPackages) as $package) {
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {
