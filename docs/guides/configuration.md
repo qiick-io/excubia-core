@@ -127,7 +127,7 @@ The target of `excubia push`, `excubia:push` and `excubia:push-runtime`. See the
 | --- | --- | --- | --- |
 | `app` | object | | Your own `excubia-app`. |
 | `app.url` | string | — | Base URL of the app, for example `https://excubia.example.com`. HTTPS, or plain HTTP to `localhost`, `127.0.0.1` or `[::1]` only. `EXCUBIA_APP_URL` wins. |
-| `app.token` | string | — | Project push token from the app. `EXCUBIA_APP_TOKEN` wins. Prefer the environment variable so the token is not committed. |
+| `app.token` | string | — | Project push token from the app. `EXCUBIA_APP_TOKEN` wins. Prefer the environment variable so the token is not committed; `check`, `push`, `excubia:check`, `excubia:push` and `excubia:push-runtime` print a warning on stderr when it is set. |
 
 ## Health endpoint
 

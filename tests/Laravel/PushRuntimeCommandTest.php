@@ -6,6 +6,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 use JsonSchema\Validator;
+use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
@@ -180,7 +181,9 @@ it('reads the app keys from excubia.json when the environment has none', functio
     runtimePushProject($this->app, $client, ['app' => ['url' => 'https://file.example.test', 'token' => 'file-token'], 'runtime' => ['enabled' => true]]);
     recordOneRequest($this);
 
-    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain(CheckCommand::APP_TOKEN_IN_FILE_WARNING)
+        ->assertExitCode(0);
 
     expect($client->lastHeaders)->toBe(['Authorization' => 'Bearer file-token']);
 });

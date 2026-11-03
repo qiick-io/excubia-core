@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exception masking also covers `'key' => 'value'` dumps, quoted values with spaces, unterminated quotes and the `pass`, `cookie`, `session`, `dsn` and `private_key` key names.
 - Scheduled task names in runtime data go through the same masks, so `--password=…` and similar arguments are not buffered or sent.
 - GitHub owner and repository names `.` and `..` are refused before a request is built.
+- `check`, `push`, `excubia:check`, `excubia:push` and `excubia:push-runtime` print one warning on stderr when `app.token` is set in `excubia.json` (#110): "app.token is set in excubia.json; prefer EXCUBIA_APP_TOKEN so the token is not committed." The key keeps working; README, the configuration and push guides and `excubia.schema.json` say the same.
 
 ## [0.1.1] - 2026-11-01
 
