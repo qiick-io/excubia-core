@@ -12,7 +12,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/qiick-io/excubia-core/ci.yml?branch=main&label=CI)](https://github.com/qiick-io/excubia-core/actions/workflows/ci.yml)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.2-777BB4?logo=php&logoColor=white)](./composer.json)
 
-> **Status:** `0.x`, heading for 1.0. The public contracts (CLI options, report JSON, check ids, exit codes, `excubia.json`, push payloads, health endpoint, SARIF ids, Action inputs) are frozen for 1.0.0-beta: [`docs/CONTRACTS.md`](./docs/CONTRACTS.md). See [`docs/ROADMAP.md`](./docs/ROADMAP.md) and [`docs/VERSIONING.md`](./docs/VERSIONING.md).
+> **Status:** 1.0.0-beta. The public contracts (CLI options, report JSON, check ids, exit codes, `excubia.json`, push payloads, health endpoint, SARIF ids, Action inputs) are frozen for 1.0.0-beta: [`docs/CONTRACTS.md`](./docs/CONTRACTS.md). See [`docs/ROADMAP.md`](./docs/ROADMAP.md) and [`docs/VERSIONING.md`](./docs/VERSIONING.md).
 
 **Excubia** is an open-source (MIT) health check for Laravel apps, part of the [qiick](https://qiick.io) suite. The Composer package [`qiick/excubia-core`](https://packagist.org/packages/qiick/excubia-core) reads your lockfiles and manifests and reports, in one place: PHP / Laravel / Node end of life, known vulnerabilities, abandoned and stale packages, blockers for the next Laravel major, and a suggested upgrade order. Run through Artisan, it also checks the posture of the booted app (debug mode, caches, migrations, failed jobs, scheduler, maintenance mode).
 
