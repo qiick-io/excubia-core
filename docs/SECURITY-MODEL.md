@@ -121,7 +121,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 
 - Inputs reach the shell only through `env:`; no `${{ }}` expression is interpolated inside a `run:` script, so an input cannot inject shell code.
 - Third-party actions are pinned to full commit SHAs: `shivammathur/setup-php` (2.40.0) and `github/codeql-action/upload-sarif` (v4.39.2); the repository's workflows pin `actions/checkout` (v7.0.1). Dependabot updates them weekly.
-- Excubia is installed from the action's own checkout in `$RUNNER_TEMP`, outside the scanned project. The scanned project's code, dependencies and Composer scripts are never installed or executed, so a hostile pull request can only change the data Excubia reads.
+- Excubia is installed from the action's own checkout in `$RUNNER_TEMP`, outside the scanned project, with the dependency versions of the committed `.github/action-install/composer.lock` (resolved for PHP 8.2, kept in sync with `composer.json` by `tests/Feature/ActionInstallLockTest.php`) and `--no-plugins --no-scripts`, so a SHA-pinned action runs exactly the reviewed code. The scanned project's code, dependencies and Composer scripts are never installed or executed, so a hostile pull request can only change the data Excubia reads.
 - Composite actions cannot declare permissions. The README example grants `contents: read` and `security-events: write` (the latter only for the SARIF upload).
 - On `pull_request` from a fork the token is read-only and secrets are absent; the SARIF upload is skipped there. `github-token` is optional and only raises the GitHub API rate limit.
 
@@ -136,7 +136,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Spoofing** the app to collect pushes | 3–5 | HTTPS only; no redirects on POST; token only to the configured origin | Whoever controls `EXCUBIA_APP_URL` receives the data |
 | **Spoofing** a project toward the app (forged pushes) | 3–5 | Bearer token per project | A token committed in `excubia.json` (#110) |
 | **Tampering** with buffered data | 4, 5 | `flock`, JSON-encoded lines, strict batch names, app-side additivity | Anyone who can write `storage/` can alter data before it is sent (same as the app's logs) |
-| **Tampering** in CI through a fork PR | 8 | project code never runs; inputs via env; SHA-pinned actions | Excubia's own dependencies are resolved at run time (#111) |
+| **Tampering** in CI through a fork PR | 8 | project code never runs; inputs via env; SHA-pinned actions | Excubia's own dependencies are locked and installed without plugins or scripts (#111); a compromised release already in the lock is trusted until the lock is refreshed |
 | **Repudiation** | 3–5 | `batchId`, `sentAt`, the app stores per project token | No signing of payloads (not needed for the user's own app) |
 | **Information disclosure**: secrets in exception messages | 5 | masking before buffering, fail-closed regexes, user patterns | Hostnames, Windows paths and some auth schemes survive (#104) |
 | **Information disclosure**: values in SQL | 4, 5 | bindings never read; quoted literals masked | Inline numeric, hex and dollar-quoted literals survive (#106) |
@@ -168,6 +168,5 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | #107 | low | Health endpoint accepts short secrets and has no rate limit |
 | #109 | low | Decide whether scheduled task names keep their arguments |
 | #110 | low | Warn when the project token is read from `excubia.json` |
-| #111 | low | GitHub Action resolves Excubia's dependencies unlocked at run time |
 
 No finding of severity high or critical is open.

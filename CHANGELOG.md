@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exception masking also covers `'key' => 'value'` dumps, quoted values with spaces, unterminated quotes and the `pass`, `cookie`, `session`, `dsn` and `private_key` key names.
 - Scheduled task names in runtime data go through the same masks, so `--password=…` and similar arguments are not buffered or sent.
 - GitHub owner and repository names `.` and `..` are refused before a request is built.
+- The GitHub Action (#111) installs Excubia's dependencies from a committed lock (`.github/action-install/composer.lock`, resolved for PHP 8.2) instead of resolving them on every run, with `--no-plugins --no-scripts`. A test keeps the lock in sync with `composer.json`, and `.github/workflows/action-test.yml` also runs the action on PHP 8.2.
 
 ## [0.1.1] - 2026-11-01
 

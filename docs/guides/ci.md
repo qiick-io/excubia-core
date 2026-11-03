@@ -40,7 +40,7 @@ jobs:
 | `skip` | — | Comma-separated check ids to skip. |
 | `github-token` | — | Optional. Raises the GitHub API rate limit for `composer-stale`. Passed to Excubia as `GITHUB_TOKEN` only. |
 | `upload-sarif` | `true` | `false` skips the code scanning upload (and the need for `security-events: write`). |
-| `php-version` | `8.4` | PHP used to run Excubia, not the scanned project's PHP. |
+| `php-version` | `8.4` | PHP used to run Excubia (8.2 or newer), not the scanned project's PHP. |
 
 | Output | Meaning |
 | --- | --- |
@@ -49,7 +49,7 @@ jobs:
 
 How it works:
 
-- Excubia is installed with Composer in `$RUNNER_TEMP/excubia` from the action's own checkout, so the version matches the ref you use (`@v1`, a tag or a commit SHA). The scanned project's code and dependencies are never installed or executed.
+- Excubia is installed with Composer in `$RUNNER_TEMP/excubia` from the action's own checkout, so the version matches the ref you use (`@v1`, a tag or a commit SHA). Its dependencies (`symfony/console`, `symfony/http-client`, `composer/semver`…) come from the lock committed in `.github/action-install/` and resolved for PHP 8.2, so the action runs the same reviewed versions on every run and every `php-version` from 8.2 up; Composer plugins and scripts are disabled. The scanned project's code and dependencies are never installed or executed.
 - The SARIF log is uploaded even when the step then fails on `fail-on`. Pull requests from forks get a read-only token, so the upload is skipped there.
 - `excubia.json` in `path` is read as usual, so ignore rules and thresholds apply.
 - Pin the action to a commit SHA if your policy requires it.
