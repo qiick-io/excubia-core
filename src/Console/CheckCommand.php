@@ -42,6 +42,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class CheckCommand extends Command
 {
     /**
+     * `excubia.json` is normally committed, so a token there ends up in Git
+     * history and every clone. Removing `app.token` would break existing
+     * configs, so it keeps working with a warning.
+     */
+    public const APP_TOKEN_IN_FILE_WARNING = 'app.token is set in excubia.json; prefer EXCUBIA_APP_TOKEN so the token is not committed.';
+
+    /**
      * @param  (Closure(HealthReportData): void)|null  $reportListener  called with every finished report;
      *                                                                  the Laravel aliases store it for the health endpoint
      */
@@ -161,7 +168,8 @@ final class CheckCommand extends Command
     }
 
     /**
-     * Load config, run the checks, and print expired ignore rules to stderr.
+     * Load config, run the checks, and print expired ignore rules and a
+     * token found in `excubia.json` to stderr.
      * `excubia push` calls this so both commands scan a project the same way.
      *
      * @param  array{
@@ -187,6 +195,7 @@ final class CheckCommand extends Command
         $projectRoot = $this->projectRoot($path);
         $today = $this->today ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $configuration = $this->configuration($projectRoot, $options);
+        self::warnAboutTokenInFile($configuration, $output);
         $result = (new HealthCheckRunnerService($this->httpClient($output), $today))->run(
             $projectRoot,
             $configuration,
@@ -392,6 +401,13 @@ final class CheckCommand extends Command
 
         if (file_put_contents($outputFile, $rendered) === false) {
             throw new InvalidConfigurationException('The report could not be written to '.$outputFile.'.');
+        }
+    }
+
+    public static function warnAboutTokenInFile(ExcubiaConfigurationData $configuration, OutputInterface $output): void
+    {
+        if ($configuration->appToken !== null) {
+            self::writeError($output, self::APP_TOKEN_IN_FILE_WARNING);
         }
     }
 

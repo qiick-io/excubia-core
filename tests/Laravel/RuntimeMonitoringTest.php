@@ -243,6 +243,15 @@ it('masks quoted literals and truncates long SQL', function () {
         ->and(mb_strlen(RuntimeCollectorService::maskSql(str_repeat('x', 5000))))->toBe(RuntimeCollectorService::MAX_SQL_LENGTH);
 });
 
+it('masks inline numeric, hex and dollar-quoted literals', function (string $sql, string $expected) {
+    expect(RuntimeCollectorService::maskSql($sql))->toBe($expected);
+})->with([
+    'numbers' => ['select * from orders where user_id = 48213 and total > 19.99 and id in (1, 2) limit 10', 'select * from orders where user_id = ? and total > ? and id in (?, ?) limit ?'],
+    'hex' => ["select * from tokens where token = 0x5f3a9c or hash = X'0aFF' or hash = x''", 'select * from tokens where token = ? or hash = ? or hash = ?'],
+    'dollar-quoted' => ['select * from notes where note = $$secret$$ or body = $body$it\'s 42 $1$body$', 'select * from notes where note = ? or body = ?'],
+    'placeholders and identifiers' => ['select t1.col_2, "Column 3" from t1 join t2 on t1.id = t2.t1_id where a = $1 and b = ? and c = :name1', 'select t1.col_2, "Column 3" from t1 join t2 on t1.id = t2.t1_id where a = $1 and b = ? and c = :name1'],
+]);
+
 it('aggregates processed and failed jobs by class, queue and outcome without the exception message', function () {
     bootRuntimeProject($this->app, ['enabled' => true]);
     config(['queue.default' => 'sync']);
@@ -266,7 +275,7 @@ it('aggregates processed and failed jobs by class, queue and outcome without the
         ->and(rawBuffer($this->app))->not->toContain('job-exception-secret');
 });
 
-it('aggregates scheduled tasks by name and outcome, once per failed command, without absolute paths', function () {
+it('aggregates scheduled tasks by name and outcome, once per failed command, without arguments or absolute paths', function () {
     $project = bootRuntimeProject($this->app, ['enabled' => true]);
     $schedule = $this->app->make(Schedule::class);
     $command = $schedule->command('inspire');
@@ -286,17 +295,19 @@ it('aggregates scheduled tasks by name and outcome, once per failed command, wit
     $tasks = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->keyBy('task');
     $raw = rawBuffer($this->app);
 
-    expect($tasks->keys()->all())->toEqualCanonicalizing(['artisan inspire', 'artisan migrate --force', 'Closure', 'nightly cleanup', 'backup.sh --target=storage/backups'])
+    expect($tasks->keys()->all())->toEqualCanonicalizing(['artisan inspire', 'artisan migrate', 'Closure', 'nightly cleanup', 'backup.sh'])
         ->and($tasks['artisan inspire'])->toMatchArray(['outcome' => 'finished', 'count' => 1, 'errorCount' => 0, 'totalMs' => 250.0])
-        ->and($tasks['artisan migrate --force'])->toMatchArray(['outcome' => 'failed', 'count' => 1, 'errorCount' => 1, 'totalMs' => 1500.0])
+        ->and($tasks['artisan migrate'])->toMatchArray(['outcome' => 'failed', 'count' => 1, 'errorCount' => 1, 'totalMs' => 1500.0])
         ->and($tasks['Closure'])->toMatchArray(['outcome' => 'failed', 'errorCount' => 1])
         ->and($tasks['nightly cleanup'])->toMatchArray(['outcome' => 'skipped', 'totalMs' => 0.0])
         ->and($raw)->not->toContain('exception-secret')
         ->and($raw)->not->toContain(PHP_BINARY)
-        ->and($raw)->not->toContain($project);
+        ->and($raw)->not->toContain($project)
+        ->and($raw)->not->toContain('--force')
+        ->and($raw)->not->toContain('storage/backups');
 });
 
-it('masks secrets in scheduled task command lines and descriptions', function () {
+it('drops the arguments of scheduled commands and masks secrets in descriptions', function () {
     bootRuntimeProject($this->app, ['enabled' => true]);
     $schedule = $this->app->make(Schedule::class);
     $command = $schedule->command('backup:run', ['--password' => 'task-password-secret']);
@@ -310,11 +321,32 @@ it('masks secrets in scheduled task command lines and descriptions', function ()
     $tasks = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->pluck('task')->all();
     $raw = rawBuffer($this->app);
 
-    expect($tasks)->toEqualCanonicalizing(["artisan backup:run --password='[masked]'", 'mysqldump --password=[masked] shop', 'sync with token=[masked]']);
+    expect($tasks)->toEqualCanonicalizing(['artisan backup:run', 'mysqldump', 'sync with token=[masked]']);
 
-    foreach (['task-password-secret', 'dump-password-secret', 'description-token-secret'] as $secret) {
+    foreach (['task-password-secret', 'dump-password-secret', 'description-token-secret', 'shop'] as $secret) {
         expect($raw)->not->toContain($secret);
     }
+});
+
+it('keeps no secret that the masks cannot recognise in scheduled command names', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $schedule = $this->app->make(Schedule::class);
+    $tasks = [
+        $schedule->command('tenant:sync hunter2-positional'),
+        $schedule->exec('/usr/bin/mysqldump -phunter2-short shop'),
+        $schedule->exec("'/opt/my tools/run report.sh' --key hunter2-quoted"),
+        $schedule->exec('API_KEY=hunter2-env FLAG="a b" /srv/bin/sync.sh now'),
+        $schedule->exec('C:\\tools\\backup.exe /p:hunter2-windows'),
+    ];
+
+    foreach ($tasks as $task) {
+        event(new ScheduledTaskFinished($task, 0.1));
+    }
+
+    $names = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->where('type', 'scheduledTask')->pluck('task')->all();
+
+    expect($names)->toEqualCanonicalizing(['artisan tenant:sync', 'mysqldump', 'run report.sh', 'sync.sh', 'backup.exe'])
+        ->and(rawBuffer($this->app))->not->toContain('hunter2');
 });
 
 it('aggregates outgoing HTTP by host and status class only', function () {
@@ -388,7 +420,7 @@ it('flushes a long-running process before it holds too many aggregates', functio
     bootRuntimeProject($this->app, ['enabled' => true, 'slowQueries' => ['thresholdMs' => 0]]);
 
     for ($i = 0; $i < RuntimeCollectorService::MAX_PENDING_AGGREGATES; $i++) {
-        DB::select('select '.$i);
+        DB::select('select 1 as column_'.$i); // distinct identifiers: inline numbers are masked to one aggregate
     }
 
     expect(bufferedRuntime($this->app))->toHaveCount(RuntimeCollectorService::MAX_PENDING_AGGREGATES);

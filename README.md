@@ -169,7 +169,7 @@ Excubia works without configuration. To change defaults, add `excubia.json` at t
 }
 ```
 
-Unknown keys are a configuration error (exit `2`). Every key, type and default, and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`), are in the [configuration reference](./docs/guides/configuration.md). JSON Schema: [`excubia.schema.json`](./excubia.schema.json).
+Unknown keys are a configuration error (exit `2`). Every key, type and default, and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`), are in the [configuration reference](./docs/guides/configuration.md). Put the push token in `EXCUBIA_APP_TOKEN`, not in `excubia.json`, which is normally committed; Excubia warns when `app.token` is set in the file. JSON Schema: [`excubia.schema.json`](./excubia.schema.json).
 
 ## Guides
 

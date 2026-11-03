@@ -43,8 +43,12 @@ final class ExceptionPayloadService
         '/\b(Host|Socket|Database|Port): [^,)]*/' => '$1: [masked]',
         '/\beyJ[\w-]+\.[\w-]+\.[\w-]*/' => '[jwt]',
         '/\b(Bearer|Basic)\s+[^\s,;\'"]+/i' => '$1 [token]',
+        // Any other scheme after an Authorization header (`Token`, `Digest`, `AWS4-HMAC-SHA256 …`): masked whole, to the closing quote or the end of the line.
+        '/\b((?:Proxy-)?Authorization["\']?\s*+(?:=>|[:=])\s*+)(?:(["\'])(?!(?:Bearer|Basic)\s|\[)[^\n"\']*\2?|(?!(?:Bearer|Basic)\s|\[)[^\n]+)/i' => '$1$2[masked]$2',
+        // Host names in error phrases (`Could not resolve host: db.internal`, `getaddrinfo for db.internal`).
+        '/\b(resolve host\s*:?\s*|host(?:name)?\s*[:=]\s*|getaddrinfo for\s+)(["\']?)[a-z0-9][\w-]*(?:\.[\w-]+)*/i' => '$1$2[host]',
         // `key=value`, `key: value` and `'key' => 'value'`; a quoted value is masked whole, spaces included.
-        '/\b([\w-]*(?:pass|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth|signature|credentials?|cookie|session|dsn)[\w-]*)(["\']?\s*(?:=>|[=:])\s*)(?:(["\'])(?![\[?])[^"\'\n]*\3?|(?!(?:Bearer|Basic)\b|\[|\?)[^\s"\',;&)]+)/i' => '$1$2$3[masked]$3',
+        '/\b([\w-]*(?:pass|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth|signature|credentials?|cookie|session|dsn)[\w-]*)(["\']?\s*(?:=>|[=:])\s*)(?:(["\'])(?![\[?])[^"\'\n]*\3?|(?!(?:Bearer|Basic)\b|\[|\?|>)[^\s"\',;&)]+)/i' => '$1$2$3[masked]$3',
         '/[\w.%+-]+@[\w-]+(?:\.[\w-]+)+/' => '[email]',
         '/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/' => '[ip]',
         '/(?<![\w:])(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{0,4}::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{0,4})(?![\w:(])/i' => '[ip]',
@@ -52,6 +56,9 @@ final class ExceptionPayloadService
         '/\b[0-9a-f]{32,}\b/i' => '[token]',
         // API-key-like: 20+ letters and digits mixed (Stripe, AWS, GitHub, base64 segments).
         '/(?<![\w+-])(?=[\w+-]*\d)(?=[\w+-]*[a-z])[\w+-]{20,}={0,2}(?![\w+=-])/i' => '[token]',
+        // Phone-like: `+` and 8 or more digits with separators; US social security numbers.
+        '/(?<![\w+])\+\d(?:[ .()-]*\d){7,}/' => '[number]',
+        '/(?<![\w-])\d{3}-\d{2}-\d{4}(?![\w-])/' => '[number]',
         // Card-like: 13 to 19 digits, optionally grouped by spaces or dashes.
         '/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/' => '[number]',
         // Any other number longer than four digits (ids, phone numbers, amounts).
@@ -60,7 +67,7 @@ final class ExceptionPayloadService
 
     /**
      * Mask a message: user patterns first (they see the original text), then
-     * absolute paths, URL credentials and query strings, then the built-in
+     * absolute paths, URL credentials, hosts and query strings, then the built-in
      * masks; quoted literals too when the message carries SQL.
      *
      * @param  list<string>  $extraPatterns  validated by ExceptionConfigurationData
@@ -74,7 +81,7 @@ final class ExceptionPayloadService
         $message = self::relativePaths($message, $basePath);
         $message = preg_replace_callback(
             '#\b([a-z][a-z0-9+.-]*://)(?:[^\s/@\'"]+@)?([^\s?\#\'"]*)([?\#][^\s\'"]*)?#i',
-            static fn (array $matches): string => $matches[1].$matches[2].(isset($matches[3]) && $matches[3] !== '' ? '?[query]' : ''),
+            static fn (array $matches): string => $matches[1].self::withoutHost($matches[2]).(isset($matches[3]) && $matches[3] !== '' ? '?[query]' : ''),
             $message,
         ) ?? self::MASKED;
 
@@ -286,14 +293,37 @@ final class ExceptionPayloadService
     }
 
     /**
+     * The host and port of a URL become `[host]`, so internal host names
+     * never leave the project; the scheme and the path stay for debugging.
+     * `file:///…` has no host and is left alone.
+     */
+    private static function withoutHost(string $authorityAndPath): string
+    {
+        $slash = strpos($authorityAndPath, '/');
+        $host = $slash === false ? $authorityAndPath : substr($authorityAndPath, 0, $slash);
+
+        return $host === '' ? $authorityAndPath : '[host]'.substr($authorityAndPath, strlen($host));
+    }
+
+    /**
      * The project root is removed; any other absolute path becomes its file
-     * name. Slashes after a scheme (`https://`) or a host are left alone.
+     * name: `/…` paths, Windows drive paths (`C:\…`, `C:/…`) and UNC paths
+     * (`\\server\share\…`). Slashes after a scheme (`https://`) or a host are
+     * left alone, and so are namespaces such as `App\Models\User`.
      */
     private static function relativePaths(string $message, string $basePath): string
     {
         $base = rtrim($basePath, '/\\');
         $withoutBasePath = $base === '' ? $message : str_replace([$base.DIRECTORY_SEPARATOR, $base], '', $message);
 
-        return preg_replace('#(?<![\w.:/-])/(?:[^\s\'"/]+/)+([^\s\'"/]+)#', '$1', $withoutBasePath) ?? $withoutBasePath;
+        return preg_replace(
+            [
+                '#(?<![\w.:/-])/(?:[^\s\'"/]+/)+([^\s\'"/]+)#',
+                '#(?<![\w\\\\])[a-z]:[\\\\/](?:[^\s\'"\\\\/]+[\\\\/])*([^\s\'"\\\\/]+)#i',
+                '#(?<![\w\\\\])\\\\\\\\[^\s\'"\\\\/]+(?:\\\\[^\s\'"\\\\/]+)*\\\\([^\s\'"\\\\/]+)#',
+            ],
+            '$1',
+            $withoutBasePath,
+        ) ?? $withoutBasePath;
     }
 }

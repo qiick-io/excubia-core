@@ -254,12 +254,32 @@ final class RuntimeCollectorService
     }
 
     /**
-     * SQL text without bindings. Quoted string literals written inline are
-     * masked too, because they can hold the same kind of data as bindings.
+     * SQL text without bindings. Literals written inline are masked too,
+     * because they can hold the same kind of data as bindings and each
+     * distinct value would be a new aggregate: dollar-quoted bodies
+     * (`$$…$$`, `$tag$…$tag$`), hex literals (`X'…'`, `0x…`), single-quoted
+     * strings and standalone numbers all become `?`. Placeholders (`?`,
+     * `$1`) and identifiers with digits (`t1`, `col_2`) stay. Double-quoted
+     * and backtick-quoted text is left alone, numbers included: it is an
+     * identifier on PostgreSQL, SQLite and MySQL.
      */
     public static function maskSql(string $sql): string
     {
-        $masked = preg_replace("/'(?:[^'\\\\]|\\\\.|'')*'/s", '?', $sql) ?? '?';
+        $masked = preg_replace(
+            [
+                '/\$([a-z_]\w*|)\$.*?\$\1\$/is',
+                "/\\bx'[0-9a-f]*'|\\b0x[0-9a-f]+\\b/i",
+                "/'(?:[^'\\\\]|\\\\.|'')*'/s",
+            ],
+            '?',
+            $sql,
+        );
+        $masked = $masked === null ? null : preg_replace_callback(
+            '/("(?:[^"]|"")*"|`(?:[^`]|``)*`)|(?<![\w$.])\d+(?:\.\d+)?(?![\w.])/',
+            static fn (array $matches): string => isset($matches[1]) && $matches[1] !== '' ? $matches[1] : '?',
+            $masked,
+        );
+        $masked ??= '?';
 
         return mb_strimwidth($masked, 0, self::MAX_SQL_LENGTH, '…');
     }
@@ -303,11 +323,12 @@ final class RuntimeCollectorService
     }
 
     /**
-     * The task description, else the Artisan command without the PHP and
-     * Artisan binaries, else `Closure`. Absolute paths become relative to the
-     * project, or their file name outside it. Command arguments can carry
-     * secrets (`--password=…`, a DSN, an API key), so the name goes through
-     * the exception message masks too.
+     * The task description, else `artisan <command name>` for an Artisan
+     * command, else the executable's file name for an `exec()` task, else
+     * `Closure`. Arguments are dropped: they can carry secrets in forms no
+     * mask recognises (`-pSECRET`, a positional token) and every distinct
+     * value would be a new aggregate. The developer's description keeps its
+     * text, with paths made relative and the exception message masks applied.
      */
     private function taskName(object $task): string
     {
@@ -323,7 +344,33 @@ final class RuntimeCollectorService
             return 'Closure';
         }
 
-        return ExceptionPayloadService::mask($this->relative(str_replace(ArtisanApplication::formatCommandString(''), 'artisan ', $command)), $this->basePath);
+        $artisanPrefix = ArtisanApplication::formatCommandString('');
+
+        if (str_starts_with($command, $artisanPrefix)) {
+            return 'artisan '.self::firstWord(substr($command, strlen($artisanPrefix)));
+        }
+
+        // Leading environment assignments (`APP_KEY=… backup.sh`) are not the executable.
+        $executable = self::firstWord(preg_replace('/^\s*(?:\w+=(?:\'[^\']*\'|"[^"]*"|\S*)\s+)*/', '', $command) ?? '');
+
+        return basename(str_replace('\\', '/', $executable));
+    }
+
+    /**
+     * The first shell word, without its quotes (`'/opt/my tools/run.sh' --x`
+     * gives `/opt/my tools/run.sh`). An empty command gives `unknown`.
+     */
+    private static function firstWord(string $command): string
+    {
+        $command = ltrim($command);
+
+        if (preg_match('/^(?:\'([^\']*)\'|"([^"]*)"|(\S+))/', $command, $matches) !== 1) {
+            return 'unknown';
+        }
+
+        $word = $matches[3] ?? $matches[2] ?? $matches[1];
+
+        return $word === '' ? 'unknown' : $word;
     }
 
     private function relative(string $value): string
