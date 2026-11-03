@@ -18,9 +18,17 @@ concurrency:
 # so the workflow needs no security-events permission and is safe on forks.
 jobs:
   sarif:
-    name: SARIF output
+    name: SARIF output (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.4 is the default php-version input; 8.2 is the package floor and
+        # proves the locked action dependencies install there.
+        php:
+          - '8.2'
+          - '8.4'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -33,6 +41,7 @@ jobs:
           fail-on: none
           upload-sarif: 'false'
           github-token: ${{ github.token }}
+          php-version: ${{ matrix.php }}
 
       - name: Assert SARIF is valid
         env:
