@@ -6,6 +6,7 @@ use JsonSchema\Constraints\Constraint;
 use JsonSchema\Validator;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Data\CheckResultData;
+use Qiick\Excubia\Data\EndOfLifeCycleData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
@@ -104,7 +105,11 @@ it('adds generatedAt, excubiaVersion and the project versions at the top level',
         ->and($report['schemaVersion'])->toBe(1)
         ->and($report['generatedAt'])->toBe('2026-10-31T07:30:15Z')
         ->and($report['excubiaVersion'])->toBe(HealthCheckRunnerService::excubiaVersion())
-        ->and($report['project'])->toBe(['php' => '8.1.0', 'laravel' => 'v10.48.22', 'node' => null]);
+        ->and($report['project'])->toBe([
+            'php' => ['version' => '8.1.0', 'cycle' => '8.1', 'securitySupportEndsOn' => '2025-12-31', 'activeSupportEndsOn' => '2023-11-25'],
+            'laravel' => ['version' => 'v10.48.22', 'cycle' => '10', 'securitySupportEndsOn' => '2025-02-04', 'activeSupportEndsOn' => '2024-08-06'],
+            'node' => null,
+        ]);
 });
 
 it('produces a report that validates against docs/report-schema.json', function () {
@@ -159,7 +164,7 @@ it('omits the top-level fields from a hand-built report and keeps them through i
     expect(array_keys($bare))->toBe(['schemaVersion', 'checks', 'upgradePlan'])
         ->and($rendered['generatedAt'])->toBe('2026-11-03T09:00:00Z')
         ->and($rendered['excubiaVersion'])->toBe('1.0.0-beta')
-        ->and($rendered['project'])->toBe(['php' => '8.3.0', 'laravel' => 'v12.0.0', 'node' => '22']);
+        ->and($rendered['project'])->toBe(['php' => ['version' => '8.3.0', 'cycle' => null, 'securitySupportEndsOn' => null, 'activeSupportEndsOn' => null], 'laravel' => ['version' => 'v12.0.0', 'cycle' => null, 'securitySupportEndsOn' => null, 'activeSupportEndsOn' => null], 'node' => ['version' => '22', 'cycle' => null, 'securitySupportEndsOn' => null, 'activeSupportEndsOn' => null]]);
 });
 
 it('reports a Node declaration as written and drops free text', function () {
@@ -203,4 +208,88 @@ it('accepts every documented details shape and rejects one that does not fit its
 
     expect(reportSchemaErrors($valid))->toBe([])
         ->and(reportSchemaErrors($invalid))->not->toBe([]);
+});
+
+/**
+ * Run `excubia check --format=json` on the healthy Laravel 13 fixture and
+ * return the report. An empty `$responses` with `--offline` and an empty
+ * cache directory leaves every end-of-life check skipped.
+ *
+ * @param  array<string, mixed>  $responses
+ * @param  array<string, mixed>  $options
+ * @return array<string, mixed>
+ */
+function healthyJsonReport(array $responses, array $options = []): array
+{
+    $project = sys_get_temp_dir().'/excubia-healthy-'.bin2hex(random_bytes(4));
+    mkdir($project);
+
+    foreach (['composer.json', 'composer.lock', '.nvmrc'] as $file) {
+        copy(dirname(__DIR__).'/Fixtures/Projects/healthy-laravel-13/'.$file, $project.'/'.$file);
+    }
+
+    file_put_contents($project.'/excubia.json', json_encode(['cache' => ['directory' => $project.'/cache']], JSON_THROW_ON_ERROR));
+    $tester = new CommandTester(new CheckCommand(new FakeHttpClient($responses), new DateTimeImmutable('2026-10-31', new DateTimeZone('UTC'))));
+    $tester->execute([
+        'path' => $project,
+        '--format' => 'json',
+        '--fail-on' => 'none',
+        '--no-banner' => true,
+        ...$options,
+    ]);
+
+    return json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function supportedCycleResponses(): array
+{
+    return [
+        'https://endoflife.date/api/php.json' => [['cycle' => '8.4', 'eol' => '2028-12-31', 'support' => '2026-12-31', 'lts' => false]],
+        'https://endoflife.date/api/laravel.json' => [['cycle' => '13', 'eol' => '2028-03-17', 'support' => '2027-09-17', 'lts' => false]],
+        'https://endoflife.date/api/nodejs.json' => [['cycle' => '22', 'eol' => '2028-04-30', 'support' => false, 'lts' => true]],
+    ];
+}
+
+it('puts the support dates in project even when every end-of-life check passes', function () {
+    $report = healthyJsonReport(supportedCycleResponses(), ['--only' => 'php-eol,laravel-eol,node-eol']);
+
+    expect(array_column($report['checks'], 'status'))->toBe(['pass', 'pass', 'pass'])
+        ->and($report['project'])->toBe([
+            'php' => ['version' => '8.4.1', 'cycle' => '8.4', 'securitySupportEndsOn' => '2028-12-31', 'activeSupportEndsOn' => '2026-12-31'],
+            'laravel' => ['version' => 'v13.39.0', 'cycle' => '13', 'securitySupportEndsOn' => '2028-03-17', 'activeSupportEndsOn' => '2027-09-17'],
+            'node' => ['version' => '22', 'cycle' => '22', 'securitySupportEndsOn' => '2028-04-30', 'activeSupportEndsOn' => null],
+        ])
+        ->and(reportSchemaErrors($report))->toBe([]);
+});
+
+it('keeps the versions and nulls the dates offline with an empty cache', function () {
+    $report = healthyJsonReport([], ['--offline' => true, '--only' => 'php-eol,laravel-eol,node-eol']);
+    $empty = ['cycle' => null, 'securitySupportEndsOn' => null, 'activeSupportEndsOn' => null];
+
+    expect(array_column($report['checks'], 'status'))->toBe(['skipped', 'skipped', 'skipped'])
+        ->and($report['project'])->toBe([
+            'php' => ['version' => '8.4.1'] + $empty,
+            'laravel' => ['version' => 'v13.39.0'] + $empty,
+            'node' => ['version' => '22'] + $empty,
+        ])
+        ->and(reportSchemaErrors($report))->toBe([]);
+});
+
+it('nulls the dates of a skipped check and keeps them through an ignore rule', function () {
+    $report = healthyJsonReport(supportedCycleResponses(), ['--only' => 'laravel-eol,node-eol']);
+
+    expect($report['project']['php'])->toBe(['version' => '8.4.1', 'cycle' => null, 'securitySupportEndsOn' => null, 'activeSupportEndsOn' => null])
+        ->and($report['project']['laravel']['cycle'])->toBe('13');
+
+    $cycle = new EndOfLifeCycleData('8.1', null, '2025-12-31', '2023-11-25', false);
+    $finding = new FindingData('php-eol', SeverityEnum::Critical, FindingStatusEnum::Fail, 'php', 'Security support ended.', '', null);
+    $configuration = new ExcubiaConfigurationData(null, true, 24, 180, 180, true, [['checkId' => 'php-eol', 'subject' => 'php', 'advisoryId' => null, 'reason' => 'Accepted.', 'until' => null]], null, 24);
+    $filtered = (new HealthReportData([CheckResultData::fromFindings('php-eol', 'PHP end of life', [$finding], $cycle)], []))
+        ->withoutIgnoredFindings($configuration, new DateTimeImmutable('2026-11-03'));
+
+    expect($filtered->checkResults[0]->findings)->toBe([])
+        ->and($filtered->checkResults[0]->endOfLifeCycle)->toBe($cycle);
 });

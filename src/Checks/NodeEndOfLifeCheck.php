@@ -88,7 +88,7 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
             return $this->singleFindingResult($cycle, FindingStatusEnum::Warn, SeverityEnum::Low, 'Maintenance for Node '.$majorVersion.' ends on '.$ends->format('Y-m-d').'.', $fixHint);
         }
 
-        return CheckResultData::fromFindings($this->id(), $this->name(), []);
+        return CheckResultData::fromFindings($this->id(), $this->name(), [], $cycle);
     }
 
     /**
@@ -98,7 +98,7 @@ final class NodeEndOfLifeCheck implements HealthCheckContract
     {
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             new FindingData($this->id(), $severity, $status, 'node', $message, $fixHint, 'https://endoflife.date/nodejs', details: $cycle->findingDetails()),
-        ]);
+        ], $cycle);
     }
 
     /**

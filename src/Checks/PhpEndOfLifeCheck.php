@@ -77,10 +77,10 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
                     'Active support ended. Security support ends '.$securityEnds->format('Y-m-d').'.',
                     $this->fixHint($cycles, $today),
                 ),
-            ]);
+            ], $cycle);
         }
 
-        return CheckResultData::fromFindings($this->id(), $this->name(), []);
+        return CheckResultData::fromFindings($this->id(), $this->name(), [], $cycle);
     }
 
     /**
@@ -100,7 +100,7 @@ final class PhpEndOfLifeCheck implements HealthCheckContract
                 'Security support ended on '.$endedOn.'.',
                 $this->fixHint($cycles, $today),
             ),
-        ]);
+        ], $cycle);
     }
 
     private function finding(EndOfLifeCycleData $cycle, FindingStatusEnum $status, SeverityEnum $severity, string $message, string $fixHint): FindingData

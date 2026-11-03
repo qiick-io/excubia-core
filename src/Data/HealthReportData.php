@@ -113,6 +113,7 @@ final readonly class HealthReportData
                 $checkResult->checkId,
                 $checkResult->name,
                 $remainingFindings,
+                $checkResult->endOfLifeCycle,
             );
         }
 

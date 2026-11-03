@@ -127,7 +127,7 @@ final class HealthCheckRunnerService
             $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
-        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot));
+        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults));
         $report = $raw->withoutIgnoredFindings($configuration, $this->today);
 
         return [
@@ -185,7 +185,7 @@ final class HealthCheckRunnerService
             );
         }
 
-        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings);
+        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings, $checkResult->endOfLifeCycle);
     }
 
     /**

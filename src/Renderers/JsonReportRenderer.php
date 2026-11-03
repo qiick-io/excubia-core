@@ -6,6 +6,7 @@ namespace Qiick\Excubia\Renderers;
 
 use DateTimeZone;
 use Qiick\Excubia\Contracts\ReportRendererContract;
+use Qiick\Excubia\Data\EndOfLifeCycleData;
 use Qiick\Excubia\Data\HealthReportData;
 
 /**
@@ -95,9 +96,9 @@ final class JsonReportRenderer implements ReportRendererContract
 
         if ($healthReport->project !== null) {
             $document['project'] = [
-                'php' => $healthReport->project->php,
-                'laravel' => $healthReport->project->laravel,
-                'node' => $healthReport->project->node,
+                'php' => $this->runtime($healthReport->project->php, $healthReport->project->phpCycle),
+                'laravel' => $this->runtime($healthReport->project->laravel, $healthReport->project->laravelCycle),
+                'node' => $this->runtime($healthReport->project->node, $healthReport->project->nodeCycle),
             ];
         }
 
@@ -105,5 +106,24 @@ final class JsonReportRenderer implements ReportRendererContract
             'checks' => $checks,
             'upgradePlan' => $upgradePlan,
         ];
+    }
+
+    /**
+     * One `project` entry: null without a version, otherwise the version
+     * with its matched cycle and support end dates (null when unknown).
+     *
+     * @return array{version: string, cycle: string|null, securitySupportEndsOn: string|null, activeSupportEndsOn: string|null}|null
+     */
+    private function runtime(?string $version, ?EndOfLifeCycleData $cycle): ?array
+    {
+        if ($version === null) {
+            return null;
+        }
+
+        return ['version' => $version] + ($cycle?->findingDetails() ?? [
+            'cycle' => null,
+            'securitySupportEndsOn' => null,
+            'activeSupportEndsOn' => null,
+        ]);
     }
 }

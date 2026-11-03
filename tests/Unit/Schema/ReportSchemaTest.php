@@ -64,6 +64,8 @@ it('documents the optional report fields for excubia-app and keeps them out of r
         ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
         ->and($schema['$defs']['project']['required'])->toBe(['php', 'laravel', 'node'])
         ->and(array_keys($schema['$defs']['project']['properties']))->not->toContain('name')
+        ->and($schema['$defs']['projectRuntime']['required'])->toBe(['version', 'cycle', 'securitySupportEndsOn', 'activeSupportEndsOn'])
+        ->and($schema['$defs']['project']['properties']['php']['anyOf'])->toBe([['type' => 'null'], ['$ref' => '#/$defs/projectRuntime']])
         ->and($finding['required'])->not->toContain('fingerprint')
         ->and($finding['required'])->not->toContain('details')
         ->and($finding['properties']['fingerprint']['pattern'])->toBe('^[0-9a-f]{64}$');
