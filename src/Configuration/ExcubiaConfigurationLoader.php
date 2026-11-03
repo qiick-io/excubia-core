@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Configuration;
 
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
+use Qiick\Excubia\Data\RuntimeConfigurationData;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
@@ -41,7 +43,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -70,6 +72,61 @@ final class ExcubiaConfigurationLoader
             healthEndpointPath: $healthEndpoint['path'],
             schedulerHeartbeatStaleAfterMinutes: $checks['schedulerHeartbeatStaleAfterMinutes'],
             failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
+            runtime: $this->runtime($document['runtime'] ?? []),
+        );
+    }
+
+    /**
+     * Opt-in runtime aggregates (`docs/runtime-schema.json`). The app URL and
+     * token are the `app` keys shared with `excubia push`.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function runtime(mixed $runtime): RuntimeConfigurationData
+    {
+        if (! is_array($runtime)) {
+            throw new InvalidConfigurationException('runtime must be an object.');
+        }
+
+        $typeKeys = array_map(static fn (RuntimeTypeEnum $type): string => $type->configurationKey(), RuntimeTypeEnum::cases());
+        $this->rejectUnknownKeys($runtime, ['enabled', 'bufferMaxBytes', ...$typeKeys], 'runtime');
+        $enabledTypes = [];
+        $sampleRates = [];
+        $slowQueryThresholdMs = RuntimeConfigurationData::DEFAULT_SLOW_QUERY_THRESHOLD_MS;
+
+        foreach (RuntimeTypeEnum::cases() as $type) {
+            $label = 'runtime.'.$type->configurationKey();
+            $settings = $runtime[$type->configurationKey()] ?? [];
+
+            if (! is_array($settings)) {
+                throw new InvalidConfigurationException($label.' must be an object.');
+            }
+
+            $this->rejectUnknownKeys($settings, $type === RuntimeTypeEnum::SlowQuery ? ['enabled', 'sampleRate', 'thresholdMs'] : ['enabled', 'sampleRate'], $label);
+
+            if (array_key_exists('enabled', $settings)) {
+                $enabledTypes[$type->value] = $this->boolean($settings['enabled'], $label.'.enabled');
+            }
+
+            if (array_key_exists('sampleRate', $settings)) {
+                if (! is_int($settings['sampleRate']) && ! is_float($settings['sampleRate'])) {
+                    throw new InvalidConfigurationException($label.'.sampleRate must be a number between 0 and 1.');
+                }
+
+                $sampleRates[$type->value] = (float) $settings['sampleRate'];
+            }
+
+            if (array_key_exists('thresholdMs', $settings)) {
+                $slowQueryThresholdMs = $this->integer($settings['thresholdMs'], $label.'.thresholdMs');
+            }
+        }
+
+        return new RuntimeConfigurationData(
+            isEnabled: array_key_exists('enabled', $runtime) ? $this->boolean($runtime['enabled'], 'runtime.enabled') : false,
+            enabledTypes: $enabledTypes,
+            sampleRates: $sampleRates,
+            slowQueryThresholdMs: $slowQueryThresholdMs,
+            bufferMaxBytes: array_key_exists('bufferMaxBytes', $runtime) ? $this->integer($runtime['bufferMaxBytes'], 'runtime.bufferMaxBytes') : RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
         );
     }
 

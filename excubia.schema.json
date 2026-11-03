@@ -159,6 +159,74 @@
                     "description": "URL path of the route, relative to the app root. Default excubia/health."
                 }
             }
+        },
+        "runtime": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Opt-in runtime aggregates for your excubia-app (docs/runtime-schema.json). Off by default; when off the Laravel provider registers no listener and no schedule. Aggregates are buffered under storage/excubia/runtime/ and sent every minute by php artisan excubia:push-runtime to POST {app.url}/api/runtime with the app token (EXCUBIA_APP_URL / EXCUBIA_APP_TOKEN win).",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Turn runtime monitoring on. Default false."
+                },
+                "bufferMaxBytes": {
+                    "type": "integer",
+                    "minimum": 4096,
+                    "description": "Size cap of the local buffer; the oldest entries are dropped first. Default 1048576 (1 MiB)."
+                },
+                "requests": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Incoming HTTP requests: route name (or unnamed), method, status class, duration."
+                },
+                "slowQueries": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Database queries at or above thresholdMs: SQL without bindings, connection name, duration.",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/runtimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "thresholdMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Slow query threshold in milliseconds. Default 1000."
+                        }
+                    }
+                },
+                "jobs": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Queued jobs: class, queue, connection, processed or failed, duration."
+                },
+                "scheduler": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Scheduled tasks: description or command, finished, failed or skipped, duration."
+                },
+                "outgoingHttp": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Calls made with Laravel's HTTP client: host, status class, duration."
+                }
+            }
+        }
+    },
+    "$defs": {
+        "runtimeType": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Collect this type when runtime.enabled is true. Default true."
+                },
+                "sampleRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Share of events recorded, 0 to 1. Default 1."
+                }
+            }
         }
     }
 }

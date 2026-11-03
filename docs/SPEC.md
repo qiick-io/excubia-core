@@ -96,6 +96,7 @@ vendor/bin/excubia --version
 
 vendor/bin/excubia push [path] [--config=FILE] [--strict]   # run the checks, send the report to excubia-app (section 13)
 php artisan excubia:push [--config=FILE] [--strict]
+php artisan excubia:push-runtime [--config=FILE]   # send buffered runtime aggregates (opt-in, section 13)
 ```
 
 Exit codes:
@@ -147,6 +148,14 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 
 - Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs listed in section 3. No file contents, no `.env`, no source code, no paths, no hostnames.
 - No telemetry, no analytics, no phone-home to qiick or any third party. The only exception is the opt-in push to the user's own `excubia-app` (section 13), which is off until the user configures an app URL and token.
+- Opt-in runtime monitoring (`runtime.enabled` in `excubia.json`, off by default, #75) sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs` and its `sampleRate` (`docs/runtime-schema.json`):
+  - requests: route name (or `unnamed`), HTTP method, status class (`2xx`…);
+  - slow queries: SQL text without bindings, with quoted string literals replaced by `?`, and the connection name;
+  - jobs: job class, queue and connection names, `processed` or `failed`;
+  - scheduled tasks: description, or `artisan <command>` without the PHP and Artisan binaries, or `Closure`; paths relative to the project (a file name outside it); `finished`, `failed` or `skipped`;
+  - outgoing HTTP (Laravel's HTTP client): host and status class.
+
+  Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
 - `GITHUB_TOKEN` is optional, read from the environment only, never printed or written to the cache or report.
 - All HTTP over TLS with timeouts (connect 5 s, total 15 s) and limited retries with backoff; respects `HTTPS_PROXY`.
 - The tool never writes to the scanned project except `--output` and never executes project code (no app boot for `vendor/bin/excubia`). The Artisan commands run inside the already booted app; the posture checks read it without writing, except the scheduler heartbeat cache key, and never report `.env` values, DSNs, hostnames, paths or exception messages.
@@ -221,6 +230,7 @@ These decisions are final. They extend section 10 and replace D2 where they disa
 - **Transport:** HTTPS only (plain HTTP only for localhost), `Authorization: Bearer <token>`, the timeouts and retries of section 7.
 - **Envelope:** JSON with `protocolVersion` (1), a unique `batchId` (UUID v4, new per run, kept across HTTP retries) so a retried send is stored once, `sentAt` (UTC, `Y-m-d\TH:i:s\Z`), and the payload (`report`, following `docs/report-schema.json`). Documented in `docs/push-schema.json`. The envelope is a public contract, frozen at 1.0.0 (#76).
 - **Runtime data and exceptions** (#75, #77, opt-in): written to a local buffer, never sent during a request, sent in batches by the scheduler about every minute. When the app is unreachable the buffer keeps data up to a size cap and drops the oldest entries; it never slows the project down.
+- **Runtime endpoint** (#75): `php artisan excubia:push-runtime`, scheduled every minute by the provider when `runtime.enabled` is true, sends `POST {url}/api/runtime` with the same URL, token, transport and retries as the report. Envelope: `protocolVersion` 1, `type: "runtime"`, `batchId`, `sentAt` and `runtime` (`docs/runtime-schema.json`), documented as `$defs.runtimeEnvelope` in `docs/push-schema.json`. The buffer (`storage/excubia/runtime/`, `runtime.bufferMaxBytes`, default 1 MiB) is claimed into batch files that carry their `batchId`, so a batch is resent with the same id until the app answers 2xx; only then is it deleted. Aggregates are additive: the app sums entries with the same type, bucket, sample rate and dimensions, also across batches. Exit codes as for `push`: `0` sent or nothing to send (or disabled), `2` configuration error, `3` token rejected, app error or unreachable (the data is kept).
 - **What is sent:** the report (package names and versions, runtime versions, findings); for runtime data route names, job and command names, durations and counts, SQL without bindings; for exceptions class, fingerprint, masked message, and stack frames with paths relative to the project root. Never request payloads, headers, cookies, users, IP addresses, `.env` values or absolute paths.
 - **Stale projects:** the app marks a project stale when no report arrives within a configurable window, which also reveals a stopped scheduler.
 

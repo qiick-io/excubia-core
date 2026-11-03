@@ -23,6 +23,7 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * keys read by the Laravel provider (`docs/health-endpoint.md`).
  * The posture thresholds default to a scheduler heartbeat older than 10
  * minutes and failed jobs older than 24 hours (high instead of medium).
+ * `runtime` is the opt-in runtime monitoring key (`RuntimeConfigurationData`).
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -55,6 +56,7 @@ final readonly class ExcubiaConfigurationData
         public string $healthEndpointPath = self::DEFAULT_HEALTH_ENDPOINT_PATH,
         public int $schedulerHeartbeatStaleAfterMinutes = 10,
         public int $failedJobHighSeverityAfterHours = 24,
+        public RuntimeConfigurationData $runtime = new RuntimeConfigurationData,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');

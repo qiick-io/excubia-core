@@ -174,6 +174,33 @@ Schedule::command('excubia:push')->daily();
 
 Protocol: `POST {url}/api/reports` over HTTPS (plain HTTP only to localhost) with `Authorization: Bearer <token>`, same timeouts and retries as the data sources. The body is an envelope with `protocolVersion` (`1`), a unique `batchId` (a retried send is stored once), `sentAt` and the `report`; see [`docs/push-schema.json`](./docs/push-schema.json) and SPEC §13. Exit codes: `0` sent (findings do not change it), `2` configuration error (missing URL or token, insecure URL), `3` the app rejected the token or could not be reached. `excubia push --strict` (or `"strict": true`) also exits `3` when a data source failure skipped a check, and then sends nothing, so the app never stores an incomplete report.
 
+## Runtime monitoring
+
+In a Laravel app, Excubia can send runtime aggregates (request, slow query, job, scheduled task and outgoing HTTP timings) to your own `excubia-app`. It is **off by default**; while it is off, no listener is registered and nothing runs.
+
+```json
+{
+  "app": { "url": "https://excubia.example.com" },
+  "runtime": {
+    "enabled": true,
+    "bufferMaxBytes": 1048576,
+    "requests": { "enabled": true, "sampleRate": 1 },
+    "slowQueries": { "enabled": true, "sampleRate": 1, "thresholdMs": 1000 },
+    "jobs": { "enabled": true, "sampleRate": 1 },
+    "scheduler": { "enabled": true, "sampleRate": 1 },
+    "outgoingHttp": { "enabled": true, "sampleRate": 1 }
+  }
+}
+```
+
+Only `runtime.enabled` is needed; the other keys show the defaults. `sampleRate` is the share of events recorded (0 to 1, as in Laravel Pulse). The app URL and token are the same as for `excubia push` (`EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` win over `app`).
+
+- Events are aggregated in memory per minute (count, errors, total and maximum milliseconds) and written to a local buffer under `storage/excubia/runtime/` when the request or command ends, or after each queued job. Nothing is sent during a request, and an error inside Excubia never reaches your app. Measured overhead: about 0.1 ms per request with everything on.
+- When `runtime.enabled` is true the provider schedules `php artisan excubia:push-runtime` every minute; keep the Laravel scheduler running (`schedule:run` from cron or `schedule:work`). It sends the buffer in batches to `POST {url}/api/runtime` (envelope `protocolVersion` `1`, `type` `runtime`, [`docs/runtime-schema.json`](./docs/runtime-schema.json)) and deletes a batch only after a 2xx answer. When the app is down, batches are kept and resent with the same `batchId`; past `bufferMaxBytes` the oldest entries are dropped.
+- Exit codes of `excubia:push-runtime`: `0` sent, nothing to send or disabled, `2` configuration error, `3` the app rejected the token, answered an error or could not be reached.
+
+What is sent: route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with quoted literals replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions or `artisan <command>`, with paths made relative; the host of outgoing calls. Never URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
+
 ## Health endpoint (Oh Dear)
 
 In a Laravel app, Excubia can serve its latest result in the [Oh Dear application health](https://ohdear.app/docs/features/application-health-monitoring) JSON format (also read by monitors built for `spatie/laravel-health`). It is off by default.
@@ -272,7 +299,7 @@ JSON report schema: [`docs/report-schema.json`](./docs/report-schema.json).
 
 ## Privacy
 
-Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. The only other destination is your own `excubia-app`, and only when you run `excubia push`; the project token is never printed, cached or written to a report. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
+Only package **names and versions** (and runtime versions) leave the machine, and only to the public APIs used by the checks. No file contents, `.env`, source, paths, or hostnames. No telemetry. Optional `GITHUB_TOKEN` is read from the environment only. The only other destination is your own `excubia-app`, and only when you run `excubia push` or turn on [runtime monitoring](#runtime-monitoring) (aggregated route, job, task and host names, durations, counts and SQL without bindings; the list above is exhaustive); the project token is never printed, cached or written to a report. Details: [`SECURITY.md`](./SECURITY.md) and SPEC §7.
 
 ## Versioning and support
 
