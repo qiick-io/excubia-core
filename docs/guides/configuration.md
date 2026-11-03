@@ -35,6 +35,7 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     }
   ],
   "cache": { "directory": null, "ttlHours": 24 },
+  "privacy": { "skipPackages": [] },
   "app": { "url": "https://excubia.example.com" },
   "healthEndpoint": { "enabled": false, "path": "excubia/health" },
   "runtime": {
@@ -108,6 +109,15 @@ Data-source responses are cached on disk so repeated runs and `--offline` work w
 | `cache.ttlHours` | integer ≥ 0 | `24` | Age after which a cached response is fetched again. `--offline` uses only responses younger than this; older ones count as missing. |
 
 `--no-cache` bypasses the cache for one run. `vendor/bin/excubia cache:clear` deletes the cache entries (only files named like cache entries).
+
+## Privacy
+
+Packages the lockfile shows as not served by Packagist or the public npm registry are never sent to a public data source; see [private packages](./privacy.md#private-packages). `privacy.skipPackages` adds names the lockfile cannot tell apart, such as a private package published on the public npm registry.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `privacy` | object | | What the checks may send to public data sources. |
+| `privacy.skipPackages` | list of strings | `[]` | Package name globs never sent to Packagist, OSV.dev or GitHub, for example `"acme/*"` or `"@acme/*"`. `*` matches any characters (`/` included), `?` exactly one; the whole name must match, case-insensitively. Only letters, digits, `@ / . _ ~ -` and the two wildcards are allowed. Matching packages appear in one `skipped` row per check. |
 
 ## excubia-app
 

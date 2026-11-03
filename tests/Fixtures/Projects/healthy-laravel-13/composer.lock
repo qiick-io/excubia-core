@@ -2,13 +2,15 @@
     "packages": [
         {
             "name": "laravel/framework",
-            "version": "v13.39.0"
+            "version": "v13.39.0",
+            "notification-url": "https://packagist.org/downloads/"
         }
     ],
     "packages-dev": [
         {
             "name": "phpunit/phpunit",
-            "version": "11.5.0"
+            "version": "11.5.0",
+            "notification-url": "https://packagist.org/downloads/"
         }
     ],
     "platform": {
