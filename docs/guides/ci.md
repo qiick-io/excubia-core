@@ -68,7 +68,7 @@ How it works:
 Install Excubia as a dev dependency and run it. The exit code fails the job.
 
 ```bash
-composer install --no-interaction --no-scripts   # or only: composer require --dev qiick/excubia-core -W
+composer install --no-interaction --no-scripts   # or only: composer require --dev qiick/excubia-core
 vendor/bin/excubia check --no-banner --fail-on=high
 ```
 

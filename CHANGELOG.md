@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Composite GitHub Action (`action.yml`, `qiick-io/excubia-core@v1` once tagged): installs Excubia from the action's own checkout in `$RUNNER_TEMP`, outside the scanned project, runs `excubia check --format=sarif`, writes the Markdown report to the job summary and uploads the SARIF log with `github/codeql-action/upload-sarif`. Inputs `path`, `fail-on` (default `critical`), `only`, `skip`, `github-token`, `upload-sarif` (default `true`) and `php-version` (default `8.4`); the step fails according to `fail-on` after the upload. Tested by `.github/workflows/action-test.yml`.
 - Opt-in health endpoint in the Oh Dear application health JSON format for Laravel apps (`docs/health-endpoint.md`): `excubia.json` keys `healthEndpoint.enabled` (default `false`) and `healthEndpoint.path` (default `excubia/health`), secret from `EXCUBIA_HEALTH_SECRET` (the route is not registered without it), checked against the `oh-dear-health-check-secret` header with `hash_equals`; a wrong or missing secret gets `404`. The endpoint serves the result the last `excubia:check` / `excubia:push` stored in `storage/excubia/health.json` and never runs checks in the request. `pass` → `ok`, `warn` → `warning`, `fail` → `failed`, `skipped` → `skipped`, a run without a report → one `crashed` entry; no stored result yet → one `skipped` entry.
 
+### Changed
+
+- Supports Symfony 8 (#113): `symfony/console` and `symfony/http-client` now allow `^7.2 || ^8.0`, so `composer require qiick/excubia-core` installs in a Laravel 13 app that already locks Symfony 8 components, without `-W`. Symfony 8 needs PHP 8.4 or newer; on PHP 8.2 and 8.3 Composer keeps Symfony 7. `bin/excubia` registers its commands with `addCommands()`, which both majors provide (`Application::add()` was removed in Symfony 8).
+
 ### Security
 
 - Threat model of every outgoing and stored data path: `docs/SECURITY-MODEL.md` (#82). `SECURITY.md` names the supported versions for 1.x.
