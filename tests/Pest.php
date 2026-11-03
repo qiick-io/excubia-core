@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Qiick\Excubia\Tests\Support\LaravelTestCase;
+
 /**
  * @param  array<string, string>  $files
  */
@@ -26,3 +28,5 @@ function temporaryProject(array $files): string
 
     return $root;
 }
+
+pest()->extend(LaravelTestCase::class)->in('Laravel');
