@@ -1,0 +1,137 @@
+name: Excubia
+description: Health checks for Laravel apps. Scans composer.lock and Node manifests and reports to GitHub code scanning (SARIF).
+author: Qiick
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  path:
+    description: Project directory to scan, relative to the workspace.
+    required: false
+    default: .
+  fail-on:
+    description: Fail the step on a finding at or above this severity (critical, high, medium, low, none).
+    required: false
+    default: critical
+  only:
+    description: Comma-separated check ids to run.
+    required: false
+    default: ''
+  skip:
+    description: Comma-separated check ids to skip.
+    required: false
+    default: ''
+  github-token:
+    description: Optional token, raises the GitHub API rate limit for the abandoned/archived checks.
+    required: false
+    default: ''
+  upload-sarif:
+    description: Upload the SARIF log to GitHub code scanning (needs security-events write). Set to false to skip.
+    required: false
+    default: 'true'
+  php-version:
+    description: PHP version used to run Excubia (not the scanned project's PHP).
+    required: false
+    default: '8.4'
+
+outputs:
+  sarif-file:
+    description: Path of the SARIF log written by Excubia.
+    value: ${{ steps.check.outputs.sarif-file }}
+  exit-code:
+    description: Exit code of excubia check (0 clean, 1 finding at or above fail-on, 2 usage error).
+    value: ${{ steps.check.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup PHP
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
+      with:
+        php-version: ${{ inputs.php-version }}
+        coverage: none
+        tools: composer:v2
+
+    # Excubia is installed from this action's own checkout through a Composer path
+    # repository, in a temporary directory outside the scanned project, so the
+    # installed version always matches the ref the action is used at and the
+    # project's own code and dependencies are never installed or executed.
+    - name: Install Excubia
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INSTALL_DIR: ${{ runner.temp }}/excubia
+      run: |
+        set -euo pipefail
+        mkdir -p "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
+        cat > composer.json <<JSON
+        {
+          "repositories": [
+            {
+              "type": "path",
+              "url": "$ACTION_PATH",
+              "options": { "symlink": false, "versions": { "qiick/excubia-core": "dev-action" } }
+            }
+          ],
+          "require": { "qiick/excubia-core": "dev-action" }
+        }
+        JSON
+        composer install --no-interaction --no-progress --prefer-dist --no-dev
+        echo "EXCUBIA_BIN=$INSTALL_DIR/vendor/bin/excubia" >> "$GITHUB_ENV"
+
+    - name: Run Excubia
+      id: check
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        SCAN_PATH: ${{ inputs.path }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        ONLY: ${{ inputs.only }}
+        SKIP: ${{ inputs.skip }}
+        SARIF_FILE: ${{ runner.temp }}/excubia.sarif
+      run: |
+        set -uo pipefail
+        selection=()
+        if [ -n "$ONLY" ]; then
+          selection+=("--only=$ONLY")
+        fi
+        if [ -n "$SKIP" ]; then
+          selection+=("--skip=$SKIP")
+        fi
+
+        php "$EXCUBIA_BIN" check "$SCAN_PATH" --no-banner --format=sarif --output="$SARIF_FILE" --fail-on="$FAIL_ON" ${selection[@]+"${selection[@]}"}
+        exit_code=$?
+
+        # The Markdown report reuses the response cache of the first run.
+        if [ "$exit_code" -ne 2 ]; then
+          php "$EXCUBIA_BIN" check "$SCAN_PATH" --no-banner --format=markdown --fail-on=none ${selection[@]+"${selection[@]}"} >> "$GITHUB_STEP_SUMMARY" || true
+        fi
+
+        echo "exit-code=$exit_code" >> "$GITHUB_OUTPUT"
+        echo "sarif-file=$SARIF_FILE" >> "$GITHUB_OUTPUT"
+
+    # Pull requests from forks get a read-only token, so the upload is skipped there.
+    - name: Upload SARIF
+      if: >-
+        always()
+        && inputs.upload-sarif == 'true'
+        && (steps.check.outputs.exit-code == '0' || steps.check.outputs.exit-code == '1')
+        && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+      with:
+        sarif_file: ${{ steps.check.outputs.sarif-file }}
+        category: excubia
+
+    - name: Apply fail-on
+      if: always()
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.check.outputs.exit-code }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        if [ "${EXIT_CODE:-2}" != "0" ]; then
+          echo "::error::Excubia exited with code ${EXIT_CODE:-2} (fail-on: $FAIL_ON)."
+          exit "${EXIT_CODE:-2}"
+        fi
