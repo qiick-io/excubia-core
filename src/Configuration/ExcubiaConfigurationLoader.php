@@ -41,7 +41,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -51,6 +51,7 @@ final class ExcubiaConfigurationLoader
         $checks = $this->checks($document['checks'] ?? [], $defaults);
         $cache = $this->cache($document['cache'] ?? []);
         $app = $this->app($document['app'] ?? []);
+        $healthEndpoint = $this->healthEndpoint($document['healthEndpoint'] ?? []);
 
         return new ExcubiaConfigurationData(
             failOnSeverity: array_key_exists('failOn', $document) ? $this->failOn($document['failOn']) : $defaults->failOnSeverity,
@@ -65,7 +66,32 @@ final class ExcubiaConfigurationLoader
             appUrl: $app['url'],
             appToken: $app['token'],
             isStrict: array_key_exists('strict', $document) ? $this->boolean($document['strict'], 'strict') : $defaults->isStrict,
+            isHealthEndpointEnabled: $healthEndpoint['enabled'],
+            healthEndpointPath: $healthEndpoint['path'],
         );
+    }
+
+    /**
+     * Oh Dear-compatible health endpoint of the Laravel provider. The secret
+     * is not a key here: it comes from `EXCUBIA_HEALTH_SECRET` only, so it is
+     * never committed with the file.
+     *
+     * @return array{enabled: bool, path: string}
+     */
+    private function healthEndpoint(mixed $healthEndpoint): array
+    {
+        if (! is_array($healthEndpoint)) {
+            throw new InvalidConfigurationException('healthEndpoint must be an object.');
+        }
+
+        $this->rejectUnknownKeys($healthEndpoint, ['enabled', 'path'], 'healthEndpoint');
+
+        return [
+            'enabled' => array_key_exists('enabled', $healthEndpoint) ? $this->boolean($healthEndpoint['enabled'], 'healthEndpoint.enabled') : false,
+            'path' => array_key_exists('path', $healthEndpoint)
+                ? trim($this->requiredString($healthEndpoint['path'], 'healthEndpoint.path'), '/')
+                : ExcubiaConfigurationData::DEFAULT_HEALTH_ENDPOINT_PATH,
+        ];
     }
 
     /**

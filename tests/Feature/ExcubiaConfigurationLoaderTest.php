@@ -94,6 +94,38 @@ it('documents a closed schema with advisoryId on ignore rules', function () {
         ->and($schema['properties']['ignore']['items']['required'])->toBe(['checkId', 'subject', 'reason']);
 });
 
+it('reads healthEndpoint and keeps the endpoint off by default', function () {
+    $loader = new ExcubiaConfigurationLoader;
+    $defaults = $loader->load(null, temporaryProject([]));
+    $configured = $loader->load(null, temporaryProject([
+        'excubia.json' => '{"healthEndpoint": {"enabled": true, "path": "/ops/health/"}}',
+    ]));
+
+    expect($defaults->isHealthEndpointEnabled)->toBeFalse()
+        ->and($defaults->healthEndpointPath)->toBe('excubia/health')
+        ->and($configured->isHealthEndpointEnabled)->toBeTrue()
+        ->and($configured->healthEndpointPath)->toBe('ops/health');
+});
+
+it('rejects an invalid healthEndpoint', function (string $healthEndpoint, string $message) {
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => '{"healthEndpoint": '.$healthEndpoint.'}',
+    ])))->toThrow(InvalidConfigurationException::class, $message);
+})->with([
+    'not an object' => ['true', 'healthEndpoint must be an object.'],
+    'secret in the file' => ['{"secret": "x"}', 'Unknown healthEndpoint key [secret].'],
+    'enabled not boolean' => ['{"enabled": "yes"}', 'healthEndpoint.enabled must be a boolean.'],
+    'path with a query' => ['{"path": "health?x=1"}', 'healthEndpoint.path must be a relative URL path'],
+    'empty path' => ['{"path": "/"}', 'healthEndpoint.path must be a relative URL path'],
+]);
+
+it('documents healthEndpoint in the schema', function () {
+    $schema = json_decode((string) file_get_contents(dirname(__DIR__, 2).'/excubia.schema.json'), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($schema['properties']['healthEndpoint']['additionalProperties'])->toBeFalse()
+        ->and(array_keys($schema['properties']['healthEndpoint']['properties']))->toBe(['enabled', 'path']);
+});
+
 function advisoryFinding(string $advisoryId): FindingData
 {
     return new FindingData(

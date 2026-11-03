@@ -19,9 +19,13 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `appUrl` and `appToken` come from the `app` key and are read only by
  * `excubia push`; the token is never printed, cached or written to a report.
  * `isStrict` is the `strict` key: data-source failures exit 3 (`--strict`).
+ * `isHealthEndpointEnabled` and `healthEndpointPath` are the `healthEndpoint`
+ * keys read by the Laravel provider (`docs/health-endpoint.md`).
  */
 final readonly class ExcubiaConfigurationData
 {
+    public const DEFAULT_HEALTH_ENDPOINT_PATH = 'excubia/health';
+
     /**
      * @param  list<array{
      *     checkId: string,
@@ -45,6 +49,8 @@ final readonly class ExcubiaConfigurationData
         #[\SensitiveParameter]
         public ?string $appToken = null,
         public bool $isStrict = false,
+        public bool $isHealthEndpointEnabled = false,
+        public string $healthEndpointPath = self::DEFAULT_HEALTH_ENDPOINT_PATH,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -56,6 +62,10 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->cacheTtlHours < 0) {
             throw new InvalidConfigurationException('cache ttlHours must be zero or greater.');
+        }
+
+        if (preg_match('#^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$#', $this->healthEndpointPath) !== 1) {
+            throw new InvalidConfigurationException('healthEndpoint.path must be a relative URL path such as excubia/health.');
         }
 
         foreach ($this->ignoreRules as $ignoreRule) {

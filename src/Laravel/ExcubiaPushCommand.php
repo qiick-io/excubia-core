@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Laravel;
 
+use Closure;
 use Illuminate\Console\Command;
 use Qiick\Excubia\Console\PushCommand;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
 /**
  * `php artisan excubia:push`. Same engine as `vendor/bin/excubia push`,
- * with the path fixed to the application base path.
+ * with the path fixed to the application base path. With the health
+ * endpoint enabled, the scan result is stored for it (`HealthEndpointService`).
  *
  * ponytail: the URL and token come from the process environment or
  * `excubia.json`, not from Laravel config, so `config:cache` does not
@@ -32,10 +34,12 @@ final class ExcubiaPushCommand extends Command
             throw new InvalidConfigurationException('--config must be a string.');
         }
 
-        return (new PushCommand)->runWithOptions(
+        $configPath = $config === '' ? null : $config;
+
+        return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new PushCommand(reportListener: $reportListener))->runWithOptions(
             ExcubiaCheckCommand::applicationBasePath($this->getLaravel()),
-            ['config' => $config === '' ? null : $config, 'strict' => (bool) $this->option('strict')],
+            ['config' => $configPath, 'strict' => (bool) $this->option('strict')],
             $this->output,
-        );
+        ));
     }
 }

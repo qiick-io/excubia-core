@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Console;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Qiick\Excubia\Contracts\HttpClientContract;
+use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
@@ -32,11 +34,13 @@ final class PushCommand extends Command
 {
     /**
      * @param  array<string, string>|null  $environment  tests pass variables here; null reads getenv()
+     * @param  (Closure(HealthReportData): void)|null  $reportListener  passed to the scan (see CheckCommand)
      */
     public function __construct(
         private readonly ?HttpClientContract $httpClient = null,
         private readonly ?DateTimeImmutable $now = null,
         private readonly ?array $environment = null,
+        private readonly ?Closure $reportListener = null,
     ) {
         parent::__construct();
     }
@@ -72,7 +76,7 @@ final class PushCommand extends Command
     public function runWithOptions(?string $path, array $options, OutputInterface $output): int
     {
         $now = $this->now ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $checkCommand = new CheckCommand($this->httpClient, $now);
+        $checkCommand = new CheckCommand($this->httpClient, $now, $this->reportListener);
 
         try {
             $scan = $checkCommand->scan($path, ['config' => $options['config'] ?? null, 'strict' => $options['strict'] ?? false], $output);

@@ -174,6 +174,26 @@ Schedule::command('excubia:push')->daily();
 
 Protocol: `POST {url}/api/reports` over HTTPS (plain HTTP only to localhost) with `Authorization: Bearer <token>`, same timeouts and retries as the data sources. The body is an envelope with `protocolVersion` (`1`), a unique `batchId` (a retried send is stored once), `sentAt` and the `report`; see [`docs/push-schema.json`](./docs/push-schema.json) and SPEC §13. Exit codes: `0` sent (findings do not change it), `2` configuration error (missing URL or token, insecure URL), `3` the app rejected the token or could not be reached. `excubia push --strict` (or `"strict": true`) also exits `3` when a data source failure skipped a check, and then sends nothing, so the app never stores an incomplete report.
 
+## Health endpoint (Oh Dear)
+
+In a Laravel app, Excubia can serve its latest result in the [Oh Dear application health](https://ohdear.app/docs/features/application-health-monitoring) JSON format (also read by monitors built for `spatie/laravel-health`). It is off by default.
+
+```json
+{ "healthEndpoint": { "enabled": true, "path": "excubia/health" } }
+```
+
+```bash
+EXCUBIA_HEALTH_SECRET=a-long-random-string   # required: without it the route is not registered
+```
+
+```php
+// routes/console.php
+Schedule::command('excubia:push')->daily();
+Schedule::command('excubia:check --offline --fail-on=none --no-banner')->everyFiveMinutes();
+```
+
+`GET /excubia/health` with the `oh-dear-health-check-secret` header answers `finishedAt` and one `checkResults` entry per check (`pass` → `ok`, `warn` → `warning`, `fail` → `failed`, `skipped` → `skipped`; a run that crashed → one `crashed` entry). A wrong or missing secret gets `404`. The endpoint never runs checks in the request: it serves what the last `excubia:check` / `excubia:push` stored in `storage/excubia/health.json`, or one `skipped` entry before the first run. No paths, hostnames or tokens are in the response. Full shape: [`docs/health-endpoint.md`](./docs/health-endpoint.md).
+
 ## Health checks
 
 | ID | Name |
@@ -216,7 +236,8 @@ Optional `excubia.json` at the project root (JSON Schema: [`excubia.schema.json`
       "until": "2027-01-31"
     }
   ],
-  "cache": { "directory": null, "ttlHours": 24 }
+  "cache": { "directory": null, "ttlHours": 24 },
+  "healthEndpoint": { "enabled": false, "path": "excubia/health" }
 }
 ```
 
