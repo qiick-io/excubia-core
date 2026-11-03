@@ -1,0 +1,145 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
+    "title": "Excubia runtime batch",
+    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs and keeps the larger maxMs for entries with the same type, bucket, sampleRate and dimensions, also across batches. Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages or absolute paths.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["bucketSeconds", "aggregates"],
+    "properties": {
+        "bucketSeconds": {
+            "const": 60,
+            "description": "Width of a time bucket. Every bucket starts on a whole UTC minute."
+        },
+        "aggregates": {
+            "type": "array",
+            "items": {
+                "oneOf": [
+                    { "$ref": "#/$defs/request" },
+                    { "$ref": "#/$defs/slowQuery" },
+                    { "$ref": "#/$defs/job" },
+                    { "$ref": "#/$defs/scheduledTask" },
+                    { "$ref": "#/$defs/outgoingHttp" }
+                ]
+            }
+        }
+    },
+    "$defs": {
+        "bucket": {
+            "type": "string",
+            "description": "UTC start of the minute, Y-m-d\\TH:i:00\\Z.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00Z$"
+        },
+        "sampleRate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Share of events recorded for this type (runtime.<type>.sampleRate in excubia.json)."
+        },
+        "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Recorded events in the bucket."
+        },
+        "errorCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks. Always 0 for slow queries."
+        },
+        "milliseconds": {
+            "type": "number",
+            "minimum": 0
+        },
+        "statusClass": {
+            "enum": ["1xx", "2xx", "3xx", "4xx", "5xx"]
+        },
+        "request": {
+            "type": "object",
+            "description": "Incoming HTTP requests (RequestHandled), timed from REQUEST_TIME_FLOAT.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "route", "method", "statusClass", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "request" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "route": { "type": "string", "minLength": 1, "description": "Route name, or unnamed. Never the URL." },
+                "method": { "type": "string", "minLength": 1 },
+                "statusClass": { "$ref": "#/$defs/statusClass" },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        },
+        "slowQuery": {
+            "type": "object",
+            "description": "Database queries at or above runtime.slowQueries.thresholdMs (QueryExecuted).",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "sql", "connection", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "slowQuery" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "sql": { "type": "string", "minLength": 1, "description": "SQL text without bindings; quoted string literals are replaced by ?. At most 2000 characters." },
+                "connection": { "type": "string", "description": "Laravel database connection name." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        },
+        "job": {
+            "type": "object",
+            "description": "Queued jobs (JobProcessed, JobFailed), timed from JobProcessing.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "job", "queue", "connection", "outcome", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "job" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "job": { "type": "string", "minLength": 1, "description": "Job class name (Laravel's resolveName)." },
+                "queue": { "type": "string" },
+                "connection": { "type": "string" },
+                "outcome": { "enum": ["processed", "failed"] },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        },
+        "scheduledTask": {
+            "type": "object",
+            "description": "Scheduled tasks (ScheduledTaskFinished, ScheduledTaskFailed, ScheduledTaskSkipped). Skipped tasks have 0 ms.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "task", "outcome", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "scheduledTask" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "task": { "type": "string", "minLength": 1, "description": "Task description, else the command (artisan <command> without the PHP and Artisan binaries), else Closure. Paths are relative to the project, or a file name outside it." },
+                "outcome": { "enum": ["finished", "failed", "skipped"] },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        },
+        "outgoingHttp": {
+            "type": "object",
+            "description": "Responses to calls made with Laravel's HTTP client (ResponseReceived), grouped by host. Never the path, query or headers.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "host", "statusClass", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "outgoingHttp" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "host": { "type": "string", "minLength": 1 },
+                "statusClass": { "$ref": "#/$defs/statusClass" },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        }
+    }
+}

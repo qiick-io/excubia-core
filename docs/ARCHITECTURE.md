@@ -39,7 +39,8 @@ qiick-io/excubia-core
 │   │   ├── PackagistApiService.php          # metadata + security advisories
 │   │   ├── GitHubRepositoryApiService.php   # archived flag, last push
 │   │   ├── OsvApiService.php                # OSV.dev batch query
-│   │   ├── ReportPushService.php            # push envelope to excubia-app (SPEC §13)
+│   │   ├── ReportPushService.php            # push envelopes to excubia-app: report + runtime batch (SPEC §13)
+│   │   ├── RuntimeBufferService.php         # size-capped NDJSON buffer + claimed batch files (storage/excubia/runtime/)
 │   │   ├── HealthResultStoreService.php     # last Oh Dear health payload (storage/excubia/health.json)
 │   │   └── ResponseCacheService.php         # file cache with TTL, offline mode
 │   ├── Parsers/
@@ -61,12 +62,14 @@ qiick-io/excubia-core
 │   │   ├── FindingData.php
 │   │   ├── HealthReportData.php
 │   │   ├── UpgradeStepData.php
-│   │   └── ExcubiaConfigurationData.php
+│   │   ├── ExcubiaConfigurationData.php
+│   │   └── RuntimeConfigurationData.php     # runtime key: switches, sample rates, threshold, buffer cap
 │   ├── Enums/
 │   │   ├── SeverityEnum.php                 # critical..info, comparable
 │   │   ├── FindingStatusEnum.php            # pass|warn|fail|skipped
 │   │   ├── SkipReasonEnum.php               # data-source-failure|offline|not-applicable
 │   │   ├── ReportFormatEnum.php
+│   │   ├── RuntimeTypeEnum.php              # request|slowQuery|job|scheduledTask|outgoingHttp
 │   │   └── ExitCodeEnum.php                 # 0,1,2,3
 │   ├── Configuration/
 │   │   └── ExcubiaConfigurationLoader.php   # reads + validates excubia.json  [suffix: Loader — see note]
@@ -75,11 +78,13 @@ qiick-io/excubia-core
 │   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, opt-in runtime listeners + excubia:push-runtime schedule
 │   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
 │   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
 │   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
 │   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat
+│   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → RuntimeBufferService + ReportPushService
+│   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
 │   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache)
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
@@ -88,7 +93,7 @@ qiick-io/excubia-core
 ├── tests/{Unit,Feature,Arch,Fixtures}
 ├── excubia.schema.json                      # JSON Schema of the config file
 ├── action.yml                               # composite GitHub Action: SARIF upload to code scanning (v0.3.0, D6)
-├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,checks/*.md}
+├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,runtime-schema.json,checks/*.md}
 └── .github/workflows/ci.yml                 # calls qiick-io/.github reusable workflow
 ```
 
@@ -113,6 +118,24 @@ flowchart LR
   REPORT --> RENDER[Table / Json / Markdown / Sarif Renderer]
   RENDER --> OUT[stdout or --output + exit code]
 ```
+
+### Runtime monitoring (opt-in, #75)
+
+```mermaid
+flowchart LR
+  EVT[Laravel events] --> COL[RuntimeCollectorService, in memory per minute]
+  COL -->|terminating / after each job or task| BUF[RuntimeBufferService: buffer.ndjson]
+  SCHED[scheduler, every minute] --> PRT[excubia:push-runtime]
+  PRT -->|claim| BAT[batch-seq-batchId.ndjson]
+  BAT --> PUSH[ReportPushService::pushRuntime]
+  PUSH -->|POST /api/runtime| APP[excubia-app]
+  APP -->|2xx| DEL[delete batch]
+```
+
+- Everything lives in `src/Laravel/` except the buffer and the transport, which are framework-free `*Service` classes, so `bin/excubia` never loads `illuminate/*`.
+- `runtime.enabled: false` (the default) means the provider registers no listener, no terminating callback and no schedule.
+- Every listener and the flush catch `Throwable`: a broken buffer directory never reaches the host app. Nothing is sent from a request.
+- Buffer writes, claims and trims hold one `flock` on `storage/excubia/runtime/.lock`. Over `runtime.bufferMaxBytes`, whole lines are dropped from the oldest file first. A claimed batch keeps its `batchId` in its file name until the app answers 2xx.
 
 ## 3. Key contracts
 
