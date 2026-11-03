@@ -61,7 +61,7 @@ The server needs the usual scheduler cron:
 * * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1
 ```
 
-Install the package without `--dev` (`composer require qiick/excubia-core -W`) so the command exists in production.
+Install the package without `--dev` (`composer require qiick/excubia-core`) so the command exists in production.
 
 ## After a deploy
 
