@@ -15,7 +15,9 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * `schemaVersion` is always 1 for this milestone. Ignore rules are applied
  * by `withoutIgnoredFindings` before `exitCodeFor` is called. Upgrade steps
  * are kept as given; the upgrade-plan service rebuilds them from the
- * findings that remain.
+ * findings that remain. `generatedAt`, `excubiaVersion` and `project` are
+ * set by the runner; a hand-built report may leave them null, and the JSON
+ * renderer then omits them (optional fields, schema version 1).
  */
 final readonly class HealthReportData
 {
@@ -30,6 +32,9 @@ final readonly class HealthReportData
     public function __construct(
         public array $checkResults,
         public array $upgradeSteps,
+        public ?DateTimeImmutable $generatedAt = null,
+        public ?string $excubiaVersion = null,
+        public ?ProjectVersionsData $project = null,
     ) {
         $this->schemaVersion = self::SCHEMA_VERSION;
     }
@@ -97,7 +102,7 @@ final readonly class HealthReportData
             $remainingFindings = [];
 
             foreach ($checkResult->findings as $finding) {
-                if ($configuration->ignores($finding, $today)) {
+                if ($configuration->isIgnored($finding, $today)) {
                     continue;
                 }
 
@@ -108,35 +113,81 @@ final readonly class HealthReportData
                 $checkResult->checkId,
                 $checkResult->name,
                 $remainingFindings,
+                $checkResult->endOfLifeCycle,
             );
         }
 
-        return new self($checkResults, $this->upgradeSteps);
+        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project);
     }
 
     /**
      * Exit code from fail and warn findings at or above `$failOnSeverity`.
      *
-     * Null means `--fail-on=none` and always returns 0. Pass, skipped, and
-     * info-only rows do not count. Upgrade steps do not count. Ignored
-     * findings must already have been removed.
+     * Null means `--fail-on=none`: findings never return 1. Pass, skipped,
+     * and info-only rows do not count. Upgrade steps do not count. Ignored
+     * findings must already have been removed. With `$isStrict`, a check
+     * skipped because a data source failed returns 3, unless a finding
+     * already returns 1 (CI sees real findings first).
      */
-    public function exitCodeFor(?SeverityEnum $failOnSeverity): ExitCodeEnum
+    public function exitCodeFor(?SeverityEnum $failOnSeverity, bool $isStrict = false): ExitCodeEnum
     {
-        if ($failOnSeverity === null) {
-            return ExitCodeEnum::NoFindingsAtOrAboveFailOn;
+        if ($failOnSeverity !== null && $this->hasFindingAtOrAbove($failOnSeverity)) {
+            return ExitCodeEnum::FindingsAtOrAboveFailOn;
         }
 
+        if ($isStrict && $this->dataSourceFailures() !== []) {
+            return ExitCodeEnum::DataSourceFailure;
+        }
+
+        return ExitCodeEnum::NoFindingsAtOrAboveFailOn;
+    }
+
+    private function hasFindingAtOrAbove(SeverityEnum $failOnSeverity): bool
+    {
         foreach ($this->findings() as $finding) {
             if ($finding->status !== FindingStatusEnum::Fail && $finding->status !== FindingStatusEnum::Warn) {
                 continue;
             }
 
             if ($finding->severity->isAtLeastAsSevereAs($failOnSeverity)) {
-                return ExitCodeEnum::FindingsAtOrAboveFailOn;
+                return true;
             }
         }
 
-        return ExitCodeEnum::NoFindingsAtOrAboveFailOn;
+        return false;
+    }
+
+    /**
+     * Skipped rows whose data source failed. Deliberate skips (`--offline`,
+     * a check that does not apply) are not included.
+     *
+     * @return list<FindingData>
+     */
+    public function dataSourceFailures(): array
+    {
+        $failures = [];
+
+        foreach ($this->findings() as $finding) {
+            if ($finding->isDataSourceFailure()) {
+                $failures[] = $finding;
+            }
+        }
+
+        return $failures;
+    }
+
+    /**
+     * The `--strict` error: one line per check that a data source failure
+     * skipped, naming the source through the skip message.
+     */
+    public function dataSourceFailureMessage(): string
+    {
+        $lines = ['--strict: checks were skipped because a data source failed:'];
+
+        foreach ($this->dataSourceFailures() as $finding) {
+            $lines[] = '  '.$finding->checkId.' ('.$finding->subject.'): '.$finding->message;
+        }
+
+        return implode("\n", $lines);
     }
 }

@@ -70,3 +70,11 @@ it('passes an empty lockfile and skips an outage', function () {
     expect($empty->status)->toBe(FindingStatusEnum::Pass)
         ->and($offline->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the package and locked version in details, with no fixed version from the OSV batch', function () {
+    $result = npmAdvisoriesCheck([
+        'results' => [['vulns' => [['id' => 'GHSA-lodash']]]],
+    ])->run(npmSnapshot(true, [new LockedPackageData('lodash', '4.17.20', true, false)]), ExcubiaConfigurationData::defaults());
+
+    expect($result->findings[0]->details)->toBe(['package' => 'lodash', 'lockedVersion' => '4.17.20', 'fixedVersions' => []]);
+});

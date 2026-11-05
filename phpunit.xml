@@ -10,6 +10,12 @@
             <directory>tests</directory>
         </testsuite>
     </testsuites>
+    <groups>
+        <exclude>
+            <!-- Run with: vendor/bin/pest with the group option set to benchmark -->
+            <group>benchmark</group>
+        </exclude>
+    </groups>
     <source>
         <include>
             <directory>src</directory>

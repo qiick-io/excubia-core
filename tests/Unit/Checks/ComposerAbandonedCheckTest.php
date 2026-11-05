@@ -80,3 +80,16 @@ it('passes when nothing is abandoned and skips an outage', function () {
     expect($passed->status)->toBe(FindingStatusEnum::Pass)
         ->and($offline->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the package, locked version and known replacement in details', function () {
+    $result = abandonedCheck([
+        'https://repo.packagist.org/p2/swiftmailer/swiftmailer.json' => packageDocument('swiftmailer/swiftmailer', 'symfony/mailer'),
+        'https://repo.packagist.org/p2/old/lib.json' => packageDocument('old/lib', true),
+    ])->run(new ProjectSnapshotData(null, null, [
+        new LockedPackageData('swiftmailer/swiftmailer', 'v6.3.0', true, false),
+        new LockedPackageData('old/lib', 'v1.0.0', false, false),
+    ], [], null), ExcubiaConfigurationData::defaults());
+
+    expect($result->findings[0]->details)->toBe(['package' => 'swiftmailer/swiftmailer', 'lockedVersion' => 'v6.3.0', 'replacement' => 'symfony/mailer'])
+        ->and($result->findings[1]->details)->toBe(['package' => 'old/lib', 'lockedVersion' => 'v1.0.0', 'replacement' => null]);
+});

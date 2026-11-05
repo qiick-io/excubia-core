@@ -13,7 +13,12 @@ use UnexpectedValueException;
  */
 final class ComposerConstraintService
 {
-    public function matches(string $version, string $constraint): bool
+    /**
+     * True when `$version` satisfies the Composer `$constraint`.
+     *
+     * Empty or invalid constraints return false instead of throwing.
+     */
+    public function isSatisfiedBy(string $version, string $constraint): bool
     {
         if ($constraint === '') {
             return false;

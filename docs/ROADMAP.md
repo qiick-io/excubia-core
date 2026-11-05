@@ -1,72 +1,56 @@
 # Excubia — Roadmap
 
-After v0.1.0, through v1.0.0. Source of truth: [`docs/SPEC.md`](SPEC.md) and [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), approved on 2026-10-31. Decisions D1–D13 and A1–A2 are final. Anything marked **[PROPOSAL]** in the spec is not approved.
+Through v1.0.0, updated 2026-11-05. Sources of truth:
+- [`docs/SPEC.md`](SPEC.md): decisions D1–D19, push protocol in section 13.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+- [`docs/CONTRACTS.md`](CONTRACTS.md): the public contracts frozen for 1.0.
 
-v0.1.0 (CLI, checks, config, CI, Packagist) is specified there and is not repeated as implementation work in this document.
+Issues labelled `needs-decision` are proposals, not approved work, even when they carry a milestone.
 
-Versions below are the ones the spec assigns, plus v1.0.0 (stable / API freeze). Later work with no version number is listed with an empty milestone.
+Both repositories are planned on one board, the [Excubia project](https://github.com/orgs/qiick-io/projects/2).
 
-## v0.2.0 — web scanner
+## One milestone: v1.0.0-beta.1
 
-SPEC.md section 9. Decision D2: free zero-signup scanner at `qiick.io/excubia`, on the same core. Domain verification is not part of this milestone (SPEC section 9: Phase B only).
+Core and excubia-app both work toward a single milestone, **v1.0.0-beta.1**, with no intermediate versions. The v0.2.0–v0.6.0 milestones are closed and their work is part of the beta.
 
-| Issue | Title |
-| --- | --- |
-| #7 | Add zero-signup web scanner page at qiick.io/excubia |
-| #8 | Add web scanner backend on the shared core |
-| #9 | Add web scanner abuse protections and legal pages |
+**1.0.0-beta.1** is the first version that:
+- is **feature-complete for 1.0**: push, SARIF and the GitHub Action, health endpoint, posture checks, runtime aggregates, exception capture, structured report details for excubia-app;
+- has **frozen public contracts** (#76, `docs/CONTRACTS.md`).
 
-#7 covers the page and in-browser parse (only package names and versions are sent). #8 is the Laravel endpoint (same core, queues, cache, rate limits). #9 is the abuse-protection and legal-page sentence in section 9 (per-IP rate limits, payload cap, cache TTL, no storage beyond that TTL, Impressum and privacy policy).
+After the beta, only backwards-compatible fixes land before 1.0.0.
 
-## v0.3.0 — SARIF + GitHub Action
+| Milestone | Core | excubia-app |
+| --- | --- | --- |
+| v0.1.x (released) | CLI, nine checks, config, cache, renderers | — |
+| **v1.0.0-beta.1** | Done: push #72, SARIF #10, GitHub Action #11, health endpoint #74, posture checks #73, runtime aggregates #75, exception capture #77, `--strict` #15, report details #92 and #123, privacy `skipPackages` #108, contract freeze #76, security review #82, Laravel 12–13 matrix #83, versioning policy #84, user documentation #85, coverage gate #86. Open: beta release checklist #87. | Runs against the beta: report push, runtime and exception ingest, alerts, findings views, self-monitoring, beta checklist (excubia-app milestone v1.0.0-beta.1) |
+| v1.0.0 — stable | #88 release checklist: no contract change since the beta, feedback triaged | Stable app |
 
-Decision D6. JSON and Markdown ship in v0.1.0; SARIF is this version, with the GitHub Action for code scanning. This is not the v0.1.0 CI workflow or the `qiick-io/.github` reusable workflow.
+## Decisions needed before the beta
 
-| Issue | Title |
-| --- | --- |
-| #10 | Add SARIF report output |
-| #11 | Add GitHub Action for code scanning |
+These change public contracts, so they were decided before #76 froze them (`docs/CONTRACTS.md`):
 
-The spec does not define the SARIF version, rule mapping, or the action's triggers, inputs, and permissions.
-
-## v1.0.0 — stable / API freeze
-
-SPEC.md and ARCHITECTURE.md assign no implementation tasks to this version. No issues.
+| Issue | Question | Decision |
+| --- | --- | --- |
+| #73 | Configuration posture checks through Artisan: new check ids in 1.0, or 1.x? | In 1.0 (PR #100): six `laravel-*` check ids |
+| #15 | `--strict` for data-source failures: changes exit-code behaviour, so in 1.0 or never as a breaking change | In 1.0 (PR #97): opt-in `--strict` / `strict`, exit `3` |
+| #92 | Structured `project` and finding `details` in the report JSON for excubia-app: which fields, and whether `schemaVersion` stays 1 | In 1.0: optional `generatedAt`, `excubiaVersion`, `project`, finding `fingerprint` and `details`; `schemaVersion` stays `1` |
 
 ## No milestone
 
-The spec names the following and assigns no version. Each issue says so and is a `needs-decision` proposal, not a plan and not acceptance criteria.
+These do not block 1.0 and can land in 1.x as additive features:
 
-| Issue | Title | Spec |
-| --- | --- | --- |
-| #12 | Opt-in AI summary using the user's own key | D4. User's own key. No metered qiick service. After the v0.1.0 `upgrade-plan` check. |
-| #13 | Proposal: env-example-sync check | D8. Section 3. |
-| #14 | Proposal: qiick-recommendations check | D8. Section 3. |
-| #15 | Proposal: --strict for data-source failures | Section 4. Marked [PROPOSAL]. |
-| #16 | Later: GitHub App | Section 2 non-goals. "Later, Pro/CI mode". Not D6. |
-| #17 | Later: pull request comments | Section 2 non-goals. "Later, Pro/CI mode". |
-| #18 | Later: scheduled multi-repo monitoring | Section 2 non-goals. "Later, Pro/CI mode". Not Phase B. |
-| #19 | Later: badges | Section 2 non-goals. "Later, Pro/CI mode". |
-| #20 | Phase B: uptime, connectors, and opt-in runtime monitoring | Section 1 and section 2. Roadmap Step 4. Not part of this spec. Opt-in monitoring ships inside `qiick/excubia-core` (config-enabled; no separate `qiick/excubia-probe`). Multi-project dashboard is `qiick-io/excubia-app` (also #18 / qiick Cloud later). Domain verification belongs here, not in v0.2.0. |
-| #21 | yarn.lock and pnpm-lock.yaml support | Section 6. Non-goals for v0.1.0 only. No later version is assigned. |
+| Issue | Status |
+| --- | --- |
+| #7, #8, #9 | Web scanner, postponed (D14) |
+| #12 | Opt-in AI summary with the user's own key, `needs-decision` |
+| #13, #14 | Proposed checks `env-example-sync`, `qiick-recommendations`, `needs-decision` |
+| #16–#19 | GitHub App, PR comments, scheduled multi-repo monitoring, badges, `needs-decision` |
+| #21 | `yarn.lock` and `pnpm-lock.yaml` support, `needs-decision` |
 
-## Dependencies on v0.1.0
-
-SPEC section 9 puts the web scanner on the same core. D4 puts the AI summary after `upgrade-plan`. D6 puts SARIF after JSON and Markdown. Roadmap issue bodies name those dependencies by spec name. The v0.1.0 issue numbers below were filed after those bodies and are not copied into them. Matching issues (not edited here):
-
-| Roadmap | Spec dependency | v0.1.0 issue |
-| --- | --- | --- |
-| #7, #8, #9 | Core: report model, data-source clients, cache, checks | #22, #24, #25–#33 |
-| #10 | Report model, then table / JSON / Markdown renderers | #22, #34 |
-| #11 | Ships with SARIF (#10). Not the v0.1.0 CI workflow | #36 is that workflow, and is not this action |
-| #12 | `upgrade-plan` | #33 |
+#20 (Phase B) is approved (D15) and tracked through #72, #74, #75 and #77.
 
 ## Not in this roadmap
 
-- v0.1.0 implementation, including the Packagist `qiick` claim (D5) and the trademark search before the first tag (D13).
-- Permanent non-goals in SPEC section 2: paid features, qiick Cloud, accounts, login, telemetry, writes or auto-fix in the scanned project, source-code analysis.
-- ARCHITECTURE section 6 Dependabot entry, and later Externa packages reusing the shared CI workflow. The workflow itself is v0.1.0. Externa is not this repository.
-
-## Duplicate
-
-#6 has the same title as #7 and a placeholder body. #7 is the section 9 page issue. #6 is not roadmap work.
+- Permanent non-goals in SPEC section 2: paid features, qiick Cloud, writes or auto-fix in the scanned project, source-code analysis.
+- Uptime and external probes (Phase B connectors): not planned before 1.0.0.
+- Releases, tags and Packagist publishing stay human steps (`.cursor/rules/no-auto-release.mdc`).

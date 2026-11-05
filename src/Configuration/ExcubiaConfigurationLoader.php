@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Configuration;
 
+use Qiick\Excubia\Data\ExceptionConfigurationData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
+use Qiick\Excubia\Data\RuntimeConfigurationData;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
@@ -41,7 +44,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -50,6 +53,8 @@ final class ExcubiaConfigurationLoader
 
         $checks = $this->checks($document['checks'] ?? [], $defaults);
         $cache = $this->cache($document['cache'] ?? []);
+        $app = $this->app($document['app'] ?? []);
+        $healthEndpoint = $this->healthEndpoint($document['healthEndpoint'] ?? []);
 
         return new ExcubiaConfigurationData(
             failOnSeverity: array_key_exists('failOn', $document) ? $this->failOn($document['failOn']) : $defaults->failOnSeverity,
@@ -61,7 +66,172 @@ final class ExcubiaConfigurationLoader
             ignoreRules: $this->ignoreRules($document['ignore'] ?? []),
             cacheDirectory: $cache['directory'],
             cacheTtlHours: $cache['ttlHours'],
+            appUrl: $app['url'],
+            appToken: $app['token'],
+            isStrict: array_key_exists('strict', $document) ? $this->boolean($document['strict'], 'strict') : $defaults->isStrict,
+            isHealthEndpointEnabled: $healthEndpoint['enabled'],
+            healthEndpointPath: $healthEndpoint['path'],
+            schedulerHeartbeatStaleAfterMinutes: $checks['schedulerHeartbeatStaleAfterMinutes'],
+            failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
+            runtime: $this->runtime($document['runtime'] ?? []),
+            exceptions: $this->exceptions($document['exceptions'] ?? []),
+            skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
         );
+    }
+
+    /**
+     * `privacy.skipPackages`: package name globs never sent to a public data
+     * source. The glob syntax is checked by `ExcubiaConfigurationData`.
+     *
+     * @return list<string>
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function skippedPackagePatterns(mixed $privacy): array
+    {
+        if (! is_array($privacy)) {
+            throw new InvalidConfigurationException('privacy must be an object.');
+        }
+
+        $this->rejectUnknownKeys($privacy, ['skipPackages'], 'privacy');
+
+        return $this->stringList($privacy['skipPackages'] ?? [], 'privacy.skipPackages');
+    }
+
+    /**
+     * Opt-in exception capture (`docs/exception-schema.json`), independent of
+     * `runtime`. The app URL and token are the shared `app` keys.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function exceptions(mixed $exceptions): ExceptionConfigurationData
+    {
+        if (! is_array($exceptions)) {
+            throw new InvalidConfigurationException('exceptions must be an object.');
+        }
+
+        $this->rejectUnknownKeys($exceptions, ['enabled', 'maskPatterns', 'ignore', 'bufferMaxBytes'], 'exceptions');
+
+        return new ExceptionConfigurationData(
+            isEnabled: array_key_exists('enabled', $exceptions) ? $this->boolean($exceptions['enabled'], 'exceptions.enabled') : false,
+            maskPatterns: $this->stringList($exceptions['maskPatterns'] ?? [], 'exceptions.maskPatterns'),
+            ignoredClasses: array_map(static fn (string $class): string => ltrim($class, '\\'), $this->stringList($exceptions['ignore'] ?? [], 'exceptions.ignore')),
+            bufferMaxBytes: array_key_exists('bufferMaxBytes', $exceptions) ? $this->integer($exceptions['bufferMaxBytes'], 'exceptions.bufferMaxBytes') : ExceptionConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function stringList(mixed $value, string $label): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new InvalidConfigurationException($label.' must be a list of strings.');
+        }
+
+        foreach ($value as $index => $item) {
+            $this->requiredString($item, $label.'['.$index.']');
+        }
+
+        /** @var list<string> $value */
+        return $value;
+    }
+
+    /**
+     * Opt-in runtime aggregates (`docs/runtime-schema.json`). The app URL and
+     * token are the `app` keys shared with `excubia push`.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function runtime(mixed $runtime): RuntimeConfigurationData
+    {
+        if (! is_array($runtime)) {
+            throw new InvalidConfigurationException('runtime must be an object.');
+        }
+
+        $typeKeys = array_map(static fn (RuntimeTypeEnum $type): string => $type->configurationKey(), RuntimeTypeEnum::cases());
+        $this->rejectUnknownKeys($runtime, ['enabled', 'bufferMaxBytes', ...$typeKeys], 'runtime');
+        $enabledTypes = [];
+        $sampleRates = [];
+        $slowQueryThresholdMs = RuntimeConfigurationData::DEFAULT_SLOW_QUERY_THRESHOLD_MS;
+
+        foreach (RuntimeTypeEnum::cases() as $type) {
+            $label = 'runtime.'.$type->configurationKey();
+            $settings = $runtime[$type->configurationKey()] ?? [];
+
+            if (! is_array($settings)) {
+                throw new InvalidConfigurationException($label.' must be an object.');
+            }
+
+            $this->rejectUnknownKeys($settings, $type === RuntimeTypeEnum::SlowQuery ? ['enabled', 'sampleRate', 'thresholdMs'] : ['enabled', 'sampleRate'], $label);
+
+            if (array_key_exists('enabled', $settings)) {
+                $enabledTypes[$type->value] = $this->boolean($settings['enabled'], $label.'.enabled');
+            }
+
+            if (array_key_exists('sampleRate', $settings)) {
+                if (! is_int($settings['sampleRate']) && ! is_float($settings['sampleRate'])) {
+                    throw new InvalidConfigurationException($label.'.sampleRate must be a number between 0 and 1.');
+                }
+
+                $sampleRates[$type->value] = (float) $settings['sampleRate'];
+            }
+
+            if (array_key_exists('thresholdMs', $settings)) {
+                $slowQueryThresholdMs = $this->integer($settings['thresholdMs'], $label.'.thresholdMs');
+            }
+        }
+
+        return new RuntimeConfigurationData(
+            isEnabled: array_key_exists('enabled', $runtime) ? $this->boolean($runtime['enabled'], 'runtime.enabled') : false,
+            enabledTypes: $enabledTypes,
+            sampleRates: $sampleRates,
+            slowQueryThresholdMs: $slowQueryThresholdMs,
+            bufferMaxBytes: array_key_exists('bufferMaxBytes', $runtime) ? $this->integer($runtime['bufferMaxBytes'], 'runtime.bufferMaxBytes') : RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
+        );
+    }
+
+    /**
+     * Oh Dear-compatible health endpoint of the Laravel provider. The secret
+     * is not a key here: it comes from `EXCUBIA_HEALTH_SECRET` only, so it is
+     * never committed with the file.
+     *
+     * @return array{enabled: bool, path: string}
+     */
+    private function healthEndpoint(mixed $healthEndpoint): array
+    {
+        if (! is_array($healthEndpoint)) {
+            throw new InvalidConfigurationException('healthEndpoint must be an object.');
+        }
+
+        $this->rejectUnknownKeys($healthEndpoint, ['enabled', 'path'], 'healthEndpoint');
+
+        return [
+            'enabled' => array_key_exists('enabled', $healthEndpoint) ? $this->boolean($healthEndpoint['enabled'], 'healthEndpoint.enabled') : false,
+            'path' => array_key_exists('path', $healthEndpoint)
+                ? trim($this->requiredString($healthEndpoint['path'], 'healthEndpoint.path'), '/')
+                : ExcubiaConfigurationData::DEFAULT_HEALTH_ENDPOINT_PATH,
+        ];
+    }
+
+    /**
+     * `excubia push` target. Both keys are optional here; the push command
+     * reports what is missing after the environment variables are applied.
+     *
+     * @return array{url: string|null, token: string|null}
+     */
+    private function app(mixed $app): array
+    {
+        if (! is_array($app)) {
+            throw new InvalidConfigurationException('app must be an object.');
+        }
+
+        $this->rejectUnknownKeys($app, ['url', 'token'], 'app');
+
+        return [
+            'url' => array_key_exists('url', $app) ? $this->requiredString($app['url'], 'app.url') : null,
+            'token' => array_key_exists('token', $app) ? $this->requiredString($app['token'], 'app.token') : null,
+        ];
     }
 
     /**
@@ -69,7 +239,9 @@ final class ExcubiaConfigurationLoader
      *     staleAfterMonths: int,
      *     phpWarnDaysBeforeEndOfLife: int,
      *     laravelWarnDaysBeforeEndOfLife: int,
-     *     isNodeEndOfLifeCheckEnabled: bool
+     *     isNodeEndOfLifeCheckEnabled: bool,
+     *     schedulerHeartbeatStaleAfterMinutes: int,
+     *     failedJobHighSeverityAfterHours: int
      * }
      */
     private function checks(mixed $checks, ExcubiaConfigurationData $defaults): array
@@ -78,13 +250,15 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs'], 'checks');
 
         return [
             'staleAfterMonths' => $this->integerSetting($checks, 'composer-stale', 'staleAfterMonths', $defaults->staleAfterMonths),
             'phpWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'php-eol', 'warnDaysBeforeEol', $defaults->phpWarnDaysBeforeEndOfLife),
             'laravelWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'laravel-eol', 'warnDaysBeforeEol', $defaults->laravelWarnDaysBeforeEndOfLife),
             'isNodeEndOfLifeCheckEnabled' => $this->booleanSetting($checks, 'node-eol', 'enabled', $defaults->isNodeEndOfLifeCheckEnabled),
+            'schedulerHeartbeatStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-scheduler-heartbeat', 'staleAfterMinutes', $defaults->schedulerHeartbeatStaleAfterMinutes),
+            'failedJobHighSeverityAfterHours' => $this->integerSetting($checks, 'laravel-failed-jobs', 'highSeverityAfterHours', $defaults->failedJobHighSeverityAfterHours),
         ];
     }
 
@@ -115,10 +289,10 @@ final class ExcubiaConfigurationLoader
     /**
      * @param  array<mixed>  $checks
      */
-    private function booleanSetting(array $checks, string $checkId, string $key, bool $default): bool
+    private function booleanSetting(array $checks, string $checkId, string $key, bool $defaultValue): bool
     {
         if (! array_key_exists($checkId, $checks)) {
-            return $default;
+            return $defaultValue;
         }
 
         $check = $checks[$checkId];
@@ -130,7 +304,7 @@ final class ExcubiaConfigurationLoader
         $this->rejectUnknownKeys($check, [$key], 'checks.'.$checkId);
 
         if (! array_key_exists($key, $check)) {
-            return $default;
+            return $defaultValue;
         }
 
         return $this->boolean($check[$key], 'checks.'.$checkId.'.'.$key);

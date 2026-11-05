@@ -11,6 +11,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\OsvApiService;
 
 /**
@@ -39,17 +40,17 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
 
         $packages = [];
 
-        foreach ($projectSnapshot->npmPackages as $package) {
+        foreach ($configuration->publicPackages($projectSnapshot->npmPackages) as $package) {
             $packages[] = ['name' => $package->name, 'version' => $package->version];
         }
 
         $vulnerabilities = $this->osvApi->vulnerabilitiesIfAvailable($packages);
 
         if ($vulnerabilities === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'OSV.dev did not respond.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'OSV.dev did not respond.', SkipReasonEnum::DataSourceFailure);
         }
 
-        $findings = [];
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($projectSnapshot->npmPackages), 'OSV.dev');
 
         foreach ($vulnerabilities as $vulnerability) {
             $findings[] = new FindingData(
@@ -61,12 +62,22 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
                 fixHint: 'Update '.$vulnerability->packageName.' to ≥ fixed version.',
                 evidenceUrl: 'https://osv.dev/vulnerability/'.$vulnerability->id,
                 advisoryId: $vulnerability->id,
+                // ponytail: the OSV batch answer carries ids only, so fixedVersions stays empty;
+                // fetching each vulnerability (GET /v1/vulns/{id}) would fill it at one request per id.
+                details: [
+                    'package' => $vulnerability->packageName,
+                    'lockedVersion' => $vulnerability->version,
+                    'fixedVersions' => [],
+                ],
             );
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), $findings);
     }
 
+    /**
+     * Map a numeric CVSS score string onto SeverityEnum; non-numeric → medium.
+     */
     private function severity(?string $value): SeverityEnum
     {
         if ($value === null || preg_match('/^(\d+(?:\.\d+)?)$/', $value, $matches) !== 1) {

@@ -75,3 +75,11 @@ it('skips when no cycle matches', function () {
     expect($result->status)->toBe(FindingStatusEnum::Skipped)
         ->and($result->findings[0]->message)->toContain('No end-of-life cycle');
 });
+
+it('puts the matched cycle and its support end dates in details', function () {
+    $failed = phpEndOfLifeCheck(phpCycles())->run(phpSnapshot('8.1.32.0'), ExcubiaConfigurationData::defaults());
+    $warned = phpEndOfLifeCheck(phpCycles())->run(phpSnapshot('8.2.0.0'), ExcubiaConfigurationData::defaults());
+
+    expect($failed->findings[0]->details)->toBe(['cycle' => '8.1', 'securitySupportEndsOn' => '2025-12-31', 'activeSupportEndsOn' => '2023-11-25'])
+        ->and($warned->findings[0]->details)->toBe(['cycle' => '8.2', 'securitySupportEndsOn' => '2026-12-31', 'activeSupportEndsOn' => '2024-12-31']);
+});

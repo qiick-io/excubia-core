@@ -35,7 +35,7 @@ it('fails a critical php end-of-life finding and can hide the banner', function 
     expect($exitCode)->toBe(1)
         ->and($tester->getDisplay())->toContain('Security support ended')
         ->and($tester->getDisplay())->toContain('Upgrade PHP to 8.4')
-        ->and($tester->getDisplay())->not->toContain('Excubia');
+        ->and($tester->getDisplay())->not->toContain('Health checks for Laravel apps.');
 });
 
 it('returns zero when fail-on is none and writes json to a file', function () {
@@ -76,7 +76,7 @@ it('exits 2 for a missing lock, an unknown check, and a bad format', function ()
 
     expect($tester->execute([
         'path' => outdatedProject(),
-        '--format' => 'sarif',
+        '--format' => 'xml',
         '--no-banner' => true,
         '--only' => 'php-eol',
         '--no-cache' => true,
@@ -86,7 +86,7 @@ it('exits 2 for a missing lock, an unknown check, and a bad format', function ()
 it('skips when offline and clears the cache directory from config', function () {
     $cache = sys_get_temp_dir().'/excubia-cache-'.bin2hex(random_bytes(4));
     mkdir($cache);
-    file_put_contents($cache.'/cached.json', '{}');
+    file_put_contents($cache.'/'.hash('sha256', 'https://endoflife.date/api/php.json').'.json', '{}');
     $project = sys_get_temp_dir().'/excubia-project-'.bin2hex(random_bytes(4));
     mkdir($project);
     copy(outdatedProject().'/composer.json', $project.'/composer.json');
@@ -131,4 +131,14 @@ it('names the artisan alias and prints the banner and version', function () {
 
     expect($exitCode)->toBe(0)
         ->and(implode("\n", $output))->toContain('Excubia');
+});
+
+it('registers check, push, and cache:clear in the standalone binary', function () {
+    $binary = dirname(__DIR__, 2).'/bin/excubia';
+    exec('php '.escapeshellarg($binary).' list --raw 2>&1', $output, $exitCode);
+
+    $commandNames = array_map(static fn (string $line): string => explode(' ', $line)[0], $output);
+
+    expect($exitCode)->toBe(0)
+        ->and($commandNames)->toContain('check', 'push', 'cache:clear');
 });

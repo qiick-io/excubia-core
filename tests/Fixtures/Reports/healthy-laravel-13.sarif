@@ -1,0 +1,129 @@
+{
+    "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+    "version": "2.1.0",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "Excubia",
+                    "informationUri": "https://github.com/qiick-io/excubia-core",
+                    "rules": [
+                        {
+                            "id": "php-eol",
+                            "name": "PHP end of life",
+                            "shortDescription": {
+                                "text": "PHP end of life"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-eol",
+                            "name": "Laravel end of life",
+                            "shortDescription": {
+                                "text": "Laravel end of life"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "node-eol",
+                            "name": "Node end of life",
+                            "shortDescription": {
+                                "text": "Node end of life"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-advisories",
+                            "name": "Known vulnerabilities (Composer)",
+                            "shortDescription": {
+                                "text": "Known vulnerabilities (Composer)"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "npm-advisories",
+                            "name": "Known vulnerabilities (npm)",
+                            "shortDescription": {
+                                "text": "Known vulnerabilities (npm)"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-abandoned",
+                            "name": "Abandoned packages",
+                            "shortDescription": {
+                                "text": "Abandoned packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-stale",
+                            "name": "Stale packages",
+                            "shortDescription": {
+                                "text": "Stale packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-next-blocker",
+                            "name": "Next-major blockers",
+                            "shortDescription": {
+                                "text": "Next-major blockers"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-debug-mode",
+                            "name": "Debug mode",
+                            "shortDescription": {
+                                "text": "Debug mode"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-production-caches",
+                            "name": "Production caches",
+                            "shortDescription": {
+                                "text": "Production caches"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-pending-migrations",
+                            "name": "Pending migrations",
+                            "shortDescription": {
+                                "text": "Pending migrations"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-failed-jobs",
+                            "name": "Failed jobs",
+                            "shortDescription": {
+                                "text": "Failed jobs"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-scheduler-heartbeat",
+                            "name": "Scheduler heartbeat",
+                            "shortDescription": {
+                                "text": "Scheduler heartbeat"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-maintenance-mode",
+                            "name": "Maintenance mode",
+                            "shortDescription": {
+                                "text": "Maintenance mode"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        }
+                    ]
+                }
+            },
+            "results": []
+        }
+    ]
+}

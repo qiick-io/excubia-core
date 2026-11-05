@@ -3,9 +3,10 @@
 
 declare(strict_types=1);
 
-use Composer\InstalledVersions;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Console\ClearCacheCommand;
+use Qiick\Excubia\Console\PushCommand;
+use Qiick\Excubia\Services\HealthCheckRunnerService;
 use Symfony\Component\Console\Application;
 
 $autoload = null;
@@ -26,13 +27,7 @@ if ($autoload === null) {
 
 require $autoload;
 
-$version = 'dev';
-
-if (class_exists(InstalledVersions::class) && InstalledVersions::isInstalled('qiick/excubia-core')) {
-    $version = InstalledVersions::getPrettyVersion('qiick/excubia-core') ?? 'dev';
-}
-
-$application = new Application('Excubia', $version);
-$application->add(new CheckCommand);
-$application->add(new ClearCacheCommand);
+$application = new Application('Excubia', HealthCheckRunnerService::excubiaVersion());
+// addCommands() exists on Symfony Console 7.2 through 8.x; add() was removed in 8.0.
+$application->addCommands([new CheckCommand, new ClearCacheCommand, new PushCommand]);
 exit($application->run());

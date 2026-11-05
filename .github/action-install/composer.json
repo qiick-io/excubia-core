@@ -1,0 +1,26 @@
+{
+    "description": "Locked runtime dependencies for the GitHub Action (action.yml). The action installs Excubia from its own checkout, linked as excubia-core/, with this lock. Resolved for PHP 8.2 so every php-version input works. Refresh with: ln -s ../.. excubia-core && composer update --no-install --no-plugins --no-scripts && rm excubia-core",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "excubia-core",
+            "options": {
+                "symlink": false,
+                "reference": "none",
+                "versions": {
+                    "qiick/excubia-core": "dev-action"
+                }
+            }
+        }
+    ],
+    "require": {
+        "qiick/excubia-core": "dev-action"
+    },
+    "config": {
+        "allow-plugins": false,
+        "platform": {
+            "php": "8.2.0"
+        },
+        "sort-packages": true
+    }
+}

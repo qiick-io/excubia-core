@@ -6,6 +6,7 @@ namespace Qiick\Excubia\Data;
 
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 
 /**
  * Everything one check contributes to the report.
@@ -13,6 +14,9 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * The status is the worst finding status so a renderer can tell that the
  * check failed without scanning the rows. Fail outranks warn, warn outranks
  * skipped, and skipped outranks pass. An empty finding list is a pass.
+ * `endOfLifeCycle` is set by the end-of-life checks whenever they matched a
+ * cycle, also when they pass, so the report's `project` object can carry the
+ * support dates without a second request.
  */
 final readonly class CheckResultData
 {
@@ -24,6 +28,7 @@ final readonly class CheckResultData
         public string $name,
         public FindingStatusEnum $status,
         public array $findings,
+        public ?EndOfLifeCycleData $endOfLifeCycle = null,
     ) {}
 
     /**
@@ -33,18 +38,26 @@ final readonly class CheckResultData
      *
      * @param  list<FindingData>  $findings
      */
-    public static function fromFindings(string $checkId, string $name, array $findings): self
+    public static function fromFindings(string $checkId, string $name, array $findings, ?EndOfLifeCycleData $endOfLifeCycle = null): self
     {
-        return new self($checkId, $name, self::combinedStatus($findings), $findings);
+        return new self($checkId, $name, self::combinedStatus($findings), $findings, $endOfLifeCycle);
     }
 
     /**
      * A check that did not run. The reason is the finding message.
      *
-     * Severity is info so a skipped check cannot trip `--fail-on`.
+     * Severity is info so a skipped check cannot trip `--fail-on`. A check
+     * whose data source did not answer passes `SkipReasonEnum::DataSourceFailure`
+     * so `--strict` can see it; the runner turns that into `Offline` under
+     * `--offline`, where no request is allowed.
      */
-    public static function skipped(string $checkId, string $name, string $subject, string $reason): self
-    {
+    public static function skipped(
+        string $checkId,
+        string $name,
+        string $subject,
+        string $reason,
+        SkipReasonEnum $skipReason = SkipReasonEnum::NotApplicable,
+    ): self {
         return self::fromFindings($checkId, $name, [
             new FindingData(
                 checkId: $checkId,
@@ -54,6 +67,7 @@ final readonly class CheckResultData
                 message: $reason,
                 fixHint: '',
                 evidenceUrl: null,
+                skipReason: $skipReason,
             ),
         ]);
     }

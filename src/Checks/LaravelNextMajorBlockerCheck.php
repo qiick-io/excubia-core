@@ -8,10 +8,12 @@ use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
+use Qiick\Excubia\Data\LockedPackageData;
 use Qiick\Excubia\Data\PackagistVersionData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\ComposerConstraintService;
 use Qiick\Excubia\Services\PackagistApiService;
 
@@ -46,17 +48,17 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
 
         $nextMajor = (int) $matches[1] + 1;
         $target = $nextMajor.'.0.0';
-        $findings = [];
+        $directPackages = array_values(array_filter(
+            $projectSnapshot->composerPackages,
+            static fn (LockedPackageData $package): bool => $package->isDirectDependency && $package->name !== 'laravel/framework',
+        ));
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($directPackages), 'Packagist');
 
-        foreach ($projectSnapshot->composerPackages as $package) {
-            if (! $package->isDirectDependency || $package->name === 'laravel/framework') {
-                continue;
-            }
-
+        foreach ($configuration->publicPackages($directPackages) as $package) {
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             if (! $this->dependsOnLaravel($versions)) {
@@ -64,39 +66,46 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
             }
 
             $stable = $this->latestStable($versions);
-            $stableAllows = $stable !== null && $this->allows($stable, $target);
+            $doesStableAllowTarget = $stable !== null && $this->isCompatibleWith($stable, $target);
             $preReleaseAllows = $this->preReleaseAllows($versions, $target);
 
-            if ($stableAllows) {
+            if ($doesStableAllowTarget) {
                 continue;
             }
 
             if ($preReleaseAllows) {
-                $findings[] = $this->finding($package->name, FindingStatusEnum::Warn, SeverityEnum::Low, $nextMajor);
+                $findings[] = $this->finding($package, FindingStatusEnum::Warn, SeverityEnum::Low, $nextMajor);
 
                 continue;
             }
 
-            $findings[] = $this->finding($package->name, FindingStatusEnum::Fail, SeverityEnum::Medium, $nextMajor);
+            $findings[] = $this->finding($package, FindingStatusEnum::Fail, SeverityEnum::Medium, $nextMajor);
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), $findings);
     }
 
-    private function finding(string $packageName, FindingStatusEnum $status, SeverityEnum $severity, int $nextMajor): FindingData
+    private function finding(LockedPackageData $package, FindingStatusEnum $status, SeverityEnum $severity, int $nextMajor): FindingData
     {
         return new FindingData(
             checkId: $this->id(),
             severity: $severity,
             status: $status,
-            subject: $packageName,
+            subject: $package->name,
             message: 'Latest release does not allow Laravel '.$nextMajor.'.',
             fixHint: 'No release supports Laravel '.$nextMajor.' yet; watch / replace / fork.',
-            evidenceUrl: 'https://packagist.org/packages/'.$packageName,
+            evidenceUrl: 'https://packagist.org/packages/'.$package->name,
+            details: [
+                'package' => $package->name,
+                'lockedVersion' => $package->version,
+                'targetMajor' => $nextMajor,
+            ],
         );
     }
 
     /**
+     * True when any published version requires laravel/framework or illuminate/*.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function dependsOnLaravel(array $versions): bool
@@ -113,6 +122,8 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
     }
 
     /**
+     * Newest stable (non pre-release) Packagist version, or null when none.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function latestStable(array $versions): ?PackagistVersionData
@@ -133,6 +144,8 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
     }
 
     /**
+     * True when any pre-release version's Laravel constraints accept `$target`.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function preReleaseAllows(array $versions, string $target): bool
@@ -142,7 +155,7 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
                 continue;
             }
 
-            if ($this->allows($version, $target)) {
+            if ($this->isCompatibleWith($version, $target)) {
                 return true;
             }
         }
@@ -150,14 +163,18 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
         return false;
     }
 
-    private function allows(PackagistVersionData $version, string $target): bool
+    /**
+     * True when every laravel/framework and illuminate/* requirement on the
+     * version is satisfied by `$target`.
+     */
+    private function isCompatibleWith(PackagistVersionData $version, string $target): bool
     {
         foreach ($version->requirements as $name => $constraint) {
             if ($name !== 'laravel/framework' && ! str_starts_with($name, 'illuminate/')) {
                 continue;
             }
 
-            if (! $this->composerConstraint->matches($target, $constraint)) {
+            if (! $this->composerConstraint->isSatisfiedBy($target, $constraint)) {
                 return false;
             }
         }
@@ -165,6 +182,9 @@ final class LaravelNextMajorBlockerCheck implements HealthCheckContract
         return true;
     }
 
+    /**
+     * Packagist pre-release or branch alias (`dev-*` or any `-` stability suffix).
+     */
     private function isPreRelease(string $version): bool
     {
         return str_starts_with($version, 'dev-') || str_contains($version, '-');

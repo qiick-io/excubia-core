@@ -48,6 +48,26 @@ final class SymfonyHttpClientService implements HttpClientContract
         ];
     }
 
+    /**
+     * HTTPS, or plain HTTP to a loopback host so `excubia push` can reach
+     * an `excubia-app` running on the same machine.
+     */
+    public static function isSecureUrl(string $url): bool
+    {
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (! is_string($scheme) || ! is_string($host) || $host === '') {
+            return false;
+        }
+
+        if (strtolower($scheme) === 'https') {
+            return true;
+        }
+
+        return strtolower($scheme) === 'http' && in_array(strtolower($host), ['localhost', '127.0.0.1', '[::1]'], true);
+    }
+
     public function getJson(string $url, array $queryParameters = [], array $headers = []): array
     {
         $target = $url;
@@ -59,9 +79,22 @@ final class SymfonyHttpClientService implements HttpClientContract
         return $this->request('GET', $target, null, $headers);
     }
 
+    /**
+     * Redirects are not followed: a 307 or 308 would resend the payload to
+     * the `Location` host, possibly over plain HTTP, after the HTTPS check.
+     * A redirect answers as a non-2xx status instead.
+     */
     public function postJson(string $url, array $payload, array $headers = []): array
     {
         return $this->request('POST', $url, $payload, $headers);
+    }
+
+    /**
+     * The URL without its `user:password@` part, for messages and logs.
+     */
+    public static function redactedUrl(string $url): string
+    {
+        return preg_replace('#^([a-z][a-z0-9+.-]*://)[^/?\#@]*@#i', '$1', $url) ?? $url;
     }
 
     /**
@@ -71,14 +104,15 @@ final class SymfonyHttpClientService implements HttpClientContract
      */
     private function request(string $method, string $url, ?array $payload, array $headers): array
     {
-        if (! str_starts_with($url, 'https://')) {
-            throw new DataSourceUnavailableException('http', 'Data sources are requested over HTTPS only.');
+        if (! self::isSecureUrl($url)) {
+            throw new DataSourceUnavailableException('http', 'Requests are sent over HTTPS only (plain HTTP only to localhost).');
         }
 
         $options = ['headers' => $headers];
 
         if ($payload !== null) {
             $options['json'] = $payload;
+            $options['max_redirects'] = 0;
         }
 
         try {
@@ -90,7 +124,7 @@ final class SymfonyHttpClientService implements HttpClientContract
         }
 
         if ($status < 200 || $status >= 300) {
-            throw new DataSourceUnavailableException('http', 'The data source returned HTTP '.$status.'.');
+            throw new DataSourceUnavailableException('http', 'The data source returned HTTP '.$status.'.', httpStatus: $status);
         }
 
         try {

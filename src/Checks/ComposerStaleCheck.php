@@ -11,10 +11,13 @@ use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\GitHubRepositoryData;
+use Qiick\Excubia\Data\LockedPackageData;
 use Qiick\Excubia\Data\PackagistVersionData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
+use Qiick\Excubia\Services\CalendarDateService;
 use Qiick\Excubia\Services\GitHubRepositoryApiService;
 use Qiick\Excubia\Services\PackagistApiService;
 
@@ -28,6 +31,7 @@ final class ComposerStaleCheck implements HealthCheckContract
         private readonly PackagistApiService $packagistApi,
         private readonly GitHubRepositoryApiService $gitHubRepositoryApi,
         private readonly DateTimeImmutable $today,
+        private readonly CalendarDateService $calendarDate = new CalendarDateService,
     ) {}
 
     public function id(): string
@@ -42,53 +46,59 @@ final class ComposerStaleCheck implements HealthCheckContract
 
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData
     {
-        $findings = [];
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($projectSnapshot->composerPackages), 'Packagist or GitHub');
         $today = $this->today->setTimezone(new DateTimeZone('UTC'));
 
-        foreach ($projectSnapshot->composerPackages as $package) {
+        foreach ($configuration->publicPackages($projectSnapshot->composerPackages) as $package) {
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             $latest = $this->latestRelease($versions);
             $repository = $this->gitHubRepository($latest);
 
             if ($repository === false) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'GitHub did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'GitHub did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             if ($repository !== null && $repository->isArchived) {
-                $findings[] = $this->finding($package->name, FindingStatusEnum::Fail, SeverityEnum::High, 'The GitHub repository is archived.');
+                $findings[] = $this->finding($package, FindingStatusEnum::Fail, SeverityEnum::High, 'The GitHub repository is archived.');
 
                 continue;
             }
 
-            $releasedAt = $latest === null ? null : $this->date($latest->releasedAt);
+            $releasedAt = $latest === null ? null : $this->calendarDate->parseUtcDate($latest->releasedAt);
 
             if ($releasedAt !== null && $releasedAt < $today->modify('-'.$configuration->staleAfterMonths.' months')) {
-                $findings[] = $this->finding($package->name, FindingStatusEnum::Warn, SeverityEnum::Low, 'No release for more than '.$configuration->staleAfterMonths.' months.');
+                $findings[] = $this->finding($package, FindingStatusEnum::Warn, SeverityEnum::Low, 'No release for more than '.$configuration->staleAfterMonths.' months.');
             }
         }
 
         return CheckResultData::fromFindings($this->id(), $this->name(), $findings);
     }
 
-    private function finding(string $packageName, FindingStatusEnum $status, SeverityEnum $severity, string $message): FindingData
+    private function finding(LockedPackageData $package, FindingStatusEnum $status, SeverityEnum $severity, string $message): FindingData
     {
         return new FindingData(
             checkId: $this->id(),
             severity: $severity,
             status: $status,
-            subject: $packageName,
+            subject: $package->name,
             message: $message,
             fixHint: 'Consider a maintained alternative.',
-            evidenceUrl: 'https://packagist.org/packages/'.$packageName,
+            evidenceUrl: 'https://packagist.org/packages/'.$package->name,
+            details: [
+                'package' => $package->name,
+                'lockedVersion' => $package->version,
+            ],
         );
     }
 
     /**
+     * Newest non-dev Packagist version by semver, or null when none exist.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function latestRelease(array $versions): ?PackagistVersionData
@@ -109,6 +119,8 @@ final class ComposerStaleCheck implements HealthCheckContract
     }
 
     /**
+     * Resolve the GitHub repository for a Packagist version's source URL.
+     *
      * @return GitHubRepositoryData|null|false null when there is no GitHub repository, false when GitHub did not respond
      */
     private function gitHubRepository(?PackagistVersionData $version): mixed
@@ -128,18 +140,5 @@ final class ComposerStaleCheck implements HealthCheckContract
         }
 
         return $repository;
-    }
-
-    private function date(?string $value): ?DateTimeImmutable
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (\Exception) {
-            return null;
-        }
     }
 }

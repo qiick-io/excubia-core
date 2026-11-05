@@ -12,6 +12,7 @@ use Qiick\Excubia\Data\PackagistVersionData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\PackagistApiService;
 
 /**
@@ -34,13 +35,13 @@ final class ComposerAbandonedCheck implements HealthCheckContract
 
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData
     {
-        $findings = [];
+        $findings = FindingData::privatePackagesSkipped($this->id(), $configuration->privatePackageNames($projectSnapshot->composerPackages), 'Packagist');
 
-        foreach ($projectSnapshot->composerPackages as $package) {
+        foreach ($configuration->publicPackages($projectSnapshot->composerPackages) as $package) {
             $versions = $this->packagistApi->versionsIfAvailable($package->name);
 
             if ($versions === null) {
-                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.');
+                return CheckResultData::skipped($this->id(), $this->name(), $package->name, 'Packagist metadata did not respond.', SkipReasonEnum::DataSourceFailure);
             }
 
             $abandoned = $this->abandonedFlag($versions);
@@ -61,6 +62,11 @@ final class ComposerAbandonedCheck implements HealthCheckContract
                     ? 'Replace with '.$abandoned.'.'
                     : 'no replacement suggested',
                 evidenceUrl: 'https://packagist.org/packages/'.$package->name,
+                details: [
+                    'package' => $package->name,
+                    'lockedVersion' => $package->version,
+                    'replacement' => is_string($abandoned) ? $abandoned : null,
+                ],
             );
         }
 
@@ -68,6 +74,8 @@ final class ComposerAbandonedCheck implements HealthCheckContract
     }
 
     /**
+     * First non-false abandoned flag across versions: replacement name, true, or null.
+     *
      * @param  list<PackagistVersionData>  $versions
      */
     private function abandonedFlag(array $versions): string|bool|null

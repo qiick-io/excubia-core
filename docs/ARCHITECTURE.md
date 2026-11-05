@@ -18,7 +18,13 @@ qiick-io/excubia-core
 │   │   ├── NpmAdvisoriesCheck.php          (npm-advisories)
 │   │   ├── ComposerAbandonedCheck.php      (composer-abandoned)
 │   │   ├── ComposerStaleCheck.php          (composer-stale)
-│   │   └── LaravelNextMajorBlockerCheck.php (laravel-next-blocker)
+│   │   ├── LaravelNextMajorBlockerCheck.php (laravel-next-blocker)
+│   │   ├── LaravelDebugModeCheck.php       (laravel-debug-mode)           # posture checks: read the
+│   │   ├── LaravelProductionCachesCheck.php (laravel-production-caches)   # snapshot's laravelPosture,
+│   │   ├── LaravelPendingMigrationsCheck.php (laravel-pending-migrations) # skipped "requires Artisan"
+│   │   ├── LaravelFailedJobsCheck.php      (laravel-failed-jobs)          # when it is null
+│   │   ├── LaravelSchedulerHeartbeatCheck.php (laravel-scheduler-heartbeat)
+│   │   └── LaravelMaintenanceModeCheck.php (laravel-maintenance-mode)
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
@@ -33,6 +39,9 @@ qiick-io/excubia-core
 │   │   ├── PackagistApiService.php          # metadata + security advisories
 │   │   ├── GitHubRepositoryApiService.php   # archived flag, last push
 │   │   ├── OsvApiService.php                # OSV.dev batch query
+│   │   ├── ReportPushService.php            # push envelopes to excubia-app: report, runtime batch, exception batch (SPEC §13)
+│   │   ├── RuntimeBufferService.php         # size-capped NDJSON buffer + claimed batch files (storage/excubia/runtime/ and storage/excubia/exceptions/)
+│   │   ├── HealthResultStoreService.php     # last Oh Dear health payload (storage/excubia/health.json)
 │   │   └── ResponseCacheService.php         # file cache with TTL, offline mode
 │   ├── Parsers/
 │   │   ├── ComposerLockParser.php
@@ -42,35 +51,52 @@ qiick-io/excubia-core
 │   ├── Renderers/
 │   │   ├── TableReportRenderer.php
 │   │   ├── JsonReportRenderer.php
-│   │   └── MarkdownReportRenderer.php
+│   │   ├── MarkdownReportRenderer.php
+│   │   ├── SarifRenderer.php                # SARIF 2.1.0 (v0.3.0, D6)
+│   │   └── OhDearHealthRenderer.php         # Oh Dear health JSON (docs/health-endpoint.md)
 │   ├── Data/                                # readonly classes
 │   │   ├── ProjectSnapshotData.php
+│   │   ├── LaravelPostureData.php           # booted-app posture, set by the Artisan commands only
 │   │   ├── LockedPackageData.php
 │   │   ├── CheckResultData.php
 │   │   ├── FindingData.php
 │   │   ├── HealthReportData.php
 │   │   ├── UpgradeStepData.php
-│   │   └── ExcubiaConfigurationData.php
+│   │   ├── ExcubiaConfigurationData.php
+│   │   ├── RuntimeConfigurationData.php     # runtime key: switches, sample rates, threshold, buffer cap
+│   │   └── ExceptionConfigurationData.php   # exceptions key: switch, mask patterns, ignored classes, buffer cap
 │   ├── Enums/
 │   │   ├── SeverityEnum.php                 # critical..info, comparable
 │   │   ├── FindingStatusEnum.php            # pass|warn|fail|skipped
+│   │   ├── SkipReasonEnum.php               # data-source-failure|offline|not-applicable
 │   │   ├── ReportFormatEnum.php
+│   │   ├── RuntimeTypeEnum.php              # request|slowQuery|job|scheduledTask|outgoingHttp
 │   │   └── ExitCodeEnum.php                 # 0,1,2,3
 │   ├── Configuration/
 │   │   └── ExcubiaConfigurationLoader.php   # reads + validates excubia.json  [suffix: Loader — see note]
 │   ├── Console/
 │   │   ├── CheckCommand.php                 # symfony/console command used by bin/excubia
+│   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; registers the Artisan alias only
-│   │   └── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
+│   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
+│   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
+│   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
+│   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat
+│   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → both buffers + ReportPushService
+│   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
+│   │   ├── ExceptionCollectorService.php    # reportable() callback, context (job/route/command), in-memory groups, flush
+│   │   ├── ExceptionPayloadService.php      # masking, relative frames, fingerprint, group merge (pure)
+│   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache)
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
 │       ├── LockfileNotFoundException.php
 │       └── DataSourceUnavailableException.php
 ├── tests/{Unit,Feature,Arch,Fixtures}
 ├── excubia.schema.json                      # JSON Schema of the config file
-├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,checks/*.md}
+├── action.yml                               # composite GitHub Action: SARIF upload to code scanning (v0.3.0, D6)
+├── docs/{SPEC.md,ARCHITECTURE.md,report-schema.json,push-schema.json,runtime-schema.json,exception-schema.json,checks/*.md}
 └── .github/workflows/ci.yml                 # calls qiick-io/.github reusable workflow
 ```
 
@@ -92,9 +118,46 @@ flowchart LR
   API --> CACHE[ResponseCacheService]
   RUN --> PLAN[UpgradePlanService]
   RUN --> REPORT[HealthReportData]
-  REPORT --> RENDER[Table / Json / Markdown Renderer]
+  REPORT --> RENDER[Table / Json / Markdown / Sarif Renderer]
   RENDER --> OUT[stdout or --output + exit code]
 ```
+
+### Runtime monitoring (opt-in, #75)
+
+```mermaid
+flowchart LR
+  EVT[Laravel events] --> COL[RuntimeCollectorService, in memory per minute]
+  COL -->|terminating / after each job or task| BUF[RuntimeBufferService: buffer.ndjson]
+  SCHED[scheduler, every minute] --> PRT[excubia:push-runtime]
+  PRT -->|claim| BAT[batch-seq-batchId.ndjson]
+  BAT --> PUSH[ReportPushService::pushRuntime]
+  PUSH -->|POST /api/runtime| APP[excubia-app]
+  APP -->|2xx| DEL[delete batch]
+```
+
+- Everything lives in `src/Laravel/` except the buffer and the transport, which are framework-free `*Service` classes, so `bin/excubia` never loads `illuminate/*`.
+- `runtime.enabled: false` (the default) means the provider registers no listener, no terminating callback and no schedule.
+- Every listener and the flush catch `Throwable`: a broken buffer directory never reaches the host app. Nothing is sent from a request.
+- Buffer writes, claims and trims hold one `flock` on `storage/excubia/runtime/.lock`. Over `runtime.bufferMaxBytes`, whole lines are dropped from the oldest file first. A claimed batch keeps its `batchId` in its file name until the app answers 2xx.
+
+### Exception capture (opt-in, #77)
+
+```mermaid
+flowchart LR
+  APPEX[app reports an exception] --> HANDLER[Laravel exception handler]
+  HANDLER -->|reportable, returns nothing| COLX[ExceptionCollectorService]
+  HANDLER --> OWN[app's own reporting, unchanged]
+  COLX -->|mask, frames, fingerprint| PAY[ExceptionPayloadService]
+  COLX -->|terminating / queue Looping / 100 groups| BUFX[RuntimeBufferService: storage/excubia/exceptions/]
+  SCHED2[scheduler, every minute] --> PRT2[excubia:push-runtime]
+  PRT2 -->|claim, merge groups| PUSHX[ReportPushService::pushExceptions]
+  PUSHX -->|POST /api/exceptions| APP2[excubia-app]
+```
+
+- `exceptions.enabled` is its own switch: with it off nothing is added to the handler and no listener exists, whatever `runtime.enabled` says. `excubia:push-runtime` is scheduled when either is on and sends each enabled buffer; a failure on one does not stop the other.
+- The callback returns nothing (a `false` would stop the app's own reporting) and every step catches `Throwable`.
+- Context comes from `JobExceptionOccurred` / `JobFailed` (a `WeakMap` keyed by the exception), the matched route, or `CommandStarting` / `CommandFinished` (the last failed command covers uncaught command exceptions, which the console kernel reports after `CommandFinished`).
+- Masking happens before the buffer write, so no unmasked message ever reaches disk. The exception buffer reuses `RuntimeBufferService` (same lock, cap and batch files) on its own directory and is read with `readEntries()` plus `ExceptionPayloadService::merge()`.
 
 ## 3. Key contracts
 
@@ -108,15 +171,16 @@ interface HealthCheckContract
 
     /**
      * Inspect the snapshot and return findings. Must never throw for data-source
-     * outages: return a skipped result with the reason instead.
+     * outages: return a skipped result with the reason (SkipReasonEnum::DataSourceFailure) instead.
      */
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData;
 }
 ```
 
 - Checks are pure apart from calls to `*ApiService` classes, which all go through `HttpClientContract` + `ResponseCacheService`.
+- Posture checks (#73) keep the same contract. Only the Artisan commands can see the booted app, so `ExcubiaCheckCommand` / `ExcubiaPushCommand` call `LaravelPostureService` and pass the resulting `LaravelPostureData` through `CheckCommand` to `HealthCheckRunnerService::run()`, which attaches it to the snapshot. Everything outside `src/Laravel/` stays free of `illuminate/*` (arch test), so `bin/excubia` loads no Laravel class and the posture is null there.
 - Network calls are batched (Packagist advisories accepts many packages per request; OSV `querybatch`).
-- Exit code is computed only from findings with status `fail`/`warn` whose severity ≥ `failOn`, after ignores.
+- Exit code is computed only from findings with status `fail`/`warn` whose severity ≥ `failOn`, after ignores. With `--strict` (or `strict: true`), a remaining `skipped` row with `skipReason` `data-source-failure` gives 3 when nothing gives 1 (precedence 2 > 1 > 3). Under `--offline` the runner marks data-source skips `offline`, so they never give 3.
 
 ## 4. Dependencies (runtime)
 
@@ -126,7 +190,7 @@ interface HealthCheckContract
 
 - `tests/Arch/NamingArchitectureTest.php`: strict types, suffix per folder, `Data` readonly, no `dd`/`dump`/`var_dump`/`env()`, `Checks` only depend on `Contracts`, `Data`, `Enums`, `Services`.
 - Each check: one test file with fixtures for pass / warn / fail / skipped.
-- Golden-file tests for renderers (`tests/Fixtures/Reports/*.txt|json|md`).
+- Golden-file tests for renderers (`tests/Fixtures/Reports/*.txt|json|md|sarif`); SARIF output is also validated against the vendored official schema in `tests/Fixtures/Schemas/`.
 - Fake `HttpClientContract` returning recorded responses; a test asserts no real HTTP happens.
 
 ## 6. CI / fleet

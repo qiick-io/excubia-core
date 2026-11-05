@@ -47,8 +47,8 @@ JSON,
         ->and($configuration->laravelWarnDaysBeforeEndOfLife)->toBe(30)
         ->and($configuration->isNodeEndOfLifeCheckEnabled)->toBeFalse()
         ->and($configuration->cacheTtlHours)->toBe(12)
-        ->and($configuration->ignores($matched, $today))->toBeTrue()
-        ->and($configuration->ignores($other, $today))->toBeFalse();
+        ->and($configuration->isIgnored($matched, $today))->toBeTrue()
+        ->and($configuration->isIgnored($other, $today))->toBeFalse();
 });
 
 it('rejects an unknown key', function () {
@@ -59,6 +59,30 @@ it('rejects an unknown key', function () {
     expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $root))
         ->toThrow(InvalidConfigurationException::class, 'Unknown excubia.json key [telemetry].');
 });
+
+it('loads the posture thresholds and defaults them to 10 minutes and 24 hours', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 30}, "laravel-failed-jobs": {"highSeverityAfterHours": 6}}}',
+    ]);
+
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+
+    expect($configuration->schedulerHeartbeatStaleAfterMinutes)->toBe(30)
+        ->and($configuration->failedJobHighSeverityAfterHours)->toBe(6)
+        ->and(ExcubiaConfigurationData::defaults()->schedulerHeartbeatStaleAfterMinutes)->toBe(10)
+        ->and(ExcubiaConfigurationData::defaults()->failedJobHighSeverityAfterHours)->toBe(24);
+});
+
+it('rejects posture thresholds below one and unknown posture keys', function (string $document, string $message) {
+    $root = temporaryProject(['excubia.json' => $document]);
+
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $root))
+        ->toThrow(InvalidConfigurationException::class, $message);
+})->with([
+    'heartbeat zero' => ['{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 0}}}', 'staleAfterMinutes must be at least 1.'],
+    'failed jobs zero' => ['{"checks": {"laravel-failed-jobs": {"highSeverityAfterHours": 0}}}', 'highSeverityAfterHours must be at least 1.'],
+    'unknown key' => ['{"checks": {"laravel-failed-jobs": {"maxCount": 3}}}', 'Unknown checks.laravel-failed-jobs key [maxCount].'],
+]);
 
 it('rejects an ignore rule without a reason', function () {
     $root = temporaryProject([
@@ -77,7 +101,7 @@ it('reactivates an expired ignore and returns a warning', function () {
     $finding = advisoryFinding('GHSA-xxxx');
     $today = new DateTimeImmutable('2026-10-31', new DateTimeZone('UTC'));
 
-    expect($configuration->ignores($finding, $today))->toBeFalse()
+    expect($configuration->isIgnored($finding, $today))->toBeFalse()
         ->and($configuration->expiredIgnoreWarnings([$finding], $today)[0])->toContain('expired on 2026-01-01');
 });
 
@@ -94,6 +118,38 @@ it('documents a closed schema with advisoryId on ignore rules', function () {
         ->and($schema['properties']['ignore']['items']['required'])->toBe(['checkId', 'subject', 'reason']);
 });
 
+it('reads healthEndpoint and keeps the endpoint off by default', function () {
+    $loader = new ExcubiaConfigurationLoader;
+    $defaults = $loader->load(null, temporaryProject([]));
+    $configured = $loader->load(null, temporaryProject([
+        'excubia.json' => '{"healthEndpoint": {"enabled": true, "path": "/ops/health/"}}',
+    ]));
+
+    expect($defaults->isHealthEndpointEnabled)->toBeFalse()
+        ->and($defaults->healthEndpointPath)->toBe('excubia/health')
+        ->and($configured->isHealthEndpointEnabled)->toBeTrue()
+        ->and($configured->healthEndpointPath)->toBe('ops/health');
+});
+
+it('rejects an invalid healthEndpoint', function (string $healthEndpoint, string $message) {
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => '{"healthEndpoint": '.$healthEndpoint.'}',
+    ])))->toThrow(InvalidConfigurationException::class, $message);
+})->with([
+    'not an object' => ['true', 'healthEndpoint must be an object.'],
+    'secret in the file' => ['{"secret": "x"}', 'Unknown healthEndpoint key [secret].'],
+    'enabled not boolean' => ['{"enabled": "yes"}', 'healthEndpoint.enabled must be a boolean.'],
+    'path with a query' => ['{"path": "health?x=1"}', 'healthEndpoint.path must be a relative URL path'],
+    'empty path' => ['{"path": "/"}', 'healthEndpoint.path must be a relative URL path'],
+]);
+
+it('documents healthEndpoint in the schema', function () {
+    $schema = json_decode((string) file_get_contents(dirname(__DIR__, 2).'/excubia.schema.json'), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($schema['properties']['healthEndpoint']['additionalProperties'])->toBeFalse()
+        ->and(array_keys($schema['properties']['healthEndpoint']['properties']))->toBe(['enabled', 'path']);
+});
+
 function advisoryFinding(string $advisoryId): FindingData
 {
     return new FindingData(
@@ -107,3 +163,19 @@ function advisoryFinding(string $advisoryId): FindingData
         advisoryId: $advisoryId,
     );
 }
+
+it('loads the excubia-app url and token and rejects unknown app keys', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"app": {"url": "https://excubia.example.test", "token": "project-token"}}',
+    ]);
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+
+    expect($configuration->appUrl)->toBe('https://excubia.example.test')
+        ->and($configuration->appToken)->toBe('project-token')
+        ->and(ExcubiaConfigurationData::defaults()->appUrl)->toBeNull();
+
+    $invalid = temporaryProject(['excubia.json' => '{"app": {"url": "https://excubia.example.test", "secret": "x"}}']);
+
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $invalid))
+        ->toThrow(InvalidConfigurationException::class, 'Unknown app key [secret]');
+});

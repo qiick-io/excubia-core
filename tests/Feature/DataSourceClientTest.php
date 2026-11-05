@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Services\EndOfLifeApiService;
 use Qiick\Excubia\Services\GitHubRepositoryApiService;
+use Qiick\Excubia\Services\NotifyingHttpClientService;
 use Qiick\Excubia\Services\OsvApiService;
 use Qiick\Excubia\Services\PackagistApiService;
 use Qiick\Excubia\Services\ResponseCacheService;
@@ -134,4 +135,151 @@ it('decodes a symfony mock response', function () {
     $client = new SymfonyHttpClientService($mock);
 
     expect($client->getJson('https://endoflife.date/api/php.json'))->toBe(['cycle' => '8.3']);
+});
+
+it('allows plain http to loopback hosts only', function () {
+    expect(SymfonyHttpClientService::isSecureUrl('https://excubia.example.test'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://localhost:8000'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://127.0.0.1'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://[::1]:8000'))->toBeTrue()
+        ->and(SymfonyHttpClientService::isSecureUrl('http://localhost.example.test'))->toBeFalse()
+        ->and(SymfonyHttpClientService::isSecureUrl('ftp://localhost'))->toBeFalse()
+        ->and(SymfonyHttpClientService::isSecureUrl('excubia.example.test'))->toBeFalse();
+});
+
+it('keeps the http status when a response is not successful', function () {
+    $client = new SymfonyHttpClientService(new MockHttpClient([
+        new MockResponse('{"message":"Unauthenticated."}', ['http_code' => 401]),
+    ]));
+
+    try {
+        $client->postJson('https://excubia.example.test/api/reports', ['protocolVersion' => 1]);
+        $status = null;
+    } catch (DataSourceUnavailableException $exception) {
+        $status = $exception->httpStatus;
+    }
+
+    expect($status)->toBe(401);
+});
+
+it('does not follow redirects when posting, so a 307 cannot resend the payload elsewhere', function () {
+    $maxRedirects = [];
+    $client = new SymfonyHttpClientService(new MockHttpClient(function (string $method, string $url, array $options) use (&$maxRedirects): MockResponse {
+        $maxRedirects[$method] = $options['max_redirects'] ?? null;
+
+        return $method === 'POST'
+            ? new MockResponse('{}', ['http_code' => 307, 'response_headers' => ['Location' => 'http://elsewhere.example.test/collect']])
+            : new MockResponse('{}', ['http_code' => 200]);
+    }));
+
+    expect(fn () => $client->postJson('https://excubia.example.test/api/reports', ['protocolVersion' => 1]))
+        ->toThrow(DataSourceUnavailableException::class, 'HTTP 307');
+
+    $client->getJson('https://endoflife.date/api/php.json');
+
+    expect($maxRedirects['POST'])->toBe(0)
+        ->and($maxRedirects['GET'])->not->toBe(0);
+});
+
+it('removes URL credentials from URLs shown in messages', function () {
+    expect(SymfonyHttpClientService::redactedUrl('https://user:secret-password@excubia.example.test/api/reports'))
+        ->toBe('https://excubia.example.test/api/reports')
+        ->and(SymfonyHttpClientService::redactedUrl('https://excubia.example.test/api/reports?x=a@b'))
+        ->toBe('https://excubia.example.test/api/reports?x=a@b')
+        ->and(SymfonyHttpClientService::redactedUrl('http://localhost:8000'))->toBe('http://localhost:8000');
+});
+
+it('lists requests without URL credentials', function () {
+    $lines = [];
+    $url = 'https://user:secret-password@excubia.example.test/api/reports';
+    $client = new NotifyingHttpClientService(new FakeHttpClient([$url => ['stored' => true]]), function (string $line) use (&$lines): void {
+        $lines[] = $line;
+    });
+
+    $client->postJson($url, []);
+    $client->getJson($url);
+
+    expect($lines)->toBe(['POST https://excubia.example.test/api/reports', 'GET https://excubia.example.test/api/reports']);
+});
+
+it('refuses GitHub owners and names that walk the API path', function (string $owner, string $name) {
+    $client = new FakeHttpClient([]);
+    $service = new GitHubRepositoryApiService($client, cacheIn(sys_get_temp_dir().'/excubia-cache-'.bin2hex(random_bytes(4))));
+
+    expect(fn () => $service->repository($owner, $name))->toThrow(DataSourceUnavailableException::class, 'not a GitHub owner')
+        ->and($client->calls)->toBe(0);
+})->with([
+    'parent owner' => ['..', 'user'],
+    'current owner' => ['.', 'agent'],
+    'parent name' => ['jenssegers', '..'],
+]);
+
+/**
+ * A fresh base standing in for the shared temporary directory, and the
+ * default cache directory the service derives inside it.
+ *
+ * @return array{base: string, cache: string}
+ */
+function sharedTemporaryDirectory(): array
+{
+    $base = temporaryProject([]);
+    $user = function_exists('posix_geteuid') ? (string) posix_geteuid() : get_current_user();
+
+    return ['base' => $base, 'cache' => $base.'/qiick-excubia-'.preg_replace('/[^A-Za-z0-9_.-]/', '_', $user)];
+}
+
+it('creates the default cache directory for the current user only and uses it', function () {
+    ['base' => $base, 'cache' => $cache] = sharedTemporaryDirectory();
+    $client = new FakeHttpClient(['https://endoflife.date/api/php.json' => recorded('endoflife-php.json')]);
+    $service = new EndOfLifeApiService($client, new ResponseCacheService(null, 24, false, false, $base));
+
+    $service->cycles('php');
+    $service->cycles('php');
+
+    expect($client->calls)->toBe(1)
+        ->and(fileperms($cache) & 0o777)->toBe(0o700);
+});
+
+it('skips a default cache directory that other users can write to, so planted responses are not read', function () {
+    ['base' => $base, 'cache' => $cache] = sharedTemporaryDirectory();
+    mkdir($cache);
+    chmod($cache, 0o777);
+    $planted = $cache.'/'.hash('sha256', 'https://endoflife.date/api/php.json').'.json';
+    file_put_contents($planted, json_encode(['storedAt' => gmdate(DATE_ATOM), 'body' => [['cycle' => 'planted']]], JSON_THROW_ON_ERROR));
+    $client = new FakeHttpClient(['https://endoflife.date/api/php.json' => recorded('endoflife-php.json')]);
+    $responseCache = new ResponseCacheService(null, 24, false, false, $base);
+
+    $cycles = (new EndOfLifeApiService($client, $responseCache))->cycles('php');
+    $responseCache->clear();
+
+    expect($client->calls)->toBe(1)
+        ->and($cycles[0]->cycle)->toBe('8.3')
+        ->and(glob($cache.'/*.json'))->toBe([$planted]);
+});
+
+it('skips a default cache directory that is a symlink and never clears its target', function () {
+    ['base' => $base, 'cache' => $cache] = sharedTemporaryDirectory();
+    $target = temporaryProject(['composer.json' => '{}', 'excubia.json' => '{}']);
+    symlink($target, $cache);
+    $client = new FakeHttpClient(['https://endoflife.date/api/php.json' => recorded('endoflife-php.json')]);
+    $responseCache = new ResponseCacheService(null, 24, false, false, $base);
+
+    (new EndOfLifeApiService($client, $responseCache))->cycles('php');
+    $responseCache->clear();
+
+    expect($client->calls)->toBe(1)
+        ->and(array_map('basename', (array) glob($target.'/*.json')))->toBe(['composer.json', 'excubia.json']);
+});
+
+it('clears only files named like cache entries', function () {
+    $directory = temporaryProject(['composer.json' => '{}']);
+    $client = new FakeHttpClient(['https://endoflife.date/api/php.json' => recorded('endoflife-php.json')]);
+    $responseCache = cacheIn($directory);
+    (new EndOfLifeApiService($client, $responseCache))->cycles('php');
+
+    expect(glob($directory.'/*.json'))->toHaveCount(2);
+
+    $responseCache->clear();
+
+    expect(array_map('basename', (array) glob($directory.'/*.json')))->toBe(['composer.json']);
 });

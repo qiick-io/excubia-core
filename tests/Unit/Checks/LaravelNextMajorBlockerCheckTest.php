@@ -97,3 +97,17 @@ it('passes when the latest release allows the next major and skips an outage', f
     expect($passed->status)->toBe(FindingStatusEnum::Pass)
         ->and($offline->status)->toBe(FindingStatusEnum::Skipped);
 });
+
+it('puts the package, locked version and target major in details', function () {
+    $result = blockerCheck([
+        'https://repo.packagist.org/p2/acme/widget.json' => [
+            'packages' => ['acme/widget' => [
+                release('acme/widget', 'v1.4.0', ['illuminate/support' => '^12.0']),
+            ]],
+        ],
+    ])->run(new ProjectSnapshotData(null, 'v12.0.0', [
+        new LockedPackageData('acme/widget', 'v1.3.0', true, false),
+    ], [], null), ExcubiaConfigurationData::defaults());
+
+    expect($result->findings[0]->details)->toBe(['package' => 'acme/widget', 'lockedVersion' => 'v1.3.0', 'targetMajor' => 13]);
+});

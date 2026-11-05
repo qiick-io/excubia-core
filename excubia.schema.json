@@ -1,6 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
+    "x-excubia-version": 1,
+    "$comment": "Contract version of the excubia.json schema. Stable from 1.0.0-beta (docs/CONTRACTS.md): a new optional key keeps the version, a removed or narrowed key waits for a major.",
     "title": "Excubia configuration",
     "type": "object",
     "additionalProperties": false,
@@ -13,6 +15,10 @@
         },
         "includeDev": {
             "type": "boolean"
+        },
+        "strict": {
+            "type": "boolean",
+            "description": "Same as --strict: exit 3 when a check was skipped because a data source failed (excubia push then does not send). --strict on the command line turns it on even when this key is false; the command line cannot turn it off. Default false."
         },
         "checks": {
             "type": "object",
@@ -54,6 +60,28 @@
                     "properties": {
                         "enabled": {
                             "type": "boolean"
+                        }
+                    }
+                },
+                "laravel-scheduler-heartbeat": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "staleAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn when the scheduler heartbeat written by excubia:heartbeat is older than this many minutes. Default 10."
+                        }
+                    }
+                },
+                "laravel-failed-jobs": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "highSeverityAfterHours": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Failed jobs warn at medium; at high once the oldest is older than this many hours. Default 24."
                         }
                     }
                 }
@@ -98,6 +126,155 @@
                 "ttlHours": {
                     "type": "integer",
                     "minimum": 0
+                }
+            }
+        },
+        "app": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Target of excubia push. EXCUBIA_APP_URL and EXCUBIA_APP_TOKEN override these keys. Prefer the environment for the token so it is not committed.",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Base URL of your excubia-app. HTTPS, or plain HTTP to localhost only."
+                },
+                "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Project push token from excubia-app. Prefer the EXCUBIA_APP_TOKEN environment variable: excubia.json is normally committed, so a token here ends up in Git history, and check, push and excubia:push-runtime print a warning when it is set."
+                }
+            }
+        },
+        "privacy": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "What the checks may send to public data sources (Packagist, OSV.dev, GitHub). Packages the lockfile shows as not served by Packagist or the public npm registry (path, artifact, VCS, Satis, Private Packagist, file:, links, other registries) are never sent and are reported as skipped; this key adds more.",
+            "properties": {
+                "skipPackages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9@/._~*?-]+$"
+                    },
+                    "description": "Package name globs never sent to a public data source, for example \"acme/*\" or \"@acme/*\". * matches any characters (including /), ? exactly one; matching is case-insensitive and covers the whole name. Matching packages are reported as skipped. Default []."
+                }
+            }
+        },
+        "healthEndpoint": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Oh Dear-compatible health endpoint registered by the Laravel service provider (docs/health-endpoint.md). Off by default. The secret is read from the EXCUBIA_HEALTH_SECRET environment variable only; without it the route is not registered.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Register the GET route. Default false."
+                },
+                "path": {
+                    "type": "string",
+                    "pattern": "^/?[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*/?$",
+                    "description": "URL path of the route, relative to the app root. Default excubia/health."
+                }
+            }
+        },
+        "runtime": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Opt-in runtime aggregates for your excubia-app (docs/runtime-schema.json). Off by default; when off the Laravel provider registers no listener and no schedule. Aggregates are buffered under storage/excubia/runtime/ and sent every minute by php artisan excubia:push-runtime to POST {app.url}/api/runtime with the app token (EXCUBIA_APP_URL / EXCUBIA_APP_TOKEN win).",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Turn runtime monitoring on. Default false."
+                },
+                "bufferMaxBytes": {
+                    "type": "integer",
+                    "minimum": 4096,
+                    "description": "Size cap of the local buffer; the oldest entries are dropped first. Default 1048576 (1 MiB)."
+                },
+                "requests": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Incoming HTTP requests: route name (or unnamed), method, status class, duration."
+                },
+                "slowQueries": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Database queries at or above thresholdMs: SQL without bindings, connection name, duration.",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/runtimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "thresholdMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Slow query threshold in milliseconds. Default 1000."
+                        }
+                    }
+                },
+                "jobs": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Queued jobs: class, queue, connection, processed or failed, duration."
+                },
+                "scheduler": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Scheduled tasks: description or command, finished, failed or skipped, duration."
+                },
+                "outgoingHttp": {
+                    "$ref": "#/$defs/runtimeType",
+                    "description": "Calls made with Laravel's HTTP client: host, status class, duration."
+                }
+            }
+        },
+        "exceptions": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Opt-in exception capture for your excubia-app (docs/exception-schema.json), independent of runtime. Off by default; when off the Laravel provider registers nothing on the exception handler. Reported exceptions are masked, grouped by fingerprint, buffered under storage/excubia/exceptions/ and sent every minute by php artisan excubia:push-runtime to POST {app.url}/api/exceptions with the app token (EXCUBIA_APP_URL / EXCUBIA_APP_TOKEN win). The app's own exception reporting is never changed.",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Turn exception capture on. Default false."
+                },
+                "maskPatterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "description": "Extra PCRE patterns with delimiters, for example \"/ORD-[0-9]+/\". Matches in exception messages become [masked], before the built-in masking. Default []."
+                },
+                "ignore": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "description": "Exception classes never captured, subclasses included, for example \"App\\\\Exceptions\\\\PaymentDeclinedException\". Exceptions the app does not report (dontReport) are never captured either. Default []."
+                },
+                "bufferMaxBytes": {
+                    "type": "integer",
+                    "minimum": 4096,
+                    "description": "Size cap of the local exception buffer; the oldest entries are dropped first. Default 1048576 (1 MiB)."
+                }
+            }
+        }
+    },
+    "$defs": {
+        "runtimeType": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Collect this type when runtime.enabled is true. Default true."
+                },
+                "sampleRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Share of events recorded, 0 to 1. Default 1."
                 }
             }
         }

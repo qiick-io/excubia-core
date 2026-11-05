@@ -4,21 +4,27 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Console;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
+use Qiick\Excubia\Data\HealthReportData;
+use Qiick\Excubia\Data\LaravelPostureData;
+use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\ReportFormatEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
 use Qiick\Excubia\Renderers\JsonReportRenderer;
 use Qiick\Excubia\Renderers\MarkdownReportRenderer;
+use Qiick\Excubia\Renderers\SarifRenderer;
 use Qiick\Excubia\Renderers\TableReportRenderer;
 use Qiick\Excubia\Services\HealthCheckRunnerService;
 use Qiick\Excubia\Services\NotifyingHttpClientService;
+use Qiick\Excubia\Services\ProjectSnapshotService;
 use Qiick\Excubia\Services\SymfonyHttpClientService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -30,12 +36,27 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * `excubia check`. The Artisan alias calls `runWithOptions` so both entry
  * points share this command. The command does not boot the scanned project.
+ * The Artisan alias passes the posture it read from the booted app; the
+ * standalone CLI passes none, so the posture checks are skipped.
  */
 final class CheckCommand extends Command
 {
+    /**
+     * `excubia.json` is normally committed, so a token there ends up in Git
+     * history and every clone. Removing `app.token` would break existing
+     * configs, so it keeps working with a warning.
+     */
+    public const APP_TOKEN_IN_FILE_WARNING = 'app.token is set in excubia.json; prefer EXCUBIA_APP_TOKEN so the token is not committed.';
+
+    /**
+     * @param  (Closure(HealthReportData): void)|null  $reportListener  called with every finished report;
+     *                                                                  the Laravel aliases store it for the health endpoint
+     */
     public function __construct(
         private readonly ?HttpClientContract $httpClient = null,
         private readonly ?DateTimeImmutable $today = null,
+        private readonly ?Closure $reportListener = null,
+        private readonly ?LaravelPostureData $laravelPosture = null,
     ) {
         parent::__construct();
     }
@@ -45,7 +66,7 @@ final class CheckCommand extends Command
         $this->setName('check')
             ->setDescription('Health checks for Laravel apps.')
             ->addArgument('path', InputArgument::OPTIONAL, 'Project directory')
-            ->addOption('format', null, InputOption::VALUE_REQUIRED, 'table, json, or markdown')
+            ->addOption('format', null, InputOption::VALUE_REQUIRED, 'table, json, markdown, or sarif')
             ->addOption('output', null, InputOption::VALUE_REQUIRED, 'Write the report to this file')
             ->addOption('fail-on', null, InputOption::VALUE_REQUIRED, 'critical, high, medium, low, or none')
             ->addOption('only', null, InputOption::VALUE_REQUIRED, 'Comma-separated check ids to run')
@@ -54,7 +75,8 @@ final class CheckCommand extends Command
             ->addOption('offline', null, InputOption::VALUE_NONE, 'Use the cache only')
             ->addOption('no-cache', null, InputOption::VALUE_NONE, 'Bypass the cache')
             ->addOption('config', null, InputOption::VALUE_REQUIRED, 'Config file')
-            ->addOption('no-banner', null, InputOption::VALUE_NONE, 'Hide the ASCII banner');
+            ->addOption('no-banner', null, InputOption::VALUE_NONE, 'Hide the ASCII banner')
+            ->addOption('strict', null, InputOption::VALUE_NONE, 'Exit 3 when a data source failure skipped a check');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -73,9 +95,10 @@ final class CheckCommand extends Command
                 'no-cache' => (bool) $input->getOption('no-cache'),
                 'config' => $this->stringOption($input, 'config'),
                 'no-banner' => (bool) $input->getOption('no-banner'),
+                'strict' => (bool) $input->getOption('strict'),
             ], $output);
         } catch (InvalidConfigurationException|LockfileNotFoundException $exception) {
-            $this->writeError($output, $exception->getMessage());
+            self::writeError($output, $exception->getMessage());
 
             return $exception->getCode();
         }
@@ -95,7 +118,8 @@ final class CheckCommand extends Command
      *     offline?: bool,
      *     no-cache?: bool,
      *     config?: string|null,
-     *     no-banner?: bool
+     *     no-banner?: bool,
+     *     strict?: bool
      * }  $options
      */
     public function runWithOptions(?string $path, array $options, OutputInterface $output): int
@@ -103,13 +127,15 @@ final class CheckCommand extends Command
         try {
             return $this->render($path, $options, $output);
         } catch (InvalidConfigurationException|LockfileNotFoundException $exception) {
-            $this->writeError($output, $exception->getMessage());
+            self::writeError($output, $exception->getMessage());
 
             return $exception->getCode();
         }
     }
 
     /**
+     * Run the checks, render the report, return the exit code.
+     *
      * @param  array{
      *     format?: string|null,
      *     output?: string|null,
@@ -120,14 +146,56 @@ final class CheckCommand extends Command
      *     offline?: bool,
      *     no-cache?: bool,
      *     config?: string|null,
-     *     no-banner?: bool
+     *     no-banner?: bool,
+     *     strict?: bool
      * }  $options
+     *
+     * @throws InvalidConfigurationException
+     * @throws LockfileNotFoundException
      */
     private function render(?string $path, array $options, OutputInterface $output): int
+    {
+        $scan = $this->scan($path, $options, $output);
+        $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null, $path)->render($scan['report']);
+        $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
+        $exitCode = $scan['report']->exitCodeFor($scan['configuration']->failOnSeverity, $scan['configuration']->isStrict);
+
+        if ($exitCode === ExitCodeEnum::DataSourceFailure) {
+            self::writeError($output, $scan['report']->dataSourceFailureMessage());
+        }
+
+        return $exitCode->value;
+    }
+
+    /**
+     * Load config, run the checks, and print expired ignore rules and a
+     * token found in `excubia.json` to stderr.
+     * `excubia push` calls this so both commands scan a project the same way.
+     *
+     * @param  array{
+     *     format?: string|null,
+     *     output?: string|null,
+     *     fail-on?: string|null,
+     *     only?: string|null,
+     *     skip?: string|null,
+     *     no-dev?: bool,
+     *     offline?: bool,
+     *     no-cache?: bool,
+     *     config?: string|null,
+     *     no-banner?: bool,
+     *     strict?: bool
+     * }  $options
+     * @return array{report: HealthReportData, configuration: ExcubiaConfigurationData}
+     *
+     * @throws InvalidConfigurationException
+     * @throws LockfileNotFoundException
+     */
+    public function scan(?string $path, array $options, OutputInterface $output): array
     {
         $projectRoot = $this->projectRoot($path);
         $today = $this->today ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $configuration = $this->configuration($projectRoot, $options);
+        self::warnAboutTokenInFile($configuration, $output);
         $result = (new HealthCheckRunnerService($this->httpClient($output), $today))->run(
             $projectRoot,
             $configuration,
@@ -135,21 +203,26 @@ final class CheckCommand extends Command
             $this->checkIds($options['skip'] ?? null),
             (bool) ($options['offline'] ?? false),
             (bool) ($options['no-cache'] ?? false),
+            $this->laravelPosture,
         );
-        $report = $result['report'];
 
         foreach ($result['expiredIgnoreWarnings'] as $warning) {
-            $this->writeError($output, $warning);
+            self::writeError($output, $warning);
         }
 
-        $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null)->render($report);
-        $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
+        if ($this->reportListener !== null) {
+            ($this->reportListener)($result['report']);
+        }
 
-        return $report->exitCodeFor($configuration->failOnSeverity)->value;
+        return ['report' => $result['report'], 'configuration' => $configuration];
     }
 
     /**
+     * Merge file config with CLI overrides (`--fail-on`, `--no-dev`, `--strict`).
+     *
      * @param  array<string, mixed>  $options
+     *
+     * @throws InvalidConfigurationException
      */
     private function configuration(string $projectRoot, array $options): ExcubiaConfigurationData
     {
@@ -164,8 +237,10 @@ final class CheckCommand extends Command
         }
 
         $includeDev = ($options['no-dev'] ?? false) === true ? false : $loaded->isDevelopmentDependencyIncluded;
+        // `--strict` can only turn strict mode on; `strict: true` in the file cannot be turned off from the CLI.
+        $isStrict = ($options['strict'] ?? false) === true || $loaded->isStrict;
 
-        if ($failOn === $loaded->failOnSeverity && $includeDev === $loaded->isDevelopmentDependencyIncluded) {
+        if ($failOn === $loaded->failOnSeverity && $includeDev === $loaded->isDevelopmentDependencyIncluded && $isStrict === $loaded->isStrict) {
             return $loaded;
         }
 
@@ -179,10 +254,20 @@ final class CheckCommand extends Command
             ignoreRules: $loaded->ignoreRules,
             cacheDirectory: $loaded->cacheDirectory,
             cacheTtlHours: $loaded->cacheTtlHours,
+            appUrl: $loaded->appUrl,
+            appToken: $loaded->appToken,
+            isStrict: $isStrict,
+            isHealthEndpointEnabled: $loaded->isHealthEndpointEnabled,
+            healthEndpointPath: $loaded->healthEndpointPath,
+            schedulerHeartbeatStaleAfterMinutes: $loaded->schedulerHeartbeatStaleAfterMinutes,
+            failedJobHighSeverityAfterHours: $loaded->failedJobHighSeverityAfterHours,
         );
     }
 
-    private function httpClient(OutputInterface $output): HttpClientContract
+    /**
+     * Injected client, or Symfony; wraps with request logging when `-v` or higher.
+     */
+    public function httpClient(OutputInterface $output): HttpClientContract
     {
         $httpClient = $this->httpClient ?? new SymfonyHttpClientService;
 
@@ -191,10 +276,15 @@ final class CheckCommand extends Command
         }
 
         return new NotifyingHttpClientService($httpClient, function (string $line) use ($output): void {
-            $this->writeError($output, $line);
+            self::writeError($output, $line);
         });
     }
 
+    /**
+     * Absolute project root: explicit path, or the process working directory.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function projectRoot(?string $path): string
     {
         if ($path === null || $path === '') {
@@ -211,6 +301,8 @@ final class CheckCommand extends Command
     }
 
     /**
+     * Split a comma-separated `--only` / `--skip` value into check ids.
+     *
      * @return list<string>|null
      */
     private function checkIds(?string $value): ?array
@@ -236,6 +328,11 @@ final class CheckCommand extends Command
         return $ids;
     }
 
+    /**
+     * Parse `--fail-on`. `none` means null (never fail the process on findings).
+     *
+     * @throws InvalidConfigurationException
+     */
     private function failOn(string $value): ?SeverityEnum
     {
         if ($value === 'none') {
@@ -251,17 +348,27 @@ final class CheckCommand extends Command
         return $severity;
     }
 
-    private function renderer(?string $format, OutputInterface $output, ?string $outputFile): ReportRendererContract
+    /**
+     * Pick a renderer for `--format`. Table uses decoration only when writing to stdout.
+     * SARIF gets the project-relative file that declares the Node version.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function renderer(?string $format, OutputInterface $output, ?string $outputFile, ?string $path): ReportRendererContract
     {
         $selected = $format ?? ReportFormatEnum::Table->value;
         $reportFormat = ReportFormatEnum::tryFrom($selected);
 
         if ($reportFormat === null) {
-            throw new InvalidConfigurationException('--format must be table, json, or markdown.');
+            throw new InvalidConfigurationException('--format must be table, json, markdown, or sarif.');
         }
 
         if ($reportFormat === ReportFormatEnum::Json) {
             return new JsonReportRenderer;
+        }
+
+        if ($reportFormat === ReportFormatEnum::Sarif) {
+            return new SarifRenderer((new ProjectSnapshotService)->nodeVersionManifest($this->projectRoot($path)));
         }
 
         if ($reportFormat === ReportFormatEnum::Markdown) {
@@ -271,6 +378,11 @@ final class CheckCommand extends Command
         return new TableReportRenderer($outputFile === null && $output->isDecorated());
     }
 
+    /**
+     * Write the rendered report to stdout or `--output`, optionally with the banner.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function writeReport(string $rendered, ?string $outputFile, bool $isBannerHidden, OutputInterface $output): void
     {
         if (! $isBannerHidden && $output->getVerbosity() > OutputInterface::VERBOSITY_QUIET) {
@@ -292,7 +404,17 @@ final class CheckCommand extends Command
         }
     }
 
-    private function writeError(OutputInterface $output, string $message): void
+    public static function warnAboutTokenInFile(ExcubiaConfigurationData $configuration, OutputInterface $output): void
+    {
+        if ($configuration->appToken !== null) {
+            self::writeError($output, self::APP_TOKEN_IN_FILE_WARNING);
+        }
+    }
+
+    /**
+     * Prefer stderr when the output supports it so report stdout stays clean.
+     */
+    public static function writeError(OutputInterface $output, string $message): void
     {
         if ($output instanceof ConsoleOutputInterface) {
             $output->getErrorOutput()->writeln($message);
@@ -303,6 +425,9 @@ final class CheckCommand extends Command
         $output->writeln($message);
     }
 
+    /**
+     * Brand banner from `brand/excubia/cli/banner.txt`, or empty when missing.
+     */
     private function banner(): string
     {
         $path = dirname(__DIR__, 2).'/brand/excubia/cli/banner.txt';
@@ -320,6 +445,11 @@ final class CheckCommand extends Command
         return rtrim($banner);
     }
 
+    /**
+     * Read a string CLI option; reject non-string values from the input definition.
+     *
+     * @throws InvalidConfigurationException
+     */
     private function stringOption(InputInterface $input, string $name): ?string
     {
         $value = $input->getOption($name);
