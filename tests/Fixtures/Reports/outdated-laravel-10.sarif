@@ -169,6 +169,14 @@
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         },
                         {
+                            "id": "dependency-licenses",
+                            "name": "Dependency licenses",
+                            "shortDescription": {
+                                "text": "Dependency licenses"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
                             "id": "laravel-database",
                             "name": "Database",
                             "shortDescription": {

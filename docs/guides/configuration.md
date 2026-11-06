@@ -24,6 +24,7 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "node-eol": { "enabled": true },
     "laravel-scheduler-heartbeat": { "staleAfterMinutes": 10 },
     "laravel-failed-jobs": { "highSeverityAfterHours": 24 },
+    "dependency-licenses": { "allowed": [], "denied": [], "includeDev": false },
     "laravel-database": { "connections": [] },
     "laravel-disk-space": { "warnAtPercentUsed": 80, "failAtPercentUsed": 90 },
     "laravel-queue-backlog": { "maxOldestAgeMinutes": 15, "maxPendingJobs": 1000, "queues": [] }
@@ -67,6 +68,18 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
 | `failOn` | `critical`, `high`, `medium`, `low` or `none` | `high` | A finding at or above this severity makes `check` exit `1`. `none` never fails on findings. `--fail-on` wins. |
 | `includeDev` | boolean | `true` | Scan `packages-dev` too. `--no-dev` sets it to `false`. |
 | `strict` | boolean | `false` | Exit `3` when a check was skipped because a data source failed; `push` then sends nothing. Same as `--strict`, which wins over `false`. |
+| `release` | string | — | Release identifier of the deployed code, sent as `release` with reports, runtime and exception batches (see [release identifier](#release-identifier)). Wins over `EXCUBIA_RELEASE` and the CI variables. |
+
+### Release identifier
+
+Reports (`check`, `push` and their Artisan aliases) and runtime and exception batches carry an optional `release`, so `excubia-app` can tie a problem to the deploy that introduced it. It is resolved in this order; the first one set wins:
+
+1. the `release` key of `excubia.json`;
+2. `EXCUBIA_RELEASE`;
+3. the CI and platform variables, in this order: `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`;
+4. only for the standalone `vendor/bin/excubia`: the commit checked out in the project directory. Excubia does not run `git`: it reads `.git/HEAD` and the ref file it names (or `packed-refs`), and follows the `gitdir:` pointer of a worktree or submodule. Only the commit id is used; no branch name, author or commit message. Only the project directory itself is looked at, not its parents.
+
+The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is rejected and the release is reported as absent (`null`), without trying the next source. Runtime and exception batches use the release at the time they are sent, without the git step.
 
 ## Checks
 
@@ -87,6 +100,10 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
 | `checks.laravel-scheduler-heartbeat.staleAfterMinutes` | integer ≥ 1 | `10` | Warn when the heartbeat written by `excubia:heartbeat` is older than this many minutes. |
 | `checks.laravel-failed-jobs` | object | | Settings of `laravel-failed-jobs`. |
 | `checks.laravel-failed-jobs.highSeverityAfterHours` | integer ≥ 1 | `24` | Failed jobs warn at medium, and at high once the oldest is at least this many hours old. |
+| `checks.dependency-licenses` | object | | Settings of `dependency-licenses`, see [below](#dependency-licenses). |
+| `checks.dependency-licenses.allowed` | list of strings | `[]` | SPDX license ids or globs that never warn, for example `"GPL-2.0-or-later"`, `"LGPL-*"` or `"proprietary"`. |
+| `checks.dependency-licenses.denied` | list of strings | `[]` | SPDX license ids or globs that fail the check at high. Denied wins over allowed. |
+| `checks.dependency-licenses.includeDev` | boolean | `false` | Also inspect development dependencies (Composer `packages-dev`, npm `dev` and `devOptional`). `--no-dev` and `"includeDev": false` at the top level still leave Composer `packages-dev` out. |
 | `checks.laravel-database` | object | | Settings of `laravel-database`. |
 | `checks.laravel-database.connections` | list of strings | `[]` | Connection names from `config/database.php` probed with `select 1` on top of the default connection. A name that is not configured fails like an unreachable one. |
 | `checks.laravel-disk-space` | object | | Settings of `laravel-disk-space`. |
@@ -96,6 +113,20 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
 | `checks.laravel-queue-backlog.maxOldestAgeMinutes` | integer ≥ 1 | `15` | Warn (medium) when the oldest pending job of a queue has waited longer than this many minutes. |
 | `checks.laravel-queue-backlog.maxPendingJobs` | integer ≥ 1 | `1000` | Warn (medium) when a queue holds more than this many pending jobs. |
 | `checks.laravel-queue-backlog.queues` | list of strings | `[]` | Redis only: queues read on top of the default queue of the default queue connection. The `database` driver reads every queue in its jobs table. |
+
+### Dependency licenses
+
+`dependency-licenses` reads the `license` entries of `composer.lock` and `package-lock.json` (lockfileVersion 2 and 3). It sends nothing anywhere. Each package gets one verdict:
+
+1. **Denied** (fail, high): a license matches `denied`.
+2. **Allowed** (no row): a license matches `allowed`.
+3. **Strong copyleft** (warn, medium): GPL, AGPL, SSPL, EUPL, OSL, RPL or Sleepycat. LGPL, MPL, EPL and CDDL are weak copyleft and do not warn.
+4. **Known** (no row): one of the common SPDX ids Excubia knows (MIT, BSD, Apache, ISC, LGPL, MPL and about 35 more).
+5. **Missing or unknown** (warn, low): everything else, such as no license, `UNLICENSED`, `proprietary`, `SEE LICENSE IN …`, an expression that does not parse, or a rarer SPDX id. Add a valid id you accept to `allowed`.
+
+Expressions follow SPDX: `OR` passes when any option passes, `AND` needs every part, parentheses group, and `WITH` exceptions are read as the license they modify. Composer's `license` array is a choice, like `OR`. A `+`, `-only` or `-or-later` suffix is matched both as written and without the suffix, so `"GPL-2.0"` in `allowed` also covers `GPL-2.0-or-later` and `GPL-2.0+`. Globs use `*` for any characters and `?` for exactly one, case-insensitively, against the whole id; only letters, digits, `. + : -` and the two wildcards are allowed.
+
+The JSON report adds a top-level `licenses` inventory with the counts per license and per ecosystem (see the [README](../../README.md#formats)). To accept one package instead of a license, add an `ignore` rule with `checkId` `dependency-licenses` and the package name as `subject`.
 
 ## Ignore rules
 
@@ -197,6 +228,7 @@ Excubia reads these from the process environment (`getenv()`), never from Larave
 | --- | --- | --- |
 | `EXCUBIA_APP_URL` | `push`, `excubia:push`, `excubia:push-runtime` | Base URL of your `excubia-app`. Wins over `app.url`. |
 | `EXCUBIA_APP_TOKEN` | `push`, `excubia:push`, `excubia:push-runtime` | Project push token. Wins over `app.token`. Never printed, cached or written to a report. |
+| `EXCUBIA_RELEASE` | `check`, `push`, their Artisan aliases, `excubia:push-runtime` | Release identifier. `release` in `excubia.json` wins; it wins over `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT` ([release identifier](#release-identifier)). |
 | `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header, at least 32 characters. Without it, or when it is shorter, the route is not registered. |
 | `GITHUB_TOKEN` | `composer-stale` | Optional. Raises the GitHub API rate limit for the archived-repository lookup. Sent only to `api.github.com`; never printed, cached or written to a report. |
 | `HTTPS_PROXY` | all HTTP requests | Proxy for the data sources and the push, read by Symfony HttpClient. |

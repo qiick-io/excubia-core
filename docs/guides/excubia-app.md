@@ -77,6 +77,10 @@ Push from the deploy job so the app reflects what is live:
 
 Or run `php artisan excubia:push` on the server as the last step of the deploy script (Envoyer, Forge, Deployer hooks), which also includes the posture checks of the deployed app.
 
+Add `--deploy` to that post-deploy push (`vendor/bin/excubia push --deploy`, `php artisan excubia:push --deploy`): the report then carries `deployedAt`, and the app draws a deploy marker for its `release`. On success it prints `Deploy marker and report sent to excubia-app (batch <uuid>).` Keep the daily scheduled push without `--deploy`, so it does not draw a marker every day.
+
+The release is resolved from `release` in `excubia.json`, `EXCUBIA_RELEASE`, then `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`; the standalone CLI falls back to the commit in the project's `.git`. Runtime and exception batches carry the same `release`, so set `EXCUBIA_RELEASE` (or the platform variable) where the app runs too. Details: [release identifier](./configuration.md#release-identifier).
+
 ## Stale projects
 
 The app marks a project stale when no report arrives within a window you configure in the app. A stale project usually means the scheduler stopped or the token was revoked, so keep the daily scheduled push even if you also push on deploy.
@@ -95,7 +99,7 @@ The app marks a project stale when no report arrives within a window you configu
 ```
 
 - `batchId` is a new UUID per run, kept across HTTP retries, so a retried send is stored once.
-- `report` is the same document as `--format=json` ([`docs/report-schema.json`](../report-schema.json)): package names and versions, runtime versions and findings, with `generatedAt`, `excubiaVersion`, `project` (each runtime's version, endoflife.date cycle and support end dates, present on every report so the EOL calendar covers healthy projects) and the per-finding `fingerprint` and `details` the app uses for its fleet views. Envelope schema: [`docs/push-schema.json`](../push-schema.json).
+- `report` is the same document as `--format=json` ([`docs/report-schema.json`](../report-schema.json)): package names and versions, runtime versions and findings, with `generatedAt`, `excubiaVersion`, `release` and `deployedAt` (`--deploy` only) when set, `project` (each runtime's version, endoflife.date cycle and support end dates, present on every report so the EOL calendar covers healthy projects) and the per-finding `fingerprint` and `details` the app uses for its fleet views. Envelope schema: [`docs/push-schema.json`](../push-schema.json).
 - The token is never printed, cached or written to a report.
 
 Full list per feature: [privacy](./privacy.md).

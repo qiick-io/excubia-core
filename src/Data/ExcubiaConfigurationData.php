@@ -34,6 +34,9 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `skippedPackagePatterns` is `privacy.skipPackages`: globs (`*`, `?`) of
  * package names that are never sent to a public data source, on top of the
  * packages the lockfile already marks private.
+ * `release` is the `release` key as written; `ReleaseService` validates it
+ * and falls back to the environment when it is null.
+ * `dependencyLicenses` holds the `checks.dependency-licenses` keys.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -74,6 +77,8 @@ final readonly class ExcubiaConfigurationData
         public RuntimeConfigurationData $runtime = new RuntimeConfigurationData,
         public ExceptionConfigurationData $exceptions = new ExceptionConfigurationData,
         public array $skippedPackagePatterns = [],
+        public ?string $release = null,
+        public DependencyLicensesConfigurationData $dependencyLicenses = new DependencyLicensesConfigurationData,
         public array $databaseConnectionNames = [],
         public int $diskSpaceWarnAtPercentUsed = 80,
         public int $diskSpaceFailAtPercentUsed = 90,
@@ -157,14 +162,23 @@ final readonly class ExcubiaConfigurationData
         }
 
         foreach ($this->skippedPackagePatterns as $pattern) {
-            $expression = '#^'.strtr(preg_quote($pattern, '#'), ['\*' => '.*', '\?' => '.']).'$#i';
-
-            if (preg_match($expression, $package->name) === 1) {
+            if (self::matchesGlob($pattern, $package->name)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * True when the glob matches the whole value, case-insensitive: `*` is
+     * any characters (also `/`), `?` exactly one, everything else literal.
+     */
+    public static function matchesGlob(string $pattern, string $value): bool
+    {
+        $expression = '#^'.strtr(preg_quote($pattern, '#'), ['\*' => '.*', '\?' => '.']).'$#i';
+
+        return preg_match($expression, $value) === 1;
     }
 
     /**

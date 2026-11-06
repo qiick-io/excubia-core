@@ -1,0 +1,17 @@
+{
+    "require": {
+        "php": "^8.3",
+        "acme/permissive": "^1.0",
+        "acme/choice": "^1.0",
+        "acme/both": "^1.0",
+        "acme/copyleft": "^1.0",
+        "acme/denied": "^1.0",
+        "acme/allowed": "^1.0",
+        "acme/missing": "^1.0",
+        "acme/unknown": "^1.0",
+        "acme/in-house": "^1.0"
+    },
+    "require-dev": {
+        "acme/dev-tool": "^1.0"
+    }
+}

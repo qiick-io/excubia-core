@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Configuration;
 
+use Qiick\Excubia\Data\DependencyLicensesConfigurationData;
 use Qiick\Excubia\Data\ExceptionConfigurationData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -44,7 +45,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy', 'release'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -76,6 +77,8 @@ final class ExcubiaConfigurationLoader
             runtime: $this->runtime($document['runtime'] ?? []),
             exceptions: $this->exceptions($document['exceptions'] ?? []),
             skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
+            release: $this->release($document),
+            dependencyLicenses: $this->dependencyLicenses($document['checks'] ?? []),
             databaseConnectionNames: $checks['databaseConnectionNames'],
             diskSpaceWarnAtPercentUsed: $checks['diskSpaceWarnAtPercentUsed'],
             diskSpaceFailAtPercentUsed: $checks['diskSpaceFailAtPercentUsed'],
@@ -83,6 +86,53 @@ final class ExcubiaConfigurationLoader
             queueBacklogMaxPendingJobs: $checks['queueBacklogMaxPendingJobs'],
             queueBacklogQueueNames: $checks['queueBacklogQueueNames'],
         );
+    }
+
+    /**
+     * `checks.dependency-licenses`: `allowed` and `denied` license globs
+     * and `includeDev` (default false; `--no-dev` and the top-level
+     * `includeDev` still drop Composer dev packages from the snapshot).
+     * The glob syntax is checked by the data object.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function dependencyLicenses(mixed $checks): DependencyLicensesConfigurationData
+    {
+        $settings = is_array($checks) ? ($checks['dependency-licenses'] ?? []) : [];
+
+        if (! is_array($settings)) {
+            throw new InvalidConfigurationException('checks.dependency-licenses must be an object.');
+        }
+
+        $this->rejectUnknownKeys($settings, ['allowed', 'denied', 'includeDev'], 'checks.dependency-licenses');
+
+        return new DependencyLicensesConfigurationData(
+            allowedLicenses: $this->stringList($settings['allowed'] ?? [], 'checks.dependency-licenses.allowed'),
+            deniedLicenses: $this->stringList($settings['denied'] ?? [], 'checks.dependency-licenses.denied'),
+            isDevelopmentDependencyIncluded: array_key_exists('includeDev', $settings) ? $this->boolean($settings['includeDev'], 'checks.dependency-licenses.includeDev') : false,
+        );
+    }
+
+    /**
+     * The `release` key as written. Only its type is checked here: a string
+     * outside the release syntax is reported as a null release by
+     * `ReleaseService`, as for the environment variables.
+     *
+     * @param  array<string, mixed>  $document
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function release(array $document): ?string
+    {
+        if (! array_key_exists('release', $document)) {
+            return null;
+        }
+
+        if (! is_string($document['release'])) {
+            throw new InvalidConfigurationException('release must be a string.');
+        }
+
+        return $document['release'];
     }
 
     /**
@@ -262,7 +312,7 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog'], 'checks');
         $database = $this->checkObject($checks, 'laravel-database', ['connections']);
         $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
         $queueBacklog = $this->checkObject($checks, 'laravel-queue-backlog', ['maxOldestAgeMinutes', 'maxPendingJobs', 'queues']);

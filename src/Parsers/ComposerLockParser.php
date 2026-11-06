@@ -20,6 +20,9 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * notification URL for it. Path and artifact dists, VCS repositories, Satis,
  * Private Packagist and entries without that URL are private, so their names
  * are never sent to Packagist or GitHub.
+ *
+ * Licenses come from the entry's `license` array, which Composer copies
+ * from the package's `composer.json`; no request is needed.
  */
 final class ComposerLockParser
 {
@@ -143,6 +146,7 @@ final class ComposerLockParser
                 isDirectDependency: isset($directPackageNames[$name]),
                 isDevelopmentDependency: $isDevelopmentDependency,
                 isPrivate: $this->isPrivate($package),
+                licenses: LockedPackageData::licensesFrom($package['license'] ?? null),
             );
         }
 

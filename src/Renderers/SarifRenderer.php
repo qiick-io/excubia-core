@@ -161,7 +161,7 @@ final class SarifRenderer implements ReportRendererContract
             'locations' => [
                 [
                     'physicalLocation' => [
-                        'artifactLocation' => ['uri' => $this->manifest($finding->checkId)],
+                        'artifactLocation' => ['uri' => $this->manifest($finding)],
                         'region' => ['startLine' => 1],
                     ],
                 ],
@@ -194,12 +194,20 @@ final class SarifRenderer implements ReportRendererContract
         return $text.' '.$finding->fixHint;
     }
 
-    private function manifest(string $checkId): string
+    /**
+     * `dependency-licenses` points at the lockfile of the finding's
+     * ecosystem; every other check at its fixed manifest.
+     */
+    private function manifest(FindingData $finding): string
     {
-        if ($checkId === 'node-eol') {
+        if ($finding->checkId === 'node-eol') {
             return $this->nodeVersionManifest;
         }
 
-        return self::MANIFEST_BY_CHECK_ID[$checkId] ?? 'composer.lock';
+        if ($finding->checkId === 'dependency-licenses') {
+            return ($finding->details['ecosystem'] ?? null) === 'npm' ? 'package-lock.json' : 'composer.lock';
+        }
+
+        return self::MANIFEST_BY_CHECK_ID[$finding->checkId] ?? 'composer.lock';
     }
 }

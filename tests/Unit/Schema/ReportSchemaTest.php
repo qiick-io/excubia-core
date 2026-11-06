@@ -61,7 +61,9 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses'])
+        ->and($schema['$defs']['licenseInventory']['required'])->toBe(['packageCount', 'byLicense', 'byEcosystem'])
+        ->and($schema['$defs']['licenseInventory']['properties']['byEcosystem']['required'])->toBe(['composer', 'npm'])
         ->and($schema['$defs']['project']['required'])->toBe(['php', 'laravel', 'node'])
         ->and(array_keys($schema['$defs']['project']['properties']))->not->toContain('name')
         ->and($schema['$defs']['projectRuntime']['required'])->toBe(['version', 'cycle', 'securitySupportEndsOn', 'activeSupportEndsOn'])
@@ -120,11 +122,14 @@ it('documents the details keys per check id', function () {
             'laravel-cors-wildcard',
             'laravel-production-drivers',
             'laravel-dev-packages',
+            'dependency-licenses',
             'laravel-database',
             'laravel-cache',
             'laravel-storage',
             'laravel-disk-space',
             'laravel-queue-backlog',
             'php-platform-requirements',
-        ]);
+        ])
+        ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem']);
 });

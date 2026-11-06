@@ -16,7 +16,8 @@ use Qiick\Excubia\Enums\SkipReasonEnum;
  * skipped, and skipped outranks pass. An empty finding list is a pass.
  * `endOfLifeCycle` is set by the end-of-life checks whenever they matched a
  * cycle, also when they pass, so the report's `project` object can carry the
- * support dates without a second request.
+ * support dates without a second request. `licenseInventory` is set by
+ * `dependency-licenses` and becomes the report's top-level `licenses`.
  */
 final readonly class CheckResultData
 {
@@ -29,6 +30,7 @@ final readonly class CheckResultData
         public FindingStatusEnum $status,
         public array $findings,
         public ?EndOfLifeCycleData $endOfLifeCycle = null,
+        public ?LicenseInventoryData $licenseInventory = null,
     ) {}
 
     /**
@@ -38,9 +40,14 @@ final readonly class CheckResultData
      *
      * @param  list<FindingData>  $findings
      */
-    public static function fromFindings(string $checkId, string $name, array $findings, ?EndOfLifeCycleData $endOfLifeCycle = null): self
-    {
-        return new self($checkId, $name, self::combinedStatus($findings), $findings, $endOfLifeCycle);
+    public static function fromFindings(
+        string $checkId,
+        string $name,
+        array $findings,
+        ?EndOfLifeCycleData $endOfLifeCycle = null,
+        ?LicenseInventoryData $licenseInventory = null,
+    ): self {
+        return new self($checkId, $name, self::combinedStatus($findings), $findings, $endOfLifeCycle, $licenseInventory);
     }
 
     /**

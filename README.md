@@ -83,10 +83,11 @@ vendor/bin/excubia --version
 | `laravel-maintenance-mode` | Maintenance mode | Booted app | The app is in maintenance mode (medium) |
 | `laravel-app-key` | Application key | Booted app | `app.key` is empty, in any environment (critical) |
 | `laravel-session-security` | Session cookie security | Booted app | In `production`: `session.secure` false while `app.url` is https, or `session.http_only` false (medium, one row per key) |
-| `laravel-cors-wildcard` | CORS wildcard origin | Booted app | In `production`: `cors.allowed_origins` contains `*` with `cors.supports_credentials` (high), or `*` alone (low) |
+| `laravel-cors-wildcard` | CORS wildcard origin | Booted app | In `production`: `cors.allowed_origins` contains `*` with `cors.supports_credentials` (high). `*` alone passes |
 | `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
+| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
 | `laravel-database` | Database | Database connections | The default connection, or one listed in `checks.laravel-database.connections`, does not answer `select 1` (critical, one row per connection) |
 | `laravel-cache` | Cache | Default cache store | The default store cannot write, read and delete a probe key (high). Skipped with the `null` driver |
 | `laravel-storage` | Writable storage | Booted app | `storage` or `bootstrap/cache` is not writable (high, one row per directory) |
@@ -94,6 +95,7 @@ vendor/bin/excubia --version
 | `laravel-queue-backlog` | Queue backlog | Default queue connection | A queue's oldest pending job has waited more than 15 minutes, or it holds more than 1000 pending jobs (medium, one row per queue). `database` and `redis` drivers only, others skipped |
 | `php-platform-requirements` | Platform requirements | `composer.lock`, running PHP | The running PHP misses an extension, or its version does not satisfy a `php` constraint, that a locked package or the root `platform` requires (high, one row per requirement), like `composer check-platform-reqs` |
 
+- `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
 - The seventeen `laravel-*` checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - `php-platform-requirements` also runs in `vendor/bin/excubia`, but that is the PHP of the CLI, which can differ from the app's: its findings say so and carry `isStandaloneCli: true`. Under Artisan it checks the app's PHP. Extensions that a locked package provides (polyfills) count as present; `config.platform` overrides do not.
 - The infrastructure checks (`laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`) only read, except the cache probe key `excubia:cache-probe:<random>`, which is deleted right away. A service that does not answer is a finding, never an exception in the app. Findings name the connection, store, directory or queue, and carry percentages, counts and ages: never hostnames, DSNs, credentials or absolute paths.
@@ -115,6 +117,7 @@ In the JSON report every `skipped` finding has a `skipReason`: `data-source-fail
 The JSON report also carries, as optional fields of schema version 1:
 
 - top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with `php`, `laravel` and `node`, each `{version, cycle, securitySupportEndsOn, activeSupportEndsOn}` or `null` when not declared (no name, path or hostname). The cycle and the `Y-m-d` dates come from the endoflife.date data the EOL checks already read, also when they pass; they are `null` when that check was skipped or did not run;
+- top level, when `dependency-licenses` ran: `licenses`, the license inventory without package names: `packageCount`, `byLicense` (list of `{license, packageCount}`, `NOASSERTION` for packages that declare none) and `byEcosystem` with the same counts for `composer` and `npm`;
 - per finding: `fingerprint` (sha256 of `checkId`, `subject` and `advisoryId` joined by a NUL byte, the same value as the SARIF `partialFingerprints`, stable across runs), `advisoryId` on advisory findings, and `details` with check-specific values so you do not parse `message`:
 
 | `checkId` | `details` keys |
@@ -131,6 +134,7 @@ The JSON report also carries, as optional fields of schema version 1:
 | `laravel-cors-wildcard` | `hasCredentials` |
 | `laravel-production-drivers` | `component` (`queue`, `cache`, `session`, `mail`), `driver` |
 | `laravel-dev-packages` | `package` |
+| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`) |
 | `laravel-database` | `connection` |
 | `laravel-cache` | `store` |
 | `laravel-storage` | `directory` (`storage` or `bootstrap/cache`) |
@@ -145,7 +149,7 @@ The JSON report also carries, as optional fields of schema version 1:
 
 ```
 vendor/bin/excubia check [path] [options]
-vendor/bin/excubia push [path] [--config=FILE] [--strict]
+vendor/bin/excubia push [path] [--config=FILE] [--strict] [--deploy]
 vendor/bin/excubia cache:clear [path] [--config=FILE]
 ```
 
@@ -164,6 +168,7 @@ vendor/bin/excubia cache:clear [path] [--config=FILE]
 | `--config=FILE` | all | Config file (default: `excubia.json` in the project, if present). A missing explicit file is an error |
 | `--no-banner` | `check` | Hide the ASCII banner |
 | `--strict` | `check`, `push` | Exit `3` when a data-source failure skipped a check; `push` then sends nothing. Same as `"strict": true` |
+| `--deploy` | `push` | Mark the report as a deploy: it carries `deployedAt` next to its `release`, so `excubia-app` draws a deploy marker. Run it as the post-deploy step ([CI guide](./docs/guides/ci.md#deploy-markers)) |
 | `-q`, `-v`, `-vv` | all | Quiet, verbose, debug. From `-v` every HTTP request is listed on stderr |
 | `--version` | | Print the Excubia version |
 
@@ -172,7 +177,7 @@ The Artisan commands take the same options, without `path` (they always scan the
 | Artisan command | Options | What it does |
 | --- | --- | --- |
 | `php artisan excubia:check` | as `check` | Runs every check, posture checks included |
-| `php artisan excubia:push` | `--config`, `--strict` | Runs the checks and sends the report to your `excubia-app` ([guide](./docs/guides/excubia-app.md)) |
+| `php artisan excubia:push` | `--config`, `--strict`, `--deploy` | Runs the checks and sends the report to your `excubia-app` ([guide](./docs/guides/excubia-app.md)) |
 | `php artisan excubia:push-runtime` | `--config` | Sends the buffered runtime aggregates and exceptions ([guide](./docs/guides/runtime-monitoring.md)). Scheduled every minute when an opt-in is on |
 | `php artisan excubia:heartbeat` | | Stores the scheduler heartbeat. Scheduled every minute by the provider |
 
@@ -212,7 +217,7 @@ Excubia works without configuration. To change defaults, add `excubia.json` at t
 }
 ```
 
-Unknown keys are a configuration error (exit `2`). Every key, type and default, and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`), are in the [configuration reference](./docs/guides/configuration.md). Put the push token in `EXCUBIA_APP_TOKEN`, not in `excubia.json`, which is normally committed; Excubia warns when `app.token` is set in the file. JSON Schema: [`excubia.schema.json`](./excubia.schema.json).
+Unknown keys are a configuration error (exit `2`). Every key, type and default, and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_RELEASE`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`), are in the [configuration reference](./docs/guides/configuration.md). Put the push token in `EXCUBIA_APP_TOKEN`, not in `excubia.json`, which is normally committed; Excubia warns when `app.token` is set in the file. JSON Schema: [`excubia.schema.json`](./excubia.schema.json).
 
 ## Guides
 

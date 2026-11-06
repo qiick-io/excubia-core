@@ -18,6 +18,8 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * findings that remain. `generatedAt`, `excubiaVersion` and `project` are
  * set by the runner; a hand-built report may leave them null, and the JSON
  * renderer then omits them (optional fields, schema version 1).
+ * `release` is set by the commands (`ReleaseService`) and `deployedAt` by
+ * `excubia push --deploy`; both are optional and omitted when null.
  */
 final readonly class HealthReportData
 {
@@ -35,8 +37,25 @@ final readonly class HealthReportData
         public ?DateTimeImmutable $generatedAt = null,
         public ?string $excubiaVersion = null,
         public ?ProjectVersionsData $project = null,
+        public ?string $release = null,
+        public ?DateTimeImmutable $deployedAt = null,
     ) {
         $this->schemaVersion = self::SCHEMA_VERSION;
+    }
+
+    /**
+     * The license inventory of `dependency-licenses`, or null when that
+     * check did not run. Ignore rules drop findings, never inventory rows.
+     */
+    public function licenses(): ?LicenseInventoryData
+    {
+        foreach ($this->checkResults as $checkResult) {
+            if ($checkResult->licenseInventory !== null) {
+                return $checkResult->licenseInventory;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -114,10 +133,25 @@ final readonly class HealthReportData
                 $checkResult->name,
                 $remainingFindings,
                 $checkResult->endOfLifeCycle,
+                $checkResult->licenseInventory,
             );
         }
 
-        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project);
+        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $this->deployedAt);
+    }
+
+    public function withRelease(?string $release): self
+    {
+        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $release, $this->deployedAt);
+    }
+
+    /**
+     * The report as a deploy marker: `excubia push --deploy` sends it with
+     * the time of the deploy so the app can draw the marker.
+     */
+    public function withDeployedAt(DateTimeImmutable $deployedAt): self
+    {
+        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $deployedAt);
     }
 
     /**

@@ -2,7 +2,14 @@
 
 declare(strict_types=1);
 
+use Qiick\Excubia\Services\ReleaseService;
 use Qiick\Excubia\Tests\Support\LaravelTestCase;
+
+// CI sets GITHUB_SHA (and a developer may set EXCUBIA_RELEASE): clear the
+// release sources so reports stay the same everywhere; release tests set them.
+foreach (['EXCUBIA_RELEASE', ...ReleaseService::PLATFORM_VARIABLES] as $releaseVariable) {
+    putenv($releaseVariable);
+}
 
 /**
  * @param  array<string, string>  $files

@@ -3,6 +3,7 @@
         {
             "name": "laravel/framework",
             "version": "v10.48.22",
+            "license": ["MIT"],
             "notification-url": "https://packagist.org/downloads/"
         }
     ],

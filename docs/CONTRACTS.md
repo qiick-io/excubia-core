@@ -15,7 +15,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 | Artisan commands and options | `src/Laravel/ExcubiaCheckCommand.php`, `ExcubiaPushCommand.php`, `ExcubiaPushRuntimeCommand.php`, `ExcubiaHeartbeatCommand.php` | — | stable | `PublicContractsTest` (`artisan`), `tests/Laravel/ArtisanCommandsTest.php` |
 | Scheduled entries and the heartbeat cache key | `src/Laravel/ExcubiaServiceProvider.php`, `src/Laravel/ExcubiaHeartbeatCommand.php` | — | stable | `tests/Laravel/ScheduleAndRouteContractTest.php` (`laravel`), `PublicContractsTest` (`artisan.heartbeatCacheKey`) |
 | `excubia.json` keys | [`excubia.schema.json`](../excubia.schema.json), `src/Configuration/ExcubiaConfigurationLoader.php` | `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Feature/ExcubiaConfigurationLoaderTest.php`, `DocumentationCoverageTest` |
-| Environment variables | `src/Console/PushCommand.php`, `src/Laravel/HealthEndpointService.php`, `src/Laravel/ExcubiaPushRuntimeCommand.php`, `src/Services/GitHubRepositoryApiService.php` | — | stable | `PublicContractsTest` (`environmentVariables`), `DocumentationCoverageTest` |
+| Environment variables | `src/Console/PushCommand.php`, `src/Laravel/HealthEndpointService.php`, `src/Laravel/ExcubiaPushRuntimeCommand.php`, `src/Services/GitHubRepositoryApiService.php`, `src/Services/ReleaseService.php` | — | stable | `PublicContractsTest` (`environmentVariables`), `DocumentationCoverageTest` |
 | Push envelope and endpoints | [`docs/push-schema.json`](./push-schema.json), `src/Services/ReportPushService.php` | `protocolVersion` (`1`), schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash, `push`), `ReportSchemaTest`, `PushCommandTest` |
 | Runtime batch payload | [`docs/runtime-schema.json`](./runtime-schema.json), `src/Laravel/RuntimeCollectorService.php` | envelope `protocolVersion`, schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Laravel/RuntimeMonitoringTest.php` |
 | Exception batch payload | [`docs/exception-schema.json`](./exception-schema.json), `src/Laravel/ExceptionPayloadService.php` | envelope `protocolVersion`, schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Laravel/ExceptionPayloadTest.php` |
@@ -28,7 +28,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 
 ### Check ids
 
-In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements` (the last twelve added in 1.0.0-beta.2, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). `upgrade-plan` is a report section, not a check id.
+In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements` (the last thirteen added in 1.0.0-beta.2, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
 
 ### Exit codes
 
@@ -44,10 +44,10 @@ Precedence when several apply: `2` > `1` > `3`. The Artisan aliases `excubia:che
 ### Commands and options
 
 - `bin/excubia check [path]`: `--format` (`table`, `json`, `markdown`, `sarif`), `--output`, `--fail-on` (`critical`, `high`, `medium`, `low`, `none`), `--only`, `--skip`, `--no-dev`, `--offline`, `--no-cache`, `--config`, `--no-banner`, `--strict`.
-- `bin/excubia push [path]`: `--config`, `--strict`.
+- `bin/excubia push [path]`: `--config`, `--strict`, `--deploy` (#129).
 - `bin/excubia cache:clear [path]`: `--config`. It is the only cache command, and it exists only in `bin/excubia`, not in Artisan.
 - `php artisan excubia:check`: the `check` options, no `path` (the app base path).
-- `php artisan excubia:push`: `--config`, `--strict`.
+- `php artisan excubia:push`: `--config`, `--strict`, `--deploy` (#129).
 - `php artisan excubia:push-runtime`: `--config`.
 - `php artisan excubia:heartbeat`: no options.
 
@@ -59,8 +59,8 @@ The service provider schedules `excubia:heartbeat` every minute (`* * * * *`), a
 
 ### Configuration and environment
 
-- `excubia.json` keys: every key in `excubia.schema.json` (`failOn`, `includeDev`, `strict`, `checks.*`, `ignore[]`, `cache`, `app`, `privacy`, `healthEndpoint`, `runtime`, `exceptions`), with the types and defaults in the [configuration reference](./guides/configuration.md). Unknown keys stay a configuration error.
-- Environment variables: `EXCUBIA_APP_URL` and `EXCUBIA_APP_TOKEN` (override `app.url` / `app.token`), `EXCUBIA_HEALTH_SECRET` (health endpoint secret, at least 32 characters), `GITHUB_TOKEN` (optional, GitHub API rate limit).
+- `excubia.json` keys: every key in `excubia.schema.json` (`failOn`, `includeDev`, `strict`, `checks.*`, `ignore[]`, `cache`, `release`, `app`, `privacy`, `healthEndpoint`, `runtime`, `exceptions`), with the types and defaults in the [configuration reference](./guides/configuration.md). Unknown keys stay a configuration error.
+- Environment variables: `EXCUBIA_APP_URL` and `EXCUBIA_APP_TOKEN` (override `app.url` / `app.token`), `EXCUBIA_RELEASE` (release identifier, #129), `EXCUBIA_HEALTH_SECRET` (health endpoint secret, at least 32 characters), `GITHUB_TOKEN` (optional, GitHub API rate limit). The release is also read, in this order, from `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT` and `LARAVEL_CLOUD_COMMIT` (`ReleaseService::PLATFORM_VARIABLES`); this list and order are part of the contract.
 
 ### Push protocol
 
@@ -72,13 +72,15 @@ Envelope `protocolVersion: 1` with `batchId` (UUID v4) and `sentAt`, `Authorizat
 | `POST {url}/api/runtime` | `runtime` | `runtime` (`docs/runtime-schema.json`, `bucketSeconds` `60`) |
 | `POST {url}/api/exceptions` | `exceptions` | `exceptions` (`docs/exception-schema.json`) |
 
+Optional, additive fields from #129 (versions stay `1`): report `release` and `deployedAt` (`push --deploy`), `runtime.release` and `exceptions.release` (one value per batch, not part of the exception fingerprint).
+
 ### Health endpoint
 
 `GET /excubia/health` by default (`healthEndpoint.path`), route name `excubia.health`, secret in the `oh-dear-health-check-secret` header compared with `EXCUBIA_HEALTH_SECRET`; a wrong or missing secret is `404`. The response is `{finishedAt, checkResults[]}` with `name`, `label`, `status`, `notificationMessage`, `shortSummary`, `meta` per entry; statuses `ok`, `warning`, `failed`, `skipped`, `crashed`; `excubia-run` for the crashed and not-run-yet entries. The wording of `notificationMessage` and `shortSummary` is not frozen. Full description: [`docs/health-endpoint.md`](./health-endpoint.md).
 
 ### SARIF and fingerprints
 
-One SARIF rule per check id (the rule id is the check id), one result per `fail` or `warn` finding, `partialFingerprints` key `excubiaFinding/v1`. The value, and the report's per-finding `fingerprint`, is `sha256(checkId + "\0" + subject + "\0" + (advisoryId ?? ""))` as lowercase hex. SARIF levels follow the severity (`critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`); locations are project-relative manifest paths.
+One SARIF rule per check id (the rule id is the check id), one result per `fail` or `warn` finding, `partialFingerprints` key `excubiaFinding/v1`. The value, and the report's per-finding `fingerprint`, is `sha256(checkId + "\0" + subject + "\0" + (advisoryId ?? ""))` as lowercase hex. SARIF levels follow the severity (`critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`); locations are project-relative manifest paths (`dependency-licenses`: `composer.lock` or `package-lock.json`, by the finding's ecosystem).
 
 ### GitHub Action
 

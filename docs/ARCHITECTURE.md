@@ -31,6 +31,7 @@ qiick-io/excubia-core
 │   │   ├── LaravelProductionDriversCheck.php (laravel-production-drivers)
 │   │   ├── LaravelLogLevelCheck.php        (laravel-log-level)
 │   │   ├── LaravelDevPackagesCheck.php     (laravel-dev-packages)
+│   │   ├── DependencyLicensesCheck.php     (dependency-licenses)          # lockfile licenses, no request
 │   │   ├── LaravelDatabaseCheck.php        (laravel-database)             # infrastructure checks: probes
 │   │   ├── LaravelCacheCheck.php           (laravel-cache)                # run by LaravelPostureService
 │   │   ├── LaravelStorageCheck.php         (laravel-storage)

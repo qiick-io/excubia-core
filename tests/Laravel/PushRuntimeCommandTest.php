@@ -196,6 +196,42 @@ it('exits 2 on an invalid excubia.json', function () {
         ->assertExitCode(2);
 });
 
+it('adds the release to the runtime batch, from excubia.json or the environment, and omits an invalid one', function (array $document, ?string $environment, ?string $expected) {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true], ...$document]);
+    recordOneRequest($this);
+    putenv($environment === null ? 'EXCUBIA_RELEASE' : 'EXCUBIA_RELEASE='.$environment);
+
+    try {
+        $this->artisan('excubia:push-runtime')->assertExitCode(0);
+    } finally {
+        putenv('EXCUBIA_RELEASE');
+    }
+
+    $runtime = $client->postedPayloads[0]['runtime'];
+
+    expect($runtime['release'] ?? null)->toBe($expected)
+        ->and(array_keys($runtime))->toBe($expected === null ? ['bucketSeconds', 'aggregates'] : ['bucketSeconds', 'release', 'aggregates'])
+        ->and(runtimeSchemaErrors($runtime))->toBe([]);
+})->with([
+    'environment' => [[], 'v2.3.4', 'v2.3.4'],
+    'config wins' => [['release' => 'v9.0.0'], 'v2.3.4', 'v9.0.0'],
+    'invalid' => [[], 'not valid!', null],
+    'none' => [[], null, null],
+]);
+
+it('does not read .git for runtime batches', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client);
+    mkdir($this->app->basePath('.git'));
+    file_put_contents($this->app->basePath('.git/HEAD'), "0123456789abcdef0123456789abcdef01234567\n");
+    recordOneRequest($this);
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    expect($client->postedPayloads[0]['runtime'])->not->toHaveKey('release');
+});
+
 it('registers excubia:push-runtime', function () {
     expect(array_keys(Artisan::all()))->toContain('excubia:push-runtime');
 });

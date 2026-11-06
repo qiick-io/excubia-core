@@ -1,0 +1,71 @@
+{
+    "packages": [
+        {
+            "name": "acme/permissive",
+            "version": "1.0.0",
+            "license": ["MIT"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/choice",
+            "version": "1.1.0",
+            "license": ["MIT", "GPL-3.0-only"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/both",
+            "version": "1.2.0",
+            "license": ["(MIT and GPL-3.0-only)"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/copyleft",
+            "version": "2.0.0",
+            "license": ["AGPL-3.0-or-later"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/denied",
+            "version": "3.0.0",
+            "license": ["SSPL-1.0"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/allowed",
+            "version": "4.0.0",
+            "license": ["GPL-2.0+"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/missing",
+            "version": "5.0.0",
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/unknown",
+            "version": "6.0.0",
+            "license": ["Acme-Custom-1.0", "/home/someone/LICENSE"],
+            "notification-url": "https://packagist.org/downloads/"
+        },
+        {
+            "name": "acme/in-house",
+            "version": "7.0.0",
+            "license": ["proprietary"],
+            "dist": {
+                "type": "path",
+                "url": "../packages/in-house"
+            }
+        }
+    ],
+    "packages-dev": [
+        {
+            "name": "acme/dev-tool",
+            "version": "8.0.0",
+            "license": ["GPL-3.0-only"],
+            "notification-url": "https://packagist.org/downloads/"
+        }
+    ],
+    "platform": {
+        "php": "8.3.0"
+    }
+}

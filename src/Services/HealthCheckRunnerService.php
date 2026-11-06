@@ -9,6 +9,7 @@ use DateTimeImmutable;
 use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
+use Qiick\Excubia\Checks\DependencyLicensesCheck;
 use Qiick\Excubia\Checks\LaravelAppKeyCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
 use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
@@ -197,7 +198,7 @@ final class HealthCheckRunnerService
             );
         }
 
-        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings, $checkResult->endOfLifeCycle);
+        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings, $checkResult->endOfLifeCycle, $checkResult->licenseInventory);
     }
 
     /**
@@ -230,6 +231,7 @@ final class HealthCheckRunnerService
             new LaravelProductionDriversCheck,
             new LaravelLogLevelCheck,
             new LaravelDevPackagesCheck,
+            new DependencyLicensesCheck(new SpdxExpressionService),
             new LaravelDatabaseCheck,
             new LaravelCacheCheck,
             new LaravelStorageCheck,

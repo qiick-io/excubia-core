@@ -101,7 +101,7 @@ function firstFindingOf(array $report, string $checkId): array
 it('adds generatedAt, excubiaVersion and the project versions at the top level', function () {
     $report = detailedJsonReport();
 
-    expect(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
+    expect(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan', 'licenses'])
         ->and($report['schemaVersion'])->toBe(1)
         ->and($report['generatedAt'])->toBe('2026-10-31T07:30:15Z')
         ->and($report['excubiaVersion'])->toBe(HealthCheckRunnerService::excubiaVersion())

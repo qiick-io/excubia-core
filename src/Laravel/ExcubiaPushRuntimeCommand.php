@@ -14,6 +14,7 @@ use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
+use Qiick\Excubia\Services\ReleaseService;
 use Qiick\Excubia\Services\ReportPushService;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Qiick\Excubia\Services\SymfonyHttpClientService;
@@ -38,6 +39,14 @@ use Qiick\Excubia\Services\SymfonyHttpClientService;
  * 2 configuration error, 3 the app rejected the token, answered an error or
  * could not be reached. `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` win over the
  * `app` keys of `excubia.json`, as for `excubia:push`.
+ *
+ * Each batch carries the release resolved when it is sent (`release` key,
+ * `EXCUBIA_RELEASE` or a platform variable; no git fallback here).
+ *
+ * ponytail: the release is the one at send time, not at record time, so a
+ * batch recorded in the minute before a deploy, or kept after a failure, is
+ * labelled with the new release; record it per buffered line if the app
+ * ever needs that precision.
  *
  * ponytail: a batch the app keeps rejecting with a 4xx stays until the cap
  * drops it; drop it on a permanent 4xx if that ever blocks real data.
@@ -74,6 +83,7 @@ final class ExcubiaPushRuntimeCommand extends Command
         $appUrl = self::environmentValue('EXCUBIA_APP_URL') ?? $configuration->appUrl;
         $appToken = self::environmentValue('EXCUBIA_APP_TOKEN') ?? $configuration->appToken;
         $sentAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $release = (new ReleaseService)->resolve($configuration->release);
         $hasFailed = false;
 
         try {
@@ -81,7 +91,7 @@ final class ExcubiaPushRuntimeCommand extends Command
                 $hasFailed = ! $this->sendBuffer(
                     new RuntimeBufferService($this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'), $configuration->runtime->bufferMaxBytes),
                     static fn (RuntimeBufferService $buffer, string $path): array => $buffer->read($path),
-                    static fn (array $entries, string $batchId) => $pushService->pushRuntime($entries, $batchId, $appUrl, $appToken, $sentAt),
+                    static fn (array $entries, string $batchId) => $pushService->pushRuntime($entries, $batchId, $appUrl, $appToken, $sentAt, $release),
                     ['runtime batch', 'runtime batches', 'runtime data'],
                 );
             }
@@ -90,7 +100,7 @@ final class ExcubiaPushRuntimeCommand extends Command
                 $hasFailed = ! $this->sendBuffer(
                     new RuntimeBufferService($this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'exceptions'), $configuration->exceptions->bufferMaxBytes),
                     static fn (RuntimeBufferService $buffer, string $path): array => ExceptionPayloadService::merge($buffer->readEntries($path)),
-                    static fn (array $entries, string $batchId) => $pushService->pushExceptions($entries, $batchId, $appUrl, $appToken, $sentAt),
+                    static fn (array $entries, string $batchId) => $pushService->pushExceptions($entries, $batchId, $appUrl, $appToken, $sentAt, $release),
                     ['exception batch', 'exception batches', 'exception data'],
                 ) || $hasFailed;
             }

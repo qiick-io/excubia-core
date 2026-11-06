@@ -3,6 +3,7 @@
         {
             "name": "laravel/framework",
             "version": "v13.39.0",
+            "license": ["MIT"],
             "notification-url": "https://packagist.org/downloads/"
         }
     ],
@@ -10,6 +11,7 @@
         {
             "name": "phpunit/phpunit",
             "version": "11.5.0",
+            "license": ["BSD-3-Clause"],
             "notification-url": "https://packagist.org/downloads/"
         }
     ],
