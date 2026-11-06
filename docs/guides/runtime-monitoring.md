@@ -134,13 +134,13 @@ Notes on the newer types:
 
 ### Server metrics
 
-With `runtime.server.enabled`, every `excubia:push-runtime` run (each minute, on every server that runs the scheduler) first takes one sample of the machine and sends it with the batch, as `server` aggregates (1.0.0-beta.3, #149):
+With `runtime.server.enabled`, every `excubia:push-runtime` run (each minute, on every server that runs the scheduler) first takes one sample of the machine and sends it with the batch, as `server` aggregates (1.0.0-beta.2, #149):
 
 | Field | Linux | macOS and others |
 | --- | --- | --- |
 | `loadAverage1`, `loadAverage5`, `loadAverage15` | `/proc/loadavg` | `sys_getloadavg()` |
 | `cpuCores` | `processor` entries of `/proc/cpuinfo` | `null` |
-| `cpuLimit` (cores, 1.0.0-beta.3, #173) | the cgroup CPU quota: `cpu.max`, or `cpu.cfs_quota_us / cpu.cfs_period_us` in cgroup v1; `null` without a quota | `null` |
+| `cpuLimit` (cores, 1.0.0-beta.2, #173) | the cgroup CPU quota: `cpu.max`, or `cpu.cfs_quota_us / cpu.cfs_period_us` in cgroup v1; `null` without a quota | `null` |
 | `memoryUsedMb`, `memoryTotalMb` (MiB) | `/proc/meminfo`: `MemTotal - MemAvailable`; in a container with a memory limit, the cgroup's usage minus inactive page cache, out of the limit | `null` |
 | `diskUsedGb`, `diskTotalGb` (GiB) | the disk that holds `storage/` | the same |
 | `isContainer` (#173) | `true` when a cgroup memory limit or CPU quota applies | `false` |
