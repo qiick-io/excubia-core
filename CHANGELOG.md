@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The `mail` runtime type counts failed sends without exception capture (#175): a `MessageSending` with no `MessageSent` by the end of its scope (the next send, the end of a queued job or attempt such as a failed `SendQueuedMailable`, the end of an Artisan command, or terminate) is one failed mail. This is now the only source of mail failures: the exception capture hook no longer counts them, so a send is counted once with capture on, and a reported transport exception without a `MessageSending` (a Symfony transport used directly) is no longer counted as an `unknown` mail. Limits are in the runtime monitoring guide. No field, config key or schema change; `x-excubia-version` and `protocolVersion` stay `1`.
+
 ## [1.0.0-beta.2] - 2026-11-06
 
 Second beta of 1.0 (D20): features competitors already have, all additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). New check ids are appended to the run order; every new runtime type is off by default; schema and protocol versions stay `1`.

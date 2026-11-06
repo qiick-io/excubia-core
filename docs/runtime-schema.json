@@ -262,7 +262,7 @@
         },
         "mail": {
             "type": "object",
-            "description": "Mail per mailable and mailer (#132). count is sent + failed mails, errorCount the failed ones. Sent mails come from MessageSent. Failures are counted only when exception capture (exceptions.enabled) sees a reported Symfony Mailer transport exception; Laravel has no mail failure event, so without exception capture errorCount is always 0. Never recipients, subjects or bodies.",
+            "description": "Mail per mailable and mailer (#132). count is sent + failed mails, errorCount the failed ones. Sent mails come from MessageSent. Failures (#175) are the MessageSending events with no MessageSent by the end of their scope (the next send, the end of the job or attempt, the end of the Artisan command, or terminate), with or without exception capture, each counted once; Laravel has no mail failure event. Never recipients, subjects or bodies.",
             "additionalProperties": false,
             "required": ["type", "bucket", "sampleRate", "mailable", "mailer", "count", "errorCount"],
             "properties": {
