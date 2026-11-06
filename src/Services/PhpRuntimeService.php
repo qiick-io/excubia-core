@@ -9,7 +9,8 @@ use Qiick\Excubia\Contracts\PhpRuntimeContract;
 /**
  * OPcache status through `opcache_get_status(false)` (no script list) and
  * the production directives through `ini_get()`, for the SAPI that runs
- * it: the CLI under Artisan, the web server under the health endpoint.
+ * it. Only the health endpoint calls it, so it reads the web SAPI; the CLI
+ * that runs Artisan has its own ini settings and is never checked.
  *
  * OPcache counts as enabled only when `opcache_get_status()` says so, so
  * on the CLI it follows `opcache.enable_cli`. With `opcache.restrict_api`

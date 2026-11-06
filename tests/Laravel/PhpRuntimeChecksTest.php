@@ -47,18 +47,23 @@ final class FakePhpRuntime implements PhpRuntimeContract
 }
 
 /**
- * Runs one check on the posture of the booted app, with `$cli` as the PHP
- * of this (CLI) process.
+ * Runs one check on the posture of the booted app. `$web` is the web-SAPI
+ * snapshot to store first, as the health endpoint would; null stores none.
  *
- * @param  array<string, bool|float|int|null>  $cli
+ * @param  array<string, bool|float|int|null>|null  $web
  */
-function phpRuntimeResult(HealthCheckContract $check, array $cli = [], string $environment = 'production', bool $isBooted = true): CheckResultData
+function phpRuntimeResult(HealthCheckContract $check, ?array $web = [], string $environment = 'production', bool $isBooted = true, int $minutesAgo = 5): CheckResultData
 {
     app()['env'] = $environment;
+
+    if ($web !== null) {
+        recordWebRuntime($web, $minutesAgo);
+    }
+
     $snapshot = new ProjectSnapshotData(null, null, [], [], null);
 
     if ($isBooted) {
-        $snapshot = $snapshot->withLaravelPosture((new LaravelPostureService(phpRuntime: new FakePhpRuntime($cli)))->collect(app()));
+        $snapshot = $snapshot->withLaravelPosture((new LaravelPostureService)->collect(app()));
     }
 
     return $check->run($snapshot, ExcubiaConfigurationData::defaults());
@@ -92,17 +97,27 @@ describe('php-opcache', function () {
             ->and($result->findings[0]->message)->toContain('requires Artisan');
     });
 
-    it('warns at medium when OPcache is disabled in production and says the CLI was checked', function () {
-        $result = phpRuntimeResult(new PhpOpcacheCheck, ['isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null]);
+    it('is skipped without a web snapshot instead of checking the CLI', function () {
+        $result = phpRuntimeResult(new PhpOpcacheCheck, null);
+        $finding = $result->findings[0];
+
+        expect($result->status->value)->toBe('skipped')
+            ->and($result->findings)->toHaveCount(1)
+            ->and($finding->skipReason?->value)->toBe('not-applicable')
+            ->and($finding->message)->toBe(LaravelPostureData::PHP_WEB_RUNTIME_UNKNOWN_MESSAGE)
+            ->and($finding->details)->toBe([]);
+    });
+
+    it('warns at medium when OPcache is disabled on the web in production', function () {
+        $result = phpRuntimeResult(new PhpOpcacheCheck, ['isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null], minutesAgo: 7);
         $finding = $result->findings[0];
 
         expect($result->status->value)->toBe('warn')
             ->and($result->findings)->toHaveCount(1)
             ->and($finding->severity->value)->toBe('medium')
             ->and($finding->subject)->toBe('opcache')
-            ->and($finding->message)->toContain('OPcache is disabled in production', 'CLI SAPI')
-            ->and($finding->fixHint)->toContain('opcache.enable_cli')
-            ->and($finding->details)->toBe(['sapi' => 'cli', 'ageMinutes' => null, 'isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null, 'isValidateTimestampsEnabled' => false]);
+            ->and($finding->message)->toContain('OPcache is disabled in production', 'web SAPI', '7 minutes old')
+            ->and($finding->details)->toBe(['sapi' => 'web', 'ageMinutes' => 7, 'isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null, 'isValidateTimestampsEnabled' => false]);
     });
 
     it('passes with OPcache disabled outside production', function () {
@@ -119,13 +134,8 @@ describe('php-opcache', function () {
             ->and($staging->status->value)->toBe('pass');
     });
 
-    it('ignores the hit rate and memory of a CLI process, whose cache starts empty', function () {
-        expect(phpRuntimeResult(new PhpOpcacheCheck, ['hitRate' => 20.0, 'memoryUsedPercent' => 95.0])->status->value)->toBe('pass');
-    });
-
-    it('prefers the web snapshot and warns at low for a poor hit rate or full memory', function () {
-        recordWebRuntime(['hitRate' => 85.25, 'memoryUsedPercent' => 92.5], 12);
-        $result = phpRuntimeResult(new PhpOpcacheCheck, ['isOpcacheEnabled' => false]);
+    it('warns at low for a poor hit rate or full memory', function () {
+        $result = phpRuntimeResult(new PhpOpcacheCheck, ['hitRate' => 85.25, 'memoryUsedPercent' => 92.5], minutesAgo: 12);
 
         expect($result->status->value)->toBe('warn')
             ->and(array_map(fn ($finding) => $finding->subject, $result->findings))->toBe(['opcache-hit-rate', 'opcache-memory'])
@@ -135,10 +145,8 @@ describe('php-opcache', function () {
             ->and($result->findings[0]->details)->toMatchArray(['sapi' => 'web', 'ageMinutes' => 12, 'hitRate' => 85.25, 'memoryUsedPercent' => 92.5, 'cachedScripts' => 1500]);
     });
 
-    it('passes on a healthy web snapshot even when the CLI has no OPcache', function () {
-        recordWebRuntime([]);
-
-        expect(phpRuntimeResult(new PhpOpcacheCheck, ['isOpcacheEnabled' => false])->status->value)->toBe('pass');
+    it('passes on a healthy web snapshot', function () {
+        expect(phpRuntimeResult(new PhpOpcacheCheck)->status->value)->toBe('pass');
     });
 
     it('is skipped on a hand-built posture without the PHP runtime', function () {
@@ -172,6 +180,15 @@ describe('php-production-ini', function () {
             ->and($local->findings[0]->message)->toContain('production environment only');
     });
 
+    it('is skipped in production without a web snapshot instead of checking the CLI', function () {
+        $result = phpRuntimeResult(new PhpProductionIniCheck, null);
+
+        expect($result->status->value)->toBe('skipped')
+            ->and($result->findings)->toHaveCount(1)
+            ->and($result->findings[0]->skipReason?->value)->toBe('not-applicable')
+            ->and($result->findings[0]->message)->toBe(LaravelPostureData::PHP_WEB_RUNTIME_UNKNOWN_MESSAGE);
+    });
+
     it('fails at high for display_errors and warns at low for expose_php and log_errors', function () {
         $result = phpRuntimeResult(new PhpProductionIniCheck, ['isDisplayErrorsEnabled' => true, 'isExposePhpEnabled' => true, 'isLogErrorsEnabled' => false]);
 
@@ -181,22 +198,16 @@ describe('php-production-ini', function () {
                 ['expose_php', 'low', 'warn'],
                 ['log_errors', 'low', 'warn'],
             ])
-            ->and($result->findings[0]->message)->toContain('CLI SAPI')
-            ->and($result->findings[0]->details)->toBe(['directive' => 'display_errors', 'isEnabled' => true, 'sapi' => 'cli', 'ageMinutes' => null])
-            ->and($result->findings[2]->details)->toBe(['directive' => 'log_errors', 'isEnabled' => false, 'sapi' => 'cli', 'ageMinutes' => null]);
+            ->and($result->findings[0]->message)->toContain('web SAPI')
+            ->and($result->findings[0]->details)->toBe(['directive' => 'display_errors', 'isEnabled' => true, 'sapi' => 'web', 'ageMinutes' => 5])
+            ->and($result->findings[2]->details)->toBe(['directive' => 'log_errors', 'isEnabled' => false, 'sapi' => 'web', 'ageMinutes' => 5]);
     });
 
-    it('passes a production-ready php.ini and prefers the web snapshot', function () {
+    it('passes a production-ready php.ini', function () {
         expect(phpRuntimeResult(new PhpProductionIniCheck)->status->value)->toBe('pass');
-
-        recordWebRuntime(['isDisplayErrorsEnabled' => true]);
-        $result = phpRuntimeResult(new PhpProductionIniCheck);
-
-        expect($result->findings)->toHaveCount(1)
-            ->and($result->findings[0]->details)->toMatchArray(['sapi' => 'web', 'ageMinutes' => 5]);
     });
 
-    it('keeps ini file paths and values out of the report', function () {
+    it('keeps ini file paths, values and the CLI readings out of the report', function () {
         app()->setBasePath(temporaryProject(['composer.json' => '{}', 'composer.lock' => '{"packages": [], "packages-dev": []}']));
         app()['env'] = 'production';
         recordWebRuntime(['isDisplayErrorsEnabled' => true, 'isOpcacheEnabled' => false]);
@@ -209,7 +220,8 @@ describe('php-production-ini', function () {
         $iniFile = php_ini_loaded_file();
 
         expect($web)->toContain('"sapi": "web"', '"directive": "display_errors"')
-            ->and($cli)->toContain('"checkId": "php-opcache"')
+            ->and($cli)->toContain('PHP web settings unknown')
+            ->and($cli)->not->toContain('"sapi"', '"directive"')
             ->and($web.$cli)->not->toContain(dirname(PHP_BINARY));
 
         if (is_string($iniFile)) {

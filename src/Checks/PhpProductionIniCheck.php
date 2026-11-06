@@ -18,9 +18,9 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * production: `display_errors` on fails at high (errors reach visitors),
  * `expose_php` on warns at low (the PHP version in every response header),
  * `log_errors` off warns at low (errors are lost). One row per directive,
- * subject the directive name. Like `php-opcache` it prefers the web-SAPI
- * snapshot of the health endpoint over the CLI values and says which one it
- * checked. Booleans only: never an ini file path or value.
+ * subject the directive name. Like `php-opcache` it reads only the web-SAPI
+ * snapshot of the health endpoint and is skipped without one, because the
+ * CLI's ini settings differ. Booleans only: never an ini file path or value.
  */
 final class PhpProductionIniCheck implements HealthCheckContract
 {
@@ -49,7 +49,7 @@ final class PhpProductionIniCheck implements HealthCheckContract
         $runtime = $posture->phpRuntime;
 
         if ($runtime === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'php.ini', 'The PHP runtime could not be read.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'php.ini', LaravelPostureData::PHP_WEB_RUNTIME_UNKNOWN_MESSAGE);
         }
 
         $source = $posture->phpRuntimeSource();

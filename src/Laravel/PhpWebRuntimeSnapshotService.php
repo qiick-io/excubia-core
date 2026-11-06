@@ -18,11 +18,12 @@ use Throwable;
  * an authenticated request it runs under the web SAPI, so it stores what
  * `PhpRuntimeContract` reads there under `excubia:php-runtime:web` in the
  * default cache store, at most once an hour (one cache read per request
- * otherwise). `excubia:check` then prefers these values over the CLI ones.
- * The snapshot holds booleans, percentages, a count and the Unix time:
- * never a path or an ini value. It expires after a day, so a stale web
- * snapshot falls back to the CLI. Every error is swallowed: the endpoint
- * must answer even when the cache is down.
+ * otherwise). `excubia:check` reads only these values and never the CLI's:
+ * without a snapshot both checks are skipped. The snapshot holds booleans,
+ * percentages, a count and the Unix time: never a path or an ini value. It
+ * expires after a day, so a stale snapshot makes the checks skip again.
+ * Every error is swallowed: the endpoint must answer even when the cache
+ * is down.
  *
  * ponytail: one key for the whole app, so with several web servers it is
  * whichever server answered last; key it per server if that ever matters.
@@ -57,7 +58,7 @@ final class PhpWebRuntimeSnapshotService
             $runtime = $application->bound(PhpRuntimeContract::class) ? $application->make(PhpRuntimeContract::class) : new PhpRuntimeService;
             $cache->put(self::CACHE_KEY, ['collectedAt' => $now, ...$runtime->read()], self::EXPIRE_SECONDS);
         } catch (Throwable) {
-            // Best effort: excubia:check falls back to the CLI values.
+            // Best effort: the checks stay skipped until a snapshot is stored.
         }
     }
 

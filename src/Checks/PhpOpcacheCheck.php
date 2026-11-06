@@ -18,14 +18,13 @@ use Qiick\Excubia\Enums\SeverityEnum;
  *
  * In production, OPcache disabled warns at medium and
  * `opcache.validate_timestamps` on warns at low. In any environment a hit
- * rate under 90 % or more than 90 % of the OPcache memory used warns at low,
- * but only on the web-SAPI snapshot: a CLI process starts with an empty
- * cache, so its hit rate and memory say nothing about the web server.
+ * rate under 90 % or more than 90 % of the OPcache memory used warns at low.
  *
- * Artisan runs on the CLI SAPI, which follows `opcache.enable_cli`; when the
- * health endpoint stored a web-SAPI snapshot its values are used instead.
- * Every message says which SAPI was checked. Booleans, percentages and a
- * count only: never an ini file or script path.
+ * Artisan runs on the CLI SAPI, whose OPcache (`opcache.enable_cli`) and ini
+ * settings differ from the web server's, so only the web-SAPI snapshot the
+ * health endpoint stores is checked; without one the check is skipped. The
+ * CLI values never reach a finding. Booleans, percentages and a count only:
+ * never an ini file or script path.
  */
 final class PhpOpcacheCheck implements HealthCheckContract
 {
@@ -56,7 +55,7 @@ final class PhpOpcacheCheck implements HealthCheckContract
         $runtime = $posture->phpRuntime;
 
         if ($runtime === null) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'opcache', 'The PHP runtime could not be read.');
+            return CheckResultData::skipped($this->id(), $this->name(), 'opcache', LaravelPostureData::PHP_WEB_RUNTIME_UNKNOWN_MESSAGE);
         }
 
         $isProduction = $posture->environment === 'production';
@@ -72,12 +71,8 @@ final class PhpOpcacheCheck implements HealthCheckContract
         ];
 
         if (! $runtime['isOpcacheEnabled']) {
-            $hint = $runtime['sapi'] === 'cli'
-                ? 'Set opcache.enable=1 for the web server (and opcache.enable_cli=1 if you want the CLI cached too), then restart PHP.'
-                : 'Set opcache.enable=1, then restart PHP-FPM.';
-
             return CheckResultData::fromFindings($this->id(), $this->name(), $isProduction
-                ? [$this->finding(SeverityEnum::Medium, 'opcache', 'OPcache is disabled in production. '.$source, $hint, $details)]
+                ? [$this->finding(SeverityEnum::Medium, 'opcache', 'OPcache is disabled in production. '.$source, 'Set opcache.enable=1, then restart PHP-FPM.', $details)]
                 : []);
         }
 
@@ -87,11 +82,11 @@ final class PhpOpcacheCheck implements HealthCheckContract
             $findings[] = $this->finding(SeverityEnum::Low, 'opcache.validate_timestamps', 'opcache.validate_timestamps is on in production, so PHP checks every script for changes. '.$source, 'Set opcache.validate_timestamps=0 and reload PHP-FPM on each deploy.', $details);
         }
 
-        if ($runtime['sapi'] === 'web' && $runtime['hitRate'] !== null && $runtime['hitRate'] < self::MIN_HIT_RATE) {
+        if ($runtime['hitRate'] !== null && $runtime['hitRate'] < self::MIN_HIT_RATE) {
             $findings[] = $this->finding(SeverityEnum::Low, 'opcache-hit-rate', 'The OPcache hit rate is '.$runtime['hitRate'].' %, under 90 %. '.$source, 'Raise opcache.max_accelerated_files and opcache.memory_consumption.', $details);
         }
 
-        if ($runtime['sapi'] === 'web' && $runtime['memoryUsedPercent'] !== null && $runtime['memoryUsedPercent'] > self::MAX_MEMORY_USED_PERCENT) {
+        if ($runtime['memoryUsedPercent'] !== null && $runtime['memoryUsedPercent'] > self::MAX_MEMORY_USED_PERCENT) {
             $findings[] = $this->finding(SeverityEnum::Low, 'opcache-memory', $runtime['memoryUsedPercent'].' % of the OPcache memory is used, over 90 %. '.$source, 'Raise opcache.memory_consumption.', $details);
         }
 
@@ -99,7 +94,7 @@ final class PhpOpcacheCheck implements HealthCheckContract
     }
 
     /**
-     * @param  array{sapi: string, ageMinutes: int|null, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool}  $details
+     * @param  array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool}  $details
      */
     private function finding(SeverityEnum $severity, string $subject, string $message, string $fixHint, array $details): FindingData
     {

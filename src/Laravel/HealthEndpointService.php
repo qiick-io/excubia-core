@@ -37,7 +37,8 @@ use Throwable;
  *
  * An authenticated request also refreshes, at most once an hour, the
  * web-SAPI OPcache and php.ini snapshot (`PhpWebRuntimeSnapshotService`,
- * #172) that `php-opcache` and `php-production-ini` prefer over the CLI.
+ * #172) that `php-opcache` and `php-production-ini` read (they never read
+ * the CLI).
  *
  * ponytail: the secret is read from the process environment like
  * `EXCUBIA_APP_TOKEN`, so with `config:cache` (no `.env` load) it must be

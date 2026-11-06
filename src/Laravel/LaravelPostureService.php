@@ -18,13 +18,11 @@ use Illuminate\Queue\Failed\NullFailedJobProvider;
 use PDO;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
-use Qiick\Excubia\Contracts\PhpRuntimeContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Services\DatabaseStatisticsService;
 use Qiick\Excubia\Services\DiskSpaceService;
-use Qiick\Excubia\Services\PhpRuntimeService;
 use Throwable;
 
 /**
@@ -56,9 +54,10 @@ use Throwable;
  * lists the backups of each monitored destination through the package's
  * `BackupDestination` API: count, newest date and the two newest sizes.
  *
- * For `php-opcache` and `php-production-ini` (#172) it prefers the web-SAPI
- * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`) and
- * otherwise reads the CLI values of this process.
+ * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
+ * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
+ * Without one the PHP runtime stays unknown: the CLI that runs Artisan has
+ * its own ini settings, so its values would be misleading.
  *
  * ponytail: Redis, Memcached and `select 1` on an already open connection
  * use the client's own timeouts; wrap them in a deadline if a hung service
@@ -109,7 +108,6 @@ final class LaravelPostureService
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
         private readonly DatabaseStatisticsService $databaseStatistics = new DatabaseStatisticsService,
-        private readonly PhpRuntimeContract $phpRuntime = new PhpRuntimeService,
     ) {}
 
     /**
@@ -634,23 +632,24 @@ final class LaravelPostureService
     }
 
     /**
-     * The web-SAPI snapshot when the health endpoint stored one, else the
-     * values of this CLI process.
+     * The web-SAPI snapshot the health endpoint stored, with its age; null
+     * when there is none. The CLI values of this process are never used:
+     * the CLI has its own ini settings, so they say nothing about the web.
      *
-     * @return array{sapi: string, ageMinutes: int|null, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}
+     * @return array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null
      */
-    private function phpRuntime(Application $application, DateTimeImmutable $now): array
+    private function phpRuntime(Application $application, DateTimeImmutable $now): ?array
     {
         $snapshot = PhpWebRuntimeSnapshotService::read($application);
 
         if ($snapshot === null) {
-            return ['sapi' => 'cli', 'ageMinutes' => null, ...$this->phpRuntime->read()];
+            return null;
         }
 
         $collectedAt = $snapshot['collectedAt'];
         unset($snapshot['collectedAt']);
 
-        return ['sapi' => 'web', 'ageMinutes' => $this->ageMinutes($collectedAt, $now), ...$snapshot];
+        return ['sapi' => 'web', 'ageMinutes' => intdiv(max(0, $now->getTimestamp() - $collectedAt), 60), ...$snapshot];
     }
 
     private function ageMinutes(?int $timestamp, DateTimeImmutable $now): ?int

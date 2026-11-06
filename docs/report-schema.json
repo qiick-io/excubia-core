@@ -1422,12 +1422,12 @@
             "required": ["sapi", "ageMinutes", "isOpcacheEnabled", "hitRate", "memoryUsedPercent", "cachedScripts", "isValidateTimestampsEnabled"],
             "properties": {
                 "sapi": {
-                    "description": "The PHP SAPI the values come from: web (the snapshot the health endpoint stores at most once an hour) or cli (the PHP that runs Artisan, whose values can differ from the web server's).",
-                    "enum": ["web", "cli"]
+                    "description": "The PHP SAPI the values come from: always web, the snapshot the health endpoint stores at most once an hour. The CLI that runs Artisan is never reported: without a web snapshot the check is skipped.",
+                    "const": "web"
                 },
                 "ageMinutes": {
-                    "description": "Minutes since the health endpoint stored the web snapshot; null for cli.",
-                    "type": ["integer", "null"],
+                    "description": "Minutes since the health endpoint stored the web snapshot.",
+                    "type": "integer",
                     "minimum": 0
                 },
                 "isOpcacheEnabled": {
@@ -1472,12 +1472,12 @@
                     "type": "boolean"
                 },
                 "sapi": {
-                    "description": "The PHP SAPI the values come from: web (the snapshot the health endpoint stores at most once an hour) or cli (the PHP that runs Artisan, whose values can differ from the web server's).",
-                    "enum": ["web", "cli"]
+                    "description": "The PHP SAPI the values come from: always web, the snapshot the health endpoint stores at most once an hour. The CLI that runs Artisan is never reported: without a web snapshot the check is skipped.",
+                    "const": "web"
                 },
                 "ageMinutes": {
-                    "description": "Minutes since the health endpoint stored the web snapshot; null for cli.",
-                    "type": ["integer", "null"],
+                    "description": "Minutes since the health endpoint stored the web snapshot.",
+                    "type": "integer",
                     "minimum": 0
                 }
             }
