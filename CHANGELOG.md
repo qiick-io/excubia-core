@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-11-06
+
+Second beta of 1.0 (D20): features competitors already have, all additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). New check ids are appended to the run order; every new runtime type is off by default; schema and protocol versions stay `1`.
+
 ### Changed
 
 - `laravel-cors-wildcard` no longer warns on `*` without credentials, Laravel's stock CORS config (#139). It fails only for `*` with `supports_credentials`.
@@ -111,7 +115,8 @@ First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [
 
 - Initial `qiick/excubia-core` release: standalone `vendor/bin/excubia check` CLI, optional Artisan alias `excubia:check`, nine health checks, `table` / `json` / `markdown` formats, `excubia.json` config, and local response cache.
 
-[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.1...HEAD
+[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.2...HEAD
+[1.0.0-beta.2]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.1...v1.0.0-beta.1
 [0.1.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/qiick-io/excubia-core/releases/tag/v0.1.0
