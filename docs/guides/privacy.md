@@ -58,7 +58,17 @@ Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute,
 - scheduled tasks: the description you set (paths relative to the project, secrets such as `token=…` masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, never their arguments, else `Closure`; `finished`, `failed` or `skipped`;
 - outgoing HTTP (Laravel's HTTP client): host and status class.
 
-Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
+Added in 1.0.0-beta.2 and off until each one is switched on (each with `count`, `errorCount`, its `sampleRate` and the metrics named here):
+
+- request memory (`requestMemory`): route name (or `unnamed`), HTTP method, peak MB (`totalMb`, `maxMb`);
+- job memory (`jobMemory`): job class and queue name, peak MB;
+- queue wait (`queueWait`): job class and queue name, wait in ms. To measure it, Excubia adds an `excubiaQueuedAt` timestamp to every job payload it pushes;
+- cache (`cache`): store name and the key prefix before the first `:` or `.`, through the exception message masks; a prefix that still holds a digit, `@`, a space or other punctuation, hex-only text or only a mask placeholder is `[masked]`. Counts of hits, misses, writes and deletes. Never the whole key or the value;
+- mail (`mail`): mailable class (or the notification class of a mail notification, or `unknown`) and mailer name, sent and failed counts. Never recipients, subjects or bodies;
+- notifications (`notifications`): notification class and channel name, sent and failed counts. Never the notifiable or the content;
+- log levels (`logLevels`): the level and a count. Never the message or the context.
+
+Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, `.env` values or absolute paths.
 
 ## Exception capture
 

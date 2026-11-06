@@ -257,9 +257,10 @@ final class ExceptionPayloadService
 
     /**
      * Anonymous classes carry the absolute file path in their name; keep
-     * only `Parent@anonymous`.
+     * only `Parent@anonymous`. Runtime aggregates use it for job, mailable
+     * and notification classes.
      */
-    private static function className(string $class): string
+    public static function className(string $class): string
     {
         $position = strpos($class, '@anonymous');
 
