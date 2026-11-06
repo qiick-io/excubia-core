@@ -287,6 +287,22 @@
                                 "text": "Redis memory"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "php-opcache",
+                            "name": "OPcache",
+                            "shortDescription": {
+                                "text": "OPcache"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "php-production-ini",
+                            "name": "Production php.ini",
+                            "shortDescription": {
+                                "text": "Production php.ini"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

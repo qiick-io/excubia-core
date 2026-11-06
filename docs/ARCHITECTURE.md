@@ -45,13 +45,16 @@ qiick-io/excubia-core
 │   │   ├── LaravelBackupsCheck.php         (laravel-backups)              # spatie/laravel-backup destinations: age, size drop, count
 │   │   ├── LaravelDatabaseConnectionsCheck.php (laravel-database-connections) # open connections of the default connection
 │   │   ├── LaravelDatabaseSizeCheck.php    (laravel-database-size)        # size and five largest tables, DatabaseStatisticsService
-│   │   └── LaravelRedisMemoryCheck.php     (laravel-redis-memory)         # INFO memory of the Redis connections in use: used / max, policy
+│   │   ├── LaravelRedisMemoryCheck.php     (laravel-redis-memory)         # INFO memory of the Redis connections in use: used / max, policy
+│   │   ├── PhpOpcacheCheck.php             (php-opcache)                  # OPcache on, validate_timestamps, hit rate and memory (web snapshot)
+│   │   └── PhpProductionIniCheck.php       (php-production-ini)           # display_errors, expose_php, log_errors in production
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
 │   │   ├── HttpClientContract.php           # getJson(), postJson() — faked in tests
 │   │   ├── DiskSpaceContract.php            # usedPercent(directory) — DiskSpaceService, faked in tests
-│   │   └── DatabaseQueryContract.php        # select(query) on one connection — LaravelDatabaseQueryService, faked in tests
+│   │   ├── DatabaseQueryContract.php        # select(query) on one connection — LaravelDatabaseQueryService, faked in tests
+│   │   └── PhpRuntimeContract.php           # read(): OPcache status + production ini booleans — PhpRuntimeService, faked in tests
 │   ├── Registries/
 │   │   └── HealthCheckRegistry.php          # ordered list of checks, --only/--skip filtering
 │   ├── Services/
@@ -108,6 +111,7 @@ qiick-io/excubia-core
 │   ├── Laravel/
 │   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, queue worker heartbeat, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
 │   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
+│   │   ├── PhpWebRuntimeSnapshotService.php # web-SAPI OPcache / php.ini snapshot from the health endpoint → cache key excubia:php-runtime:web, once an hour
 │   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
 │   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
 │   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat

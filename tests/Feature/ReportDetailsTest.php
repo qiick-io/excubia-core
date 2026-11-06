@@ -219,6 +219,9 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 0.02, 'largestTables' => []]),
         $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => 100.0, 'policy' => 'allkeys-lru']),
         $finding('laravel-redis-memory', ['connection' => 'default', 'usedMb' => 1.25, 'maxMb' => null, 'policy' => null]),
+        $finding('php-opcache', ['sapi' => 'web', 'ageMinutes' => 12, 'isOpcacheEnabled' => true, 'hitRate' => 82.5, 'memoryUsedPercent' => 40.0, 'cachedScripts' => 1500, 'isValidateTimestampsEnabled' => false]),
+        $finding('php-opcache', ['sapi' => 'web', 'ageMinutes' => 0, 'isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null, 'isValidateTimestampsEnabled' => true]),
+        $finding('php-production-ini', ['directive' => 'display_errors', 'isEnabled' => true, 'sapi' => 'web', 'ageMinutes' => 3]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
@@ -239,6 +242,11 @@ it('accepts every documented details shape and rejects one that does not fit its
     $invalidBackups = $render([
         $finding('laravel-backups', ['disk' => 's3', 'ageHours' => 30, 'sizeMb' => 12.5, 'count' => 7, 'bucket' => 'backups-bucket']),
     ]);
+    $invalidPhpRuntime = $render([
+        $finding('php-production-ini', ['directive' => 'display_errors', 'isEnabled' => true, 'sapi' => 'web', 'ageMinutes' => 3, 'iniFile' => '/etc/php/8.4/cli/php.ini']),
+        $finding('php-opcache', ['sapi' => 'fpm', 'ageMinutes' => null, 'isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null, 'isValidateTimestampsEnabled' => true]),
+        $finding('php-production-ini', ['directive' => 'expose_php', 'isEnabled' => true, 'sapi' => 'cli', 'ageMinutes' => null]),
+    ]);
 
     expect(reportSchemaErrors($valid))->toBe([])
         ->and(reportSchemaErrors($invalid))->not->toBe([])
@@ -255,6 +263,8 @@ it('accepts every documented details shape and rejects one that does not fit its
     ] as $invalidDatabaseFinding) {
         expect(reportSchemaErrors($render([$invalidDatabaseFinding])))->not->toBe([]);
     }
+
+    expect(reportSchemaErrors($invalidPhpRuntime))->not->toBe([]);
 });
 
 /**
