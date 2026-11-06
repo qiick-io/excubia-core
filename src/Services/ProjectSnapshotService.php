@@ -6,13 +6,17 @@ namespace Qiick\Excubia\Services;
 
 use Composer\Semver\Intervals;
 use Composer\Semver\VersionParser;
+use Qiick\Excubia\Data\EnvironmentKeysData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LockedPackageData;
+use Qiick\Excubia\Data\PlatformRequirementData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
 use Qiick\Excubia\Parsers\ComposerJsonParser;
 use Qiick\Excubia\Parsers\ComposerLockParser;
+use Qiick\Excubia\Parsers\ConfigEnvironmentCallParser;
+use Qiick\Excubia\Parsers\EnvironmentExampleParser;
 use Qiick\Excubia\Parsers\NodeVersionParser;
 use Qiick\Excubia\Parsers\PackageLockParser;
 use UnexpectedValueException;
@@ -36,6 +40,8 @@ final class ProjectSnapshotService
         private readonly PackageLockParser $packageLockParser = new PackageLockParser,
         private readonly NodeVersionParser $nodeVersionParser = new NodeVersionParser,
         private readonly VersionParser $versionParser = new VersionParser,
+        private readonly EnvironmentExampleParser $environmentExampleParser = new EnvironmentExampleParser,
+        private readonly ConfigEnvironmentCallParser $configEnvironmentCallParser = new ConfigEnvironmentCallParser,
     ) {}
 
     /**
@@ -104,6 +110,48 @@ final class ProjectSnapshotService
             ),
             hasNpmLockfile: is_file($packageLockPath),
             requiredPackageNames: $parsedComposerJson['directPackageNames'],
+            platformRequirements: array_values(array_filter(
+                $parsedLock['platformRequirements'],
+                static fn (PlatformRequirementData $requirement): bool => $configuration->isDevelopmentDependencyIncluded || ! $requirement->isDevelopmentDependency,
+            )),
+            providedPlatformNames: $parsedLock['providedPlatformNames'],
+            platformOverrideNames: $parsedLock['platformOverrideNames'],
+            environmentKeys: $this->environmentKeys($projectRoot),
+        );
+    }
+
+    /**
+     * Key names of `.env.example` and the `env()` keys of `config/*.php`.
+     * The path of `.env` is never built, so it cannot be opened by mistake.
+     *
+     * ponytail: only top-level `config/*.php`, as Laravel publishes them;
+     * nested config directories are not scanned. Recurse when asked.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function environmentKeys(string $projectRoot): EnvironmentKeysData
+    {
+        $examplePath = $projectRoot.DIRECTORY_SEPARATOR.'.env.example';
+        $configDirectory = $projectRoot.DIRECTORY_SEPARATOR.'config';
+        $configKeys = null;
+
+        if (is_dir($configDirectory)) {
+            $configKeys = [];
+            $configFiles = array_filter(glob($configDirectory.DIRECTORY_SEPARATOR.'*.php') ?: [], is_file(...));
+            sort($configFiles, SORT_STRING);
+
+            foreach ($configFiles as $configFile) {
+                foreach ($this->configEnvironmentCallParser->keyNames($this->read($configFile)) as $key) {
+                    $configKeys[$key][] = 'config/'.basename($configFile);
+                }
+            }
+
+            ksort($configKeys, SORT_STRING);
+        }
+
+        return new EnvironmentKeysData(
+            exampleKeys: is_file($examplePath) ? $this->environmentExampleParser->keyNames($this->read($examplePath)) : null,
+            configKeys: $configKeys,
         );
     }
 

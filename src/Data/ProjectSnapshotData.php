@@ -10,7 +10,9 @@ namespace Qiick\Excubia\Data;
  * Paths, file contents, and hostnames are not stored. Only versions and
  * package names leave this object toward a data source. `laravelPosture`
  * is set only by the Artisan commands, which boot the app; the standalone
- * CLI leaves it null and the posture checks skip.
+ * CLI leaves it null and the posture checks skip. `environmentKeys` holds
+ * key names only (`.env.example` and `config/*.php`, never `.env`); it is
+ * null for a snapshot not read from a project directory.
  */
 final readonly class ProjectSnapshotData
 {
@@ -18,6 +20,9 @@ final readonly class ProjectSnapshotData
      * @param  list<LockedPackageData>  $composerPackages
      * @param  list<LockedPackageData>  $npmPackages
      * @param  list<string>  $requiredPackageNames  package names in `composer.json` `require` (not `require-dev`)
+     * @param  list<PlatformRequirementData>  $platformRequirements  `php` and `ext-*` requirements of the lockfile, without dev ones under `--no-dev`
+     * @param  list<string>  $providedPlatformNames  `ext-*` / `php` names a locked package provides or replaces (polyfills)
+     * @param  list<string>  $platformOverrideNames  names in the lockfile `platform-overrides` (`composer.json` `config.platform`)
      */
     public function __construct(
         public ?string $phpVersion,
@@ -28,6 +33,10 @@ final readonly class ProjectSnapshotData
         public bool $hasNpmLockfile = false,
         public ?LaravelPostureData $laravelPosture = null,
         public array $requiredPackageNames = [],
+        public array $platformRequirements = [],
+        public array $providedPlatformNames = [],
+        public array $platformOverrideNames = [],
+        public ?EnvironmentKeysData $environmentKeys = null,
     ) {}
 
     /**
@@ -44,6 +53,10 @@ final readonly class ProjectSnapshotData
             hasNpmLockfile: $this->hasNpmLockfile,
             laravelPosture: $laravelPosture,
             requiredPackageNames: $this->requiredPackageNames,
+            platformRequirements: $this->platformRequirements,
+            providedPlatformNames: $this->providedPlatformNames,
+            platformOverrideNames: $this->platformOverrideNames,
+            environmentKeys: $this->environmentKeys,
         );
     }
 }

@@ -63,6 +63,25 @@ it('runs dependency-licenses from the lockfiles in Artisan', function () {
         ->assertExitCode(1);
 });
 
+it('runs env-example-sync on the application base path in Artisan, without reading .env', function () {
+    $this->app->setBasePath(temporaryProject([
+        'composer.lock' => '{"packages": [], "packages-dev": []}',
+        'config/services.php' => "<?php\nreturn ['stripe' => env('STRIPE_SECRET')];\n",
+        '.env.example' => "APP_NAME=Laravel\n",
+        '.env' => "STRIPE_SECRET=artisan-sentinel-value\n",
+    ]));
+
+    $this->artisan('excubia:check', [
+        '--only' => 'env-example-sync',
+        '--offline' => true,
+        '--fail-on' => 'low',
+        '--no-banner' => true,
+    ])
+        ->expectsOutputToContain('STRIPE_SECRET is read by config/services.php but missing from .env.example.')
+        ->doesntExpectOutputToContain('artisan-sentinel-value')
+        ->assertExitCode(1);
+});
+
 it('exits 2 when the application has no composer.lock', function () {
     $this->app->setBasePath(temporaryProject([]));
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
+use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
@@ -14,6 +15,7 @@ use Qiick\Excubia\Renderers\JsonReportRenderer;
 use Qiick\Excubia\Services\HealthCheckRunnerService;
 use Qiick\Excubia\Services\ProjectSnapshotService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
+use Symfony\Component\Console\Tester\CommandTester;
 
 const PACKAGIST_DOWNLOADS = 'https://packagist.org/downloads/';
 
@@ -284,4 +286,20 @@ it('documents privacy.skipPackages in the closed schema', function () {
 
     expect($privacy['additionalProperties'])->toBeFalse()
         ->and($privacy['properties']['skipPackages']['items']['pattern'])->toBe('^[A-Za-z0-9@/._~*?-]+$');
+});
+
+it('keeps privacy.skipPackages when --fail-on or --no-dev override the file', function () {
+    $client = new FakeHttpClient([]);
+    $tester = new CommandTester(new CheckCommand($client));
+    $tester->execute([
+        'path' => temporaryProject(privatePackagesProject()),
+        '--format' => 'json',
+        '--no-banner' => true,
+        '--fail-on' => 'none',
+        '--no-dev' => true,
+        '--only' => 'composer-abandoned',
+    ]);
+
+    expect(implode("\n", $client->requests))->not->toContain('internal/tooling')
+        ->and(implode("\n", $client->requests))->toContain('laravel/framework');
 });

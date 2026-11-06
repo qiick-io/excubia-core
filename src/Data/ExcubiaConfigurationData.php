@@ -23,6 +23,12 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * keys read by the Laravel provider (`docs/health-endpoint.md`).
  * The posture thresholds default to a scheduler heartbeat older than 10
  * minutes and failed jobs older than 24 hours (high instead of medium).
+ * The infrastructure thresholds default to a disk warning at 80 % used and
+ * a failure at 90 %, and a queue backlog warning when the oldest pending job
+ * waits 15 minutes or a queue holds 1000 pending jobs.
+ * `databaseConnectionNames` are probed on top of the default connection;
+ * `queueBacklogQueueNames` are read on top of the default queue (Redis only,
+ * the database driver reads every queue in its table).
  * `runtime` is the opt-in runtime monitoring key (`RuntimeConfigurationData`),
  * `exceptions` the separate opt-in exception capture key (`ExceptionConfigurationData`).
  * `skippedPackagePatterns` is `privacy.skipPackages`: globs (`*`, `?`) of
@@ -30,7 +36,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * packages the lockfile already marks private.
  * `release` is the `release` key as written; `ReleaseService` validates it
  * and falls back to the environment when it is null.
- * `dependencyLicenses` holds the `checks.dependency-licenses` keys.
+ * `dependencyLicenses` holds the `checks.dependency-licenses` keys and
+ * `envExampleSync` the `checks.env-example-sync` keys.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -47,6 +54,8 @@ final readonly class ExcubiaConfigurationData
      *     until: string|null
      * }>  $ignoreRules
      * @param  list<string>  $skippedPackagePatterns
+     * @param  list<string>  $databaseConnectionNames
+     * @param  list<string>  $queueBacklogQueueNames
      */
     public function __construct(
         public ?SeverityEnum $failOnSeverity,
@@ -71,6 +80,13 @@ final readonly class ExcubiaConfigurationData
         public array $skippedPackagePatterns = [],
         public ?string $release = null,
         public DependencyLicensesConfigurationData $dependencyLicenses = new DependencyLicensesConfigurationData,
+        public array $databaseConnectionNames = [],
+        public int $diskSpaceWarnAtPercentUsed = 80,
+        public int $diskSpaceFailAtPercentUsed = 90,
+        public int $queueBacklogMaxOldestAgeMinutes = 15,
+        public int $queueBacklogMaxPendingJobs = 1000,
+        public array $queueBacklogQueueNames = [],
+        public EnvExampleSyncConfigurationData $envExampleSync = new EnvExampleSyncConfigurationData,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -86,6 +102,20 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->failedJobHighSeverityAfterHours < 1) {
             throw new InvalidConfigurationException('highSeverityAfterHours must be at least 1.');
+        }
+
+        if ($this->diskSpaceWarnAtPercentUsed < 1 || $this->diskSpaceFailAtPercentUsed > 100 || $this->diskSpaceWarnAtPercentUsed > $this->diskSpaceFailAtPercentUsed) {
+            throw new InvalidConfigurationException('laravel-disk-space needs 1 <= warnAtPercentUsed <= failAtPercentUsed <= 100.');
+        }
+
+        if ($this->queueBacklogMaxOldestAgeMinutes < 1 || $this->queueBacklogMaxPendingJobs < 1) {
+            throw new InvalidConfigurationException('maxOldestAgeMinutes and maxPendingJobs must be at least 1.');
+        }
+
+        foreach ([...$this->databaseConnectionNames, ...$this->queueBacklogQueueNames] as $name) {
+            if ($name === '') {
+                throw new InvalidConfigurationException('checks.laravel-database.connections and checks.laravel-queue-backlog.queues entries must be non-empty names.');
+            }
         }
 
         if ($this->cacheTtlHours < 0) {

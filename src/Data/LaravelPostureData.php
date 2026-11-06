@@ -18,7 +18,9 @@ use DateTimeImmutable;
  * posture at all and every posture check is skipped.
  *
  * The production posture fields after `collectedAt` default to the safe
- * value, so a hand-built posture only names what it tests.
+ * value, so a hand-built posture only names what it tests. The
+ * infrastructure probe fields (#131) default to "not measured", so their
+ * checks skip on a hand-built posture.
  */
 final readonly class LaravelPostureData
 {
@@ -34,6 +36,12 @@ final readonly class LaravelPostureData
      * @param  DateTimeImmutable|null  $schedulerHeartbeatAt  last `excubia:heartbeat` run; null when never written
      * @param  array<string, string>  $driverNames  driver name per component (`queue`, `cache`, `session`, `mail`) of the default connection, store or mailer; a component is missing when it could not be read
      * @param  list<string>  $enabledDevelopmentPackageNames  development tool packages (Telescope, Debugbar, …) whose service provider is loaded and whose enable flag is on
+     * @param  array<string, bool>  $databaseConnectionReachability  per probed connection name, true when it answered `select 1`
+     * @param  string|null  $cacheStoreName  default cache store; null when none is configured
+     * @param  bool|null  $isCacheStoreWorking  the write, read and delete probe worked; null when not probed (no store, `null` driver)
+     * @param  list<string>  $unwritableDirectoryNames  `storage` and / or `bootstrap/cache` when not a writable directory
+     * @param  int|null  $diskUsedPercent  used share of the disk holding `storage/`; null when it could not be measured
+     * @param  list<array{queue: string, pendingCount: int, oldestAgeMinutes: int|null}>|null  $queueBacklogs  pending jobs per queue of the default queue connection; null when the driver is not database or redis, or the store could not be read
      */
     public function __construct(
         public string $environment,
@@ -57,5 +65,11 @@ final readonly class LaravelPostureData
         public array $driverNames = [],
         public bool $isDefaultLogLevelDebug = false,
         public array $enabledDevelopmentPackageNames = [],
+        public array $databaseConnectionReachability = [],
+        public ?string $cacheStoreName = null,
+        public ?bool $isCacheStoreWorking = null,
+        public array $unwritableDirectoryNames = [],
+        public ?int $diskUsedPercent = null,
+        public ?array $queueBacklogs = null,
     ) {}
 }

@@ -28,7 +28,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 
 ### Check ids
 
-In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses` (the last seven added in 1.0.0-beta.2, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
+In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements`, `env-example-sync` (the last fourteen added in 1.0.0-beta.2, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
 
 ### Exit codes
 
@@ -84,7 +84,7 @@ Additive runtime aggregate type from #133 (versions stay `1`): `deprecation`, wi
 
 ### SARIF and fingerprints
 
-One SARIF rule per check id (the rule id is the check id), one result per `fail` or `warn` finding, `partialFingerprints` key `excubiaFinding/v1`. The value, and the report's per-finding `fingerprint`, is `sha256(checkId + "\0" + subject + "\0" + (advisoryId ?? ""))` as lowercase hex. SARIF levels follow the severity (`critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`); locations are project-relative manifest paths (`dependency-licenses`: `composer.lock` or `package-lock.json`, by the finding's ecosystem).
+One SARIF rule per check id (the rule id is the check id), one result per `fail` or `warn` finding, `partialFingerprints` key `excubiaFinding/v1`. The value, and the report's per-finding `fingerprint`, is `sha256(checkId + "\0" + subject + "\0" + (advisoryId ?? ""))` as lowercase hex. SARIF levels follow the severity (`critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`); locations are project-relative manifest paths (`dependency-licenses`: `composer.lock` or `package-lock.json`, by the finding's ecosystem; `env-example-sync`: `.env.example`).
 
 ### GitHub Action
 
