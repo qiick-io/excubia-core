@@ -255,6 +255,14 @@
                                 "text": "Outdated packages (npm)"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-backups",
+                            "name": "Backups",
+                            "shortDescription": {
+                                "text": "Backups"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

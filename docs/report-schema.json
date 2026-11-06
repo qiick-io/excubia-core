@@ -771,6 +771,23 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-backups"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/backupDestinationDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1244,6 +1261,33 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "backupDestinationDetails": {
+            "description": "laravel-backups finding, one per spatie/laravel-backup destination that has no backup, cannot be reached, has a newest backup that is too old, or shrank by more than half. The disk name only, never a path, bucket or credential.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["disk", "ageHours", "sizeMb", "count"],
+            "properties": {
+                "disk": {
+                    "description": "Filesystem disk name from config/filesystems.php, as config/backup.php lists it.",
+                    "type": "string"
+                },
+                "ageHours": {
+                    "description": "Whole hours since the newest backup was made; null when there is none or the destination could not be reached.",
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                },
+                "sizeMb": {
+                    "description": "Size of the newest backup in MiB, two decimals; null when there is none or the destination could not be reached.",
+                    "type": ["number", "null"],
+                    "minimum": 0
+                },
+                "count": {
+                    "description": "Backups on the destination; null when it could not be reached.",
+                    "type": ["integer", "null"],
+                    "minimum": 0
                 }
             }
         },

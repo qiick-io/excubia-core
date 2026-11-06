@@ -98,6 +98,7 @@ final class ExcubiaConfigurationLoader
             queueBacklogQueueNames: $checks['queueBacklogQueueNames'],
             envExampleSync: $this->envExampleSync($document['checks'] ?? []),
             queueWorkersStaleAfterMinutes: $checks['queueWorkersStaleAfterMinutes'],
+            backupsMaxAgeHours: $checks['backupsMaxAgeHours'],
         );
     }
 
@@ -388,7 +389,8 @@ final class ExcubiaConfigurationLoader
      *     queueBacklogMaxOldestAgeMinutes: int,
      *     queueBacklogMaxPendingJobs: int,
      *     queueBacklogQueueNames: list<string>,
-     *     queueWorkersStaleAfterMinutes: int
+     *     queueWorkersStaleAfterMinutes: int,
+     *     backupsMaxAgeHours: int
      * }
      */
     private function checks(mixed $checks, ExcubiaConfigurationData $defaults): array
@@ -397,7 +399,7 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync', 'laravel-queue-workers'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync', 'laravel-queue-workers', 'laravel-backups'], 'checks');
         $schedulerHeartbeat = $this->checkObject($checks, 'laravel-scheduler-heartbeat', ['staleAfterMinutes', 'lateAfterMinutes']);
         $database = $this->checkObject($checks, 'laravel-database', ['connections']);
         $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
@@ -418,6 +420,7 @@ final class ExcubiaConfigurationLoader
             'queueBacklogMaxPendingJobs' => array_key_exists('maxPendingJobs', $queueBacklog) ? $this->integer($queueBacklog['maxPendingJobs'], 'checks.laravel-queue-backlog.maxPendingJobs') : $defaults->queueBacklogMaxPendingJobs,
             'queueBacklogQueueNames' => $this->stringList($queueBacklog['queues'] ?? [], 'checks.laravel-queue-backlog.queues'),
             'queueWorkersStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-queue-workers', 'staleAfterMinutes', $defaults->queueWorkersStaleAfterMinutes),
+            'backupsMaxAgeHours' => $this->integerSetting($checks, 'laravel-backups', 'maxAgeHours', $defaults->backupsMaxAgeHours),
         ];
     }
 

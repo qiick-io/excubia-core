@@ -212,6 +212,8 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-queue-workers', ['status' => 'paused', 'processes' => 4, 'supervisors' => ['supervisor-1']]),
         $finding('npm-outdated', ['package' => 'lodash', 'lockedVersion' => '4.17.20', 'latestPatch' => '4.17.21', 'latestMinor' => '4.17.21', 'latestMajor' => null, 'isMajorBehind' => false]),
         $finding('npm-outdated', ['count' => 1]),
+        $finding('laravel-backups', ['disk' => 's3', 'ageHours' => 30, 'sizeMb' => 12.5, 'count' => 7]),
+        $finding('laravel-backups', ['disk' => 's3', 'ageHours' => null, 'sizeMb' => null, 'count' => null]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
@@ -229,10 +231,15 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('npm-outdated', ['package' => 'lodash', 'lockedVersion' => '4.17.20', 'latestPatch' => null, 'latestMinor' => null, 'latestMajor' => '5.0.0', 'isMajorBehind' => true, 'lockfile' => '/srv/app/package-lock.json']),
     ]);
 
+    $invalidBackups = $render([
+        $finding('laravel-backups', ['disk' => 's3', 'ageHours' => 30, 'sizeMb' => 12.5, 'count' => 7, 'bucket' => 'backups-bucket']),
+    ]);
+
     expect(reportSchemaErrors($valid))->toBe([])
         ->and(reportSchemaErrors($invalid))->not->toBe([])
         ->and(reportSchemaErrors($invalidOutdated))->not->toBe([])
-        ->and(reportSchemaErrors($invalidNpmOutdated))->not->toBe([]);
+        ->and(reportSchemaErrors($invalidNpmOutdated))->not->toBe([])
+        ->and(reportSchemaErrors($invalidBackups))->not->toBe([]);
 });
 
 /**

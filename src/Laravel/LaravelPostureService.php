@@ -43,6 +43,10 @@ use Throwable;
  * each queue the backlog probe read and, when Laravel Horizon is installed,
  * Horizon's master supervisor and supervisor repositories.
  *
+ * For `laravel-backups` (#171), when spatie/laravel-backup is installed, it
+ * lists the backups of each monitored destination through the package's
+ * `BackupDestination` API: count, newest date and the two newest sizes.
+ *
  * ponytail: Redis, Memcached and `select 1` on an already open connection
  * use the client's own timeouts; wrap them in a deadline if a hung service
  * ever blocks a run.
@@ -83,6 +87,12 @@ final class LaravelPostureService
 
     private const HORIZON_SUPERVISOR_REPOSITORY = 'Laravel\\Horizon\\Contracts\\SupervisorRepository';
 
+    /**
+     * spatie/laravel-backup's destination class, used only when installed (it
+     * is not a dependency of this package).
+     */
+    private const BACKUP_DESTINATION = 'Spatie\\Backup\\BackupDestination\\BackupDestination';
+
     public function __construct(private readonly DiskSpaceContract $diskSpace = new DiskSpaceService) {}
 
     /**
@@ -113,6 +123,7 @@ final class LaravelPostureService
         $cacheProbe = $this->cacheProbe($application, $config);
         $queueBacklogs = $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now);
         $isHorizonInstalled = $this->isHorizonInstalled($application);
+        $isBackupPackageInstalled = class_exists(self::BACKUP_DESTINATION);
 
         return new LaravelPostureData(
             environment: $application->environment(),
@@ -146,6 +157,8 @@ final class LaravelPostureService
             isHorizonInstalled: $isHorizonInstalled,
             horizonStatus: $isHorizonInstalled ? $this->horizonStatus($application) : null,
             scheduledTasks: $this->scheduledTasks($application, $configuration->schedulerLateAfterMinutes),
+            isBackupPackageInstalled: $isBackupPackageInstalled,
+            backupDestinations: $isBackupPackageInstalled ? $this->backupDestinations($config) : null,
         );
     }
 
@@ -448,6 +461,88 @@ final class LaravelPostureService
         sort($names);
 
         return ['status' => $status, 'processes' => $processes, 'supervisors' => $names];
+    }
+
+    /**
+     * The destinations spatie/laravel-backup monitors: every disk of each
+     * `backup.monitor_backups` entry, or the disks the app backs up to
+     * (`backup.backup.destination.disks`) when nothing is monitored. Only the
+     * disk name is kept, never its root, bucket or credentials. Null when the
+     * configuration is not a list.
+     *
+     * @return list<array{disk: string, isReachable: bool, count: int, newestAt: DateTimeImmutable|null, newestSizeBytes: int|null, previousSizeBytes: int|null}>|null
+     */
+    private function backupDestinations(Repository $config): ?array
+    {
+        $monitors = $config->get('backup.monitor_backups');
+
+        if ($monitors === null || $monitors === []) {
+            $monitors = [['name' => $config->get('backup.backup.name'), 'disks' => $config->get('backup.backup.destination.disks')]];
+        }
+
+        if (! is_array($monitors)) {
+            return null;
+        }
+
+        $destinations = [];
+
+        foreach ($monitors as $monitor) {
+            $monitor = (array) $monitor;
+            $backupName = $monitor['name'] ?? null;
+
+            if (! is_string($backupName) || $backupName === '') {
+                continue;
+            }
+
+            foreach ((array) ($monitor['disks'] ?? []) as $disk) {
+                if (is_string($disk) && $disk !== '') {
+                    $destinations[] = $this->backupDestination($disk, $backupName);
+                }
+            }
+        }
+
+        return $destinations;
+    }
+
+    /**
+     * Count, newest date and the two newest sizes of one destination, through
+     * `BackupDestination::create($disk, $backupName)`. Only the two newest
+     * backups are sized. A destination that throws or is not reachable is
+     * reported unreachable; the exception message is dropped because it can
+     * carry a bucket, a host or a path.
+     *
+     * @return array{disk: string, isReachable: bool, count: int, newestAt: DateTimeImmutable|null, newestSizeBytes: int|null, previousSizeBytes: int|null}
+     */
+    private function backupDestination(string $disk, string $backupName): array
+    {
+        $unreachable = ['disk' => $disk, 'isReachable' => false, 'count' => 0, 'newestAt' => null, 'newestSizeBytes' => null, 'previousSizeBytes' => null];
+
+        try {
+            $destination = call_user_func([self::BACKUP_DESTINATION, 'create'], $disk, $backupName);
+
+            if (! $destination->isReachable()) {
+                return $unreachable;
+            }
+
+            $backups = [];
+
+            foreach ($destination->backups() as $backup) {
+                $backups[] = ['backup' => $backup, 'timestamp' => $backup->date()->getTimestamp()];
+            }
+
+            usort($backups, static fn (array $first, array $second): int => $second['timestamp'] <=> $first['timestamp']);
+
+            return [
+                'disk' => $disk,
+                'isReachable' => true,
+                'count' => count($backups),
+                'newestAt' => isset($backups[0]) ? new DateTimeImmutable('@'.$backups[0]['timestamp']) : null,
+                'newestSizeBytes' => isset($backups[0]) ? (int) $backups[0]['backup']->sizeInBytes() : null,
+                'previousSizeBytes' => isset($backups[1]) ? (int) $backups[1]['backup']->sizeInBytes() : null,
+            ];
+        } catch (Throwable) {
+            return $unreachable;
+        }
     }
 
     private function ageMinutes(?int $timestamp, DateTimeImmutable $now): ?int

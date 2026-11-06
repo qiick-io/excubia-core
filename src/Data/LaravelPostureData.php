@@ -46,6 +46,8 @@ final readonly class LaravelPostureData
      * @param  bool  $isHorizonInstalled  Laravel Horizon's master supervisor repository is bound in the container
      * @param  array{status: string, processes: int, supervisors: list<string>}|null  $horizonStatus  Horizon's `inactive`, `paused` or `running` status, its worker process count and its supervisor names (without the host prefix); null when Horizon is missing or could not be read
      * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null  $scheduledTasks  the schedule inventory (#146) for the report `schedule`; null when not read
+     * @param  bool  $isBackupPackageInstalled  spatie/laravel-backup's `BackupDestination` class exists (#171)
+     * @param  list<array{disk: string, isReachable: bool, count: int, newestAt: DateTimeImmutable|null, newestSizeBytes: int|null, previousSizeBytes: int|null}>|null  $backupDestinations  each monitored backup destination by disk name (never a path or bucket); null when spatie/laravel-backup is missing or its configuration could not be read
      */
     public function __construct(
         public string $environment,
@@ -79,5 +81,7 @@ final readonly class LaravelPostureData
         public bool $isHorizonInstalled = false,
         public ?array $horizonStatus = null,
         public ?array $scheduledTasks = null,
+        public bool $isBackupPackageInstalled = false,
+        public ?array $backupDestinations = null,
     ) {}
 }

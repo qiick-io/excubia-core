@@ -25,6 +25,7 @@ const POSTURE_CHECK_IDS = [
     'laravel-disk-space',
     'laravel-queue-backlog',
     'laravel-queue-workers',
+    'laravel-backups',
 ];
 
 /**
@@ -68,7 +69,7 @@ it('registers the posture checks after the existing checks and honours --skip', 
     $checkIds = array_column(standalonePostureReport()['report']['checks'], 'checkId');
     $skipped = array_column(standalonePostureReport(['--skip' => 'laravel-debug-mode,laravel-failed-jobs'])['report']['checks'], 'checkId');
 
-    expect(array_slice($checkIds, -23))->toBe([...array_slice(POSTURE_CHECK_IDS, 0, 12), 'dependency-licenses', ...array_slice(POSTURE_CHECK_IDS, 12, 5), 'php-platform-requirements', 'env-example-sync', 'composer-outdated', 'laravel-queue-workers', 'npm-outdated'])
+    expect(array_slice($checkIds, -24))->toBe([...array_slice(POSTURE_CHECK_IDS, 0, 12), 'dependency-licenses', ...array_slice(POSTURE_CHECK_IDS, 12, 5), 'php-platform-requirements', 'env-example-sync', 'composer-outdated', 'laravel-queue-workers', 'npm-outdated', 'laravel-backups'])
         ->and(array_search('laravel-next-blocker', $checkIds, true))->toBeLessThan(array_search('laravel-debug-mode', $checkIds, true))
         ->and($skipped)->not->toContain('laravel-debug-mode', 'laravel-failed-jobs')
         ->and($skipped)->toContain('laravel-maintenance-mode');
