@@ -130,9 +130,12 @@ it('documents the details keys per check id', function () {
             'laravel-queue-backlog',
             'php-platform-requirements',
             'env-example-sync',
+            'composer-outdated',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
         ->and($keys('envExampleMissingKeyDetails'))->toBe(['key', 'configFiles'])
-        ->and($keys('envExampleUnusedKeysDetails'))->toBe(['keys']);
+        ->and($keys('envExampleUnusedKeysDetails'))->toBe(['keys'])
+        ->and($keys('outdatedDetails'))->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])
+        ->and($schema['$defs']['outdatedDetails']['required'])->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind']);
 });

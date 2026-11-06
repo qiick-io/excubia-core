@@ -30,7 +30,7 @@ It describes `develop` as reviewed for #82 (November 2026). Released `0.1.x` con
 | --- | --- | --- |
 | `https://endoflife.date/api/{php,laravel,nodejs}.json` | the product slug only | `EndOfLifeApiService` |
 | `https://packagist.org/api/security-advisories/?packages[]=…` | Composer package names (no versions) in one request | `PackagistApiService::securityAdvisories()` |
-| `https://repo.packagist.org/p2/<vendor>/<name>.json` | one Composer package name per request | `PackagistApiService::versions()` |
+| `https://repo.packagist.org/p2/<vendor>/<name>.json` | one Composer package name per request, at most once per run (shared by `composer-abandoned`, `composer-stale`, `laravel-next-blocker` and `composer-outdated`) | `PackagistApiService::versions()` |
 | `https://api.github.com/repos/<owner>/<repo>` | owner and repository name taken from the Packagist source URL; `Authorization: Bearer $GITHUB_TOKEN` when set | `GitHubRepositoryApiService` |
 | `https://api.osv.dev/v1/querybatch` (POST) | npm package names and versions from `package-lock.json`, ecosystem `npm` | `OsvApiService` |
 
