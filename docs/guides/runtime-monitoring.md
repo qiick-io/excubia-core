@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings. It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification and log level counts. It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -35,6 +35,25 @@ That is all that is needed. Each type can be switched off or sampled:
 
 The values shown are the defaults. `sampleRate` is the share of events recorded, from 0 to 1 (`0.1` records one event in ten). Every key is in the [configuration reference](./configuration.md#runtime-monitoring).
 
+More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you want, once your `excubia-app` understands them:
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "requestMemory": { "enabled": true },
+    "jobMemory": { "enabled": true },
+    "queueWait": { "enabled": true },
+    "cache": { "enabled": true, "sampleRate": 0.1 },
+    "mail": { "enabled": true },
+    "notifications": { "enabled": true },
+    "logLevels": { "enabled": true }
+  }
+}
+```
+
+Cache and log events can be frequent; a `sampleRate` below 1 keeps the buffer small.
+
 The provider reads `excubia.json` at boot. With `php artisan config:cache` that still works (the file is not Laravel config), but restart long-running workers (`queue:restart`, Octane) after changing it.
 
 ## 2. Check the schedule
@@ -63,11 +82,11 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 
 ## How it works
 
-- Laravel events are aggregated in memory per UTC minute: `count`, `errorCount`, `totalMs` and `maxMs` per route, query, job, task or host.
+- Laravel events are aggregated in memory per UTC minute: `count` and `errorCount`, plus `totalMs` and `maxMs` for durations, `totalMb` and `maxMb` for memory, or `hits`, `misses`, `writes` and `deletes` for the cache.
 - The aggregates are written to a local buffer under `storage/excubia/runtime/` when the request or command ends, and after each queued job or scheduled task. Nothing is sent during a request.
 - `excubia:push-runtime` claims the buffer into batch files and sends them oldest first to `POST {url}/api/runtime`. A batch is deleted only after a 2xx answer. When the app is down, batches are kept and resent with the same `batchId`, so the app stores each once.
 - The buffer is capped by `runtime.bufferMaxBytes` (default 1 MiB). Past the cap the oldest entries are dropped, so an unreachable app never fills the disk.
-- Every listener catches its own errors: an error inside Excubia never reaches your app. Measured overhead is about 0.1 ms per request with every type on.
+- Every listener catches its own errors: an error inside Excubia never reaches your app. The collector costs about 0.15–0.5 ms per request with every type on, cache and log listeners included (`vendor/bin/pest --group=benchmark`).
 
 | Type | Laravel event | Error when |
 | --- | --- | --- |
@@ -76,12 +95,27 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `jobs` | `JobProcessing` / `JobProcessed` / `JobFailed` | The job failed |
 | `scheduler` | `ScheduledTaskFinished` / `ScheduledTaskFailed` / `ScheduledTaskSkipped` | The task failed |
 | `outgoingHttp` | HTTP client `ResponseReceived` | Status 5xx |
+| `requestMemory` | `RequestHandled`, `memory_get_peak_usage()` | — |
+| `jobMemory` | `JobProcessing` (peak reset) / `JobProcessed` / `JobFailed` | — |
+| `queueWait` | `JobProcessing`, first attempts only | — |
+| `cache` | `CacheHit` / `CacheMissed` / `KeyWritten` / `KeyForgotten` | — |
+| `mail` | `MessageSending` / `MessageSent`, and the exception capture hook | A reported mail transport exception |
+| `notifications` | `NotificationSent` / `NotificationFailed` | The notification failed |
+| `logLevels` | `MessageLogged` | — |
+
+Notes on the newer types:
+
+- **Memory** is PHP's peak (`memory_get_peak_usage()`) in MiB; the average is `totalMb / count`. `jobMemory` resets the peak when each job starts, so it reports the job's own peak; a request that runs sync jobs still reports its whole peak. Under Octane the request peak only grows across requests.
+- **Queue wait** needs the push time. With `queueWait` on, Excubia adds an `excubiaQueuedAt` timestamp to every job payload pushed by the app; Horizon's `pushedAt` is used when that key is missing. The job's delay is subtracted, retries are not counted, and clock differences between the pushing server and the worker show up in the wait.
+- **Cache** keys are never sent. Only the store name and the prefix before the first `:` or `.` are kept, through the exception message masks; a prefix that still looks like an id, a token or personal data becomes `[masked]`. Use prefixes such as `users:` or `reports.` in your keys to get useful rows.
+- **Mail failures**: Laravel has no event for a failed mail. A failure is counted only when [exception capture](./exception-capture.md) is on and sees a reported Symfony Mailer transport exception (also counted when `exceptions.ignore` lists it). A failure your code catches without reporting is not counted, and without exception capture the failed count stays 0.
+- **Log levels** are counted per level only: Laravel's `MessageLogged` event does not say which channel logged. Excubia never logs, and messages logged while its listener runs are ignored, so the listener cannot loop.
 
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls. Never URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, and log levels. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

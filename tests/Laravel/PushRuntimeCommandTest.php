@@ -2,15 +2,27 @@
 
 declare(strict_types=1);
 
+use Illuminate\Console\Events\ScheduledTaskFinished;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
+use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Notifications\Events\NotificationSent;
+use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use JsonSchema\Validator;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\HttpClientContract;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
+use Symfony\Component\Mailer\Exception\TransportException;
 
 const RUNTIME_ENDPOINT = 'https://excubia.example.test/api/runtime';
 const RUNTIME_TOKEN = 'runtime-token-secret';
@@ -230,6 +242,42 @@ it('does not read .git for runtime batches', function () {
     $this->artisan('excubia:push-runtime')->assertExitCode(0);
 
     expect($client->postedPayloads[0]['runtime'])->not->toHaveKey('release');
+});
+
+it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runtime batch', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true], 'https://excubia.example.test/api/exceptions' => ['stored' => true]]);
+    $runtime = ['enabled' => true, 'slowQueries' => ['thresholdMs' => 0]];
+
+    foreach (RuntimeTypeEnum::cases() as $type) {
+        $runtime[$type->configurationKey()] ??= ['enabled' => true];
+        $runtime[$type->configurationKey()]['enabled'] = true;
+    }
+
+    runtimePushProject($this->app, $client, ['runtime' => $runtime, 'exceptions' => ['enabled' => true]]);
+    config(['queue.default' => 'sync', 'mail.default' => 'array']);
+    Http::fake(['api.example.test/*' => Http::response(['ok' => true])]);
+    recordOneRequest($this);
+    DB::select('select 1');
+    dispatch(static function (): void {});
+    event(new ScheduledTaskFinished($this->app->make(Schedule::class)->command('inspire'), 0.1));
+    Http::get('https://api.example.test/ping');
+    Cache::put('settings:site', 'value');
+    Mail::raw('body', fn ($message) => $message->to('someone@example.test'));
+    report(new TransportException('smtp failure'));
+    event(new NotificationSent(new AnonymousNotifiable, new class extends Notification {}, 'mail'));
+    Log::warning('something');
+    $this->app->terminate();
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtimePayload = collect($client->postedPayloads)->firstWhere('type', 'runtime')['runtime'];
+    $types = collect($runtimePayload['aggregates'])->pluck('type')->unique()->sort()->values()->all();
+    $expected = collect(RuntimeTypeEnum::cases())->map(fn (RuntimeTypeEnum $type): string => $type->value)->sort()->values()->all();
+
+    expect($types)->toBe($expected)
+        ->and(runtimeSchemaErrors($runtimePayload))->toBe([])
+        ->and(collect($runtimePayload['aggregates'])->firstWhere('type', 'notification')['notification'])->toBe(Notification::class.'@anonymous')
+        ->and(json_encode($runtimePayload, JSON_THROW_ON_ERROR))->not->toContain('someone@example.test');
 });
 
 it('registers excubia:push-runtime', function () {

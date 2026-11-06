@@ -4,7 +4,7 @@
     "x-excubia-version": 1,
     "$comment": "Contract version of this payload. It travels in an envelope with protocolVersion 1 and changes only with it. Stable from 1.0.0-beta (docs/CONTRACTS.md).",
     "title": "Excubia runtime batch",
-    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs and keeps the larger maxMs for entries with the same type, bucket, sampleRate and dimensions, also across batches. Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages or absolute paths.",
+    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes) and keeps the larger maxMs (and maxMb) for entries with the same type, bucket, sampleRate and dimensions, also across batches. Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, or absolute paths.",
     "type": "object",
     "additionalProperties": false,
     "required": ["bucketSeconds", "aggregates"],
@@ -27,9 +27,17 @@
                     { "$ref": "#/$defs/slowQuery" },
                     { "$ref": "#/$defs/job" },
                     { "$ref": "#/$defs/scheduledTask" },
-                    { "$ref": "#/$defs/outgoingHttp" }
+                    { "$ref": "#/$defs/outgoingHttp" },
+                    { "$ref": "#/$defs/requestMemory" },
+                    { "$ref": "#/$defs/jobMemory" },
+                    { "$ref": "#/$defs/queueWait" },
+                    { "$ref": "#/$defs/cache" },
+                    { "$ref": "#/$defs/mail" },
+                    { "$ref": "#/$defs/notification" },
+                    { "$ref": "#/$defs/logLevel" }
                 ]
-            }
+            },
+            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations; totalMb and maxMb for memory; hits, misses, writes and deletes for cache. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima keep the larger value."
         }
     },
     "$defs": {
@@ -52,7 +60,7 @@
         "errorCount": {
             "type": "integer",
             "minimum": 0,
-            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks. Always 0 for slow queries."
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache and log level types."
         },
         "milliseconds": {
             "type": "number",
@@ -147,6 +155,129 @@
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
                 "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        },
+        "megabytes": {
+            "type": "number",
+            "minimum": 0,
+            "description": "PHP peak memory (memory_get_peak_usage) in MiB, 3 decimals. The average is totalMb / count."
+        },
+        "counter": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "requestMemory": {
+            "type": "object",
+            "description": "Peak memory of incoming HTTP requests at RequestHandled (#132). errorCount is always 0.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "route", "method", "count", "errorCount", "totalMb", "maxMb"],
+            "properties": {
+                "type": { "const": "requestMemory" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "route": { "type": "string", "minLength": 1, "description": "Route name, or unnamed. Never the URL." },
+                "method": { "type": "string", "minLength": 1 },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMb": { "$ref": "#/$defs/megabytes" },
+                "maxMb": { "$ref": "#/$defs/megabytes" }
+            }
+        },
+        "jobMemory": {
+            "type": "object",
+            "description": "Peak memory of each queued job; the PHP peak is reset at JobProcessing and read at JobProcessed or JobFailed (#132). errorCount is always 0.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "job", "queue", "count", "errorCount", "totalMb", "maxMb"],
+            "properties": {
+                "type": { "const": "jobMemory" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "job": { "type": "string", "minLength": 1, "description": "Job class name (Laravel's resolveName)." },
+                "queue": { "type": "string" },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMb": { "$ref": "#/$defs/megabytes" },
+                "maxMb": { "$ref": "#/$defs/megabytes" }
+            }
+        },
+        "queueWait": {
+            "type": "object",
+            "description": "Time between the push of a job and its first attempt (JobProcessing), without the job's delay (#132). The push time is the excubiaQueuedAt key Excubia adds to job payloads, else Horizon's pushedAt; retries are not counted. Clock skew between the pushing host and the worker shows up in the value. errorCount is always 0.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "job", "queue", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "queueWait" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "job": { "type": "string", "minLength": 1, "description": "Job class name (Laravel's resolveName)." },
+                "queue": { "type": "string" },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" }
+            }
+        },
+        "cache": {
+            "type": "object",
+            "description": "Cache events (CacheHit, CacheMissed, KeyWritten, KeyForgotten) per store and key prefix (#132). count is hits + misses + writes + deletes; errorCount is always 0. Never the whole key or the value.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "store", "keyPrefix", "count", "errorCount", "hits", "misses", "writes", "deletes"],
+            "properties": {
+                "type": { "const": "cache" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "store": { "type": "string", "minLength": 1, "description": "Cache store name, or default." },
+                "keyPrefix": { "type": "string", "minLength": 1, "maxLength": 64, "description": "The key up to its first : or ., through the exception message masks. A prefix that still holds a digit, an @, a space or other punctuation, hex-only text, more than 64 characters, or that is nothing but a mask placeholder ([uuid], [number]), is [masked]. Only letters, _, -, / and mask placeholders inside a word (framework/schedule-[token]) remain." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "hits": { "$ref": "#/$defs/counter" },
+                "misses": { "$ref": "#/$defs/counter" },
+                "writes": { "$ref": "#/$defs/counter" },
+                "deletes": { "$ref": "#/$defs/counter" }
+            }
+        },
+        "mail": {
+            "type": "object",
+            "description": "Mail per mailable and mailer (#132). count is sent + failed mails, errorCount the failed ones. Sent mails come from MessageSent. Failures are counted only when exception capture (exceptions.enabled) sees a reported Symfony Mailer transport exception; Laravel has no mail failure event, so without exception capture errorCount is always 0. Never recipients, subjects or bodies.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "mailable", "mailer", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "mail" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "mailable": { "type": "string", "minLength": 1, "description": "Mailable class, else the notification class of a mail notification, else unknown." },
+                "mailer": { "type": "string", "minLength": 1, "description": "Laravel mailer name, or unknown." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "notification": {
+            "type": "object",
+            "description": "Notifications per class and channel (NotificationSent, NotificationFailed) (#132). count is sent + failed, errorCount the failed ones. Never the notifiable or the content.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "notification", "channel", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "notification" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "notification": { "type": "string", "minLength": 1, "description": "Notification class." },
+                "channel": { "type": "string", "minLength": 1, "description": "Channel name (mail, database, broadcast…) or channel class, or unknown." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "logLevel": {
+            "type": "object",
+            "description": "Log entries per level (MessageLogged) (#132). Laravel's event does not carry the channel, so there is no channel dimension. errorCount is always 0. Never the message or the context.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "level", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "logLevel" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "level": { "enum": ["emergency", "alert", "critical", "error", "warning", "notice", "info", "debug", "unknown"] },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
             }
         }
     }

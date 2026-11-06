@@ -313,6 +313,34 @@
                 "outgoingHttp": {
                     "$ref": "#/$defs/runtimeType",
                     "description": "Calls made with Laravel's HTTP client: host, status class, duration."
+                },
+                "requestMemory": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Peak PHP memory of incoming HTTP requests at RequestHandled: route name (or unnamed), method, total and maximum MB. Off by default (#132)."
+                },
+                "jobMemory": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Peak PHP memory of each queued job (the peak is reset when the job starts): class, queue, total and maximum MB. Off by default (#132)."
+                },
+                "queueWait": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Time queued jobs wait between the push and their first attempt, without their delay: class, queue, wait in ms. Adds an excubiaQueuedAt timestamp to every job payload. Off by default (#132)."
+                },
+                "cache": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Cache hits, misses, writes and deletes per store name and key prefix (cut at the first : or ., masked; never the whole key or the value). Off by default (#132)."
+                },
+                "mail": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Sent mail (MessageSent) per mailable class and mailer name; failures only through exception capture (exceptions.enabled) when it sees a mail transport exception. Never recipients, subjects or bodies. Off by default (#132)."
+                },
+                "notifications": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Sent and failed notifications (NotificationSent, NotificationFailed) per notification class and channel. Never the notifiable or the content. Off by default (#132)."
+                },
+                "logLevels": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Log entries (MessageLogged) counted per level. Never the message or the context. Off by default (#132)."
                 }
             }
         },
@@ -363,6 +391,19 @@
                     "minimum": 0,
                     "maximum": 1,
                     "description": "Share of events recorded, 0 to 1. Default 1."
+                }
+            }
+        },
+        "optInRuntimeType": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Collect this type when runtime.enabled is true. Default false: the types added in 1.0.0-beta.2 are opt-in, so an excubia-app that does not know them yet never receives them."
+                },
+                "sampleRate": {
+                    "$ref": "#/$defs/runtimeType/properties/sampleRate"
                 }
             }
         }
