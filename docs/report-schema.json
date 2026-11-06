@@ -52,7 +52,7 @@
             "enum": ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
         },
         "schedule": {
-            "description": "Schedule inventory of the booted app (#146): one entry per event of Illuminate\\Console\\Scheduling\\Schedule, in schedule order, so excubia-app can flag a run that never happened, is late or failed by matching the runtime scheduledTask aggregates on taskId. Set by php artisan excubia:check and excubia:push only; the standalone CLI cannot boot the app and omits it. Excubia does not compute missed runs itself; checks.laravel-scheduler-heartbeat.lateAfterMinutes documents the grace the app applies.",
+            "description": "Schedule inventory of the booted app (#146): one entry per event of Illuminate\\Console\\Scheduling\\Schedule, in schedule order, so excubia-app can flag a run that never happened, is late or failed by matching the runtime scheduledTask aggregates on taskId. Set by php artisan excubia:check and excubia:push only; the standalone CLI cannot boot the app and omits it. Excubia does not compute missed runs itself; each entry carries the grace the app applies (lateAfterMinutes).",
             "type": "array",
             "items": {
                 "$ref": "#/$defs/scheduledTask"
@@ -105,6 +105,11 @@
                         "type": "string",
                         "minLength": 1
                     }
+                },
+                "lateAfterMinutes": {
+                    "description": "Optional: the user's grace for missed-run detection, from checks.laravel-scheduler-heartbeat.lateAfterMinutes (default 5). The app treats a due time with no run of this taskId within this many minutes as late. When absent, the app applies 5.",
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

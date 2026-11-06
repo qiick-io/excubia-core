@@ -35,7 +35,7 @@ final readonly class HealthReportData
     /**
      * @param  list<CheckResultData>  $checkResults
      * @param  list<UpgradeStepData>  $upgradeSteps
-     * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>}>|null  $schedule
+     * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null  $schedule
      */
     public function __construct(
         public array $checkResults,

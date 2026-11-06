@@ -42,7 +42,7 @@ final readonly class LaravelPostureData
      * @param  list<string>  $unwritableDirectoryNames  `storage` and / or `bootstrap/cache` when not a writable directory
      * @param  int|null  $diskUsedPercent  used share of the disk holding `storage/`; null when it could not be measured
      * @param  list<array{queue: string, pendingCount: int, oldestAgeMinutes: int|null}>|null  $queueBacklogs  pending jobs per queue of the default queue connection; null when the driver is not database or redis, or the store could not be read
-     * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>}>|null  $scheduledTasks  the schedule inventory (#146) for the report `schedule`; null when not read
+     * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null  $scheduledTasks  the schedule inventory (#146) for the report `schedule`; null when not read
      */
     public function __construct(
         public string $environment,

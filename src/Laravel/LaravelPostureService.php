@@ -128,7 +128,7 @@ final class LaravelPostureService
             unwritableDirectoryNames: $this->unwritableDirectoryNames($application),
             diskUsedPercent: $this->diskSpace->usedPercent($application->storagePath()),
             queueBacklogs: $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now),
-            scheduledTasks: $this->scheduledTasks($application),
+            scheduledTasks: $this->scheduledTasks($application, $configuration->schedulerLateAfterMinutes),
         );
     }
 
@@ -518,12 +518,14 @@ final class LaravelPostureService
      * it, with its `taskId`. Only names, the cron expression, the timezone
      * name, the flags and the environment names: never arguments, the
      * command line or the output path. A task without a timezone runs in
-     * the PHP default one, which Laravel sets from `app.timezone`. Null when
-     * the schedule could not be read.
+     * the PHP default one, which Laravel sets from `app.timezone`. Each entry
+     * carries the user's late-run grace
+     * (`checks.laravel-scheduler-heartbeat.lateAfterMinutes`) for the app.
+     * Null when the schedule could not be read.
      *
-     * @return list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>}>|null
+     * @return list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null
      */
-    private function scheduledTasks(Application $application): ?array
+    private function scheduledTasks(Application $application, int $lateAfterMinutes): ?array
     {
         try {
             $events = $application->make(Schedule::class)->events();
@@ -547,6 +549,7 @@ final class LaravelPostureService
                 'onOneServer' => (bool) $event->onOneServer,
                 'runsInMaintenanceMode' => (bool) $event->evenInMaintenanceMode,
                 'environments' => array_values(array_filter(array_map(strval(...), (array) $event->environments), static fn (string $name): bool => $name !== '')),
+                'lateAfterMinutes' => $lateAfterMinutes,
             ];
         }
 

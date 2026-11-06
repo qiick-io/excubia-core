@@ -74,11 +74,19 @@ it('adds the schedule inventory to the excubia:check report with the runtime nam
             'onOneServer' => true,
             'runsInMaintenanceMode' => false,
             'environments' => [],
+            'lateAfterMinutes' => 5,
         ])
         ->and($schedule['mysqldump'])->toMatchArray(['expression' => '0 2 * * *', 'timezone' => 'UTC', 'withoutOverlapping' => false, 'onOneServer' => false, 'environments' => ['production', 'staging']])
         ->and($schedule['Closure'])->toMatchArray(['expression' => '*/5 * * * *', 'runsInMaintenanceMode' => false])
         ->and($schedule['nightly cleanup in storage token=[masked]'])->toMatchArray(['expression' => '0 0 * * *', 'runsInMaintenanceMode' => true])
         ->and($schedule['artisan excubia:heartbeat']['expression'])->toBe('* * * * *');
+});
+
+it('puts the configured late-run grace on every schedule entry', function () {
+    $project = scheduleInventoryApp($this->app);
+    file_put_contents($project.'/excubia.json', json_encode(['checks' => ['laravel-scheduler-heartbeat' => ['lateAfterMinutes' => 15]], 'cache' => ['directory' => temporaryProject([])]], JSON_THROW_ON_ERROR));
+
+    expect(array_unique(array_column(scheduleInventoryReport()['schedule'], 'lateAfterMinutes')))->toBe([15]);
 });
 
 it('emits a schedule that matches docs/report-schema.json', function () {

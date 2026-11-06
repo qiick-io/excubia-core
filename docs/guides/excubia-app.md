@@ -83,9 +83,9 @@ The release is resolved from `release` in `excubia.json`, `EXCUBIA_RELEASE`, the
 
 ## Scheduled tasks
 
-`php artisan excubia:push` adds `schedule` to the report (#146): every scheduled event of the app, with its name, cron `expression`, `timezone`, the `withoutOverlapping`, `onOneServer` and `runsInMaintenanceMode` flags, the `environments` it is limited to (empty means all) and a stable `taskId`. With [runtime monitoring](./runtime-monitoring.md) on, each `scheduledTask` aggregate carries the same `taskId`, so the app can flag a task that never ran, ran late or failed:
+`php artisan excubia:push` adds `schedule` to the report (#146): every scheduled event of the app, with its name, cron `expression`, `timezone`, the `withoutOverlapping`, `onOneServer` and `runsInMaintenanceMode` flags, the `environments` it is limited to (empty means all), a stable `taskId` and `lateAfterMinutes`, the grace from `checks.laravel-scheduler-heartbeat.lateAfterMinutes` in your `excubia.json`. With [runtime monitoring](./runtime-monitoring.md) on, each `scheduledTask` aggregate carries the same `taskId`, so the app can flag a task that never ran, ran late or failed:
 
-- a due time of an entry, in its timezone, with no run of that `taskId` within `checks.laravel-scheduler-heartbeat.lateAfterMinutes` (default `5`) is late, and missed once the next due time has passed;
+- a due time of an entry, in its timezone, with no run of that `taskId` within the entry's `lateAfterMinutes` (default `5`) is late, and missed once the next due time has passed;
 - a run with `outcome` `failed` is a failure, and `skipped` is a run the scheduler skipped (overlap, `onOneServer`, maintenance mode or a filter);
 - an entry limited to `environments` that do not include the app's environment, or that does not run in maintenance mode while the app is down, is not expected to run.
 

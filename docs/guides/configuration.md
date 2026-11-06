@@ -108,7 +108,7 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.node-eol.enabled` | boolean | `true` | `false` reports `node-eol` as `skipped` (`not-applicable`). |
 | `checks.laravel-scheduler-heartbeat` | object | | Settings of `laravel-scheduler-heartbeat`. |
 | `checks.laravel-scheduler-heartbeat.staleAfterMinutes` | integer ≥ 1 | `10` | Warn when the heartbeat written by `excubia:heartbeat` is older than this many minutes. |
-| `checks.laravel-scheduler-heartbeat.lateAfterMinutes` | integer ≥ 1 | `5` | Grace for missed-run detection in excubia-app (#146): a scheduled task in the report `schedule` counts as late when no run of it started within this many minutes of a due time. Excubia itself does not compute missed runs. |
+| `checks.laravel-scheduler-heartbeat.lateAfterMinutes` | integer ≥ 1 | `5` | Grace for missed-run detection in excubia-app (#146): sent as `lateAfterMinutes` on each report `schedule` entry; a scheduled task counts as late when no run of it started within this many minutes of a due time. Excubia itself does not compute missed runs. |
 | `checks.laravel-failed-jobs` | object | | Settings of `laravel-failed-jobs`. |
 | `checks.laravel-failed-jobs.highSeverityAfterHours` | integer ≥ 1 | `24` | Failed jobs warn at medium, and at high once the oldest is at least this many hours old. |
 | `checks.dependency-licenses` | object | | Settings of `dependency-licenses`, see [below](#dependency-licenses). |
