@@ -19,6 +19,7 @@ use Qiick\Excubia\Laravel\ExcubiaHeartbeatCommand;
 use Qiick\Excubia\Laravel\ExcubiaPushCommand;
 use Qiick\Excubia\Laravel\ExcubiaPushRuntimeCommand;
 use Qiick\Excubia\Laravel\HealthEndpointService;
+use Qiick\Excubia\Laravel\PhpWebRuntimeSnapshotService;
 use Qiick\Excubia\Laravel\QueueWorkerHeartbeatService;
 use Qiick\Excubia\Renderers\OhDearHealthRenderer;
 use Qiick\Excubia\Renderers\SarifRenderer;
@@ -205,6 +206,7 @@ it('freezes the Artisan commands, their options and the heartbeat cache keys', f
         'commands' => $commands,
         'heartbeatCacheKey' => ExcubiaHeartbeatCommand::CACHE_KEY,
         'workerHeartbeatCacheKeyPrefix' => QueueWorkerHeartbeatService::CACHE_KEY_PREFIX,
+        'phpWebRuntimeCacheKey' => PhpWebRuntimeSnapshotService::CACHE_KEY,
     ])->toBe(contractSnapshot('artisan'), CONTRACT_CHANGE_MESSAGE);
 });
 

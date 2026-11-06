@@ -18,11 +18,13 @@ use Illuminate\Queue\Failed\NullFailedJobProvider;
 use PDO;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
+use Qiick\Excubia\Contracts\PhpRuntimeContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Services\DatabaseStatisticsService;
 use Qiick\Excubia\Services\DiskSpaceService;
+use Qiick\Excubia\Services\PhpRuntimeService;
 use Throwable;
 
 /**
@@ -53,6 +55,10 @@ use Throwable;
  * For `laravel-backups` (#171), when spatie/laravel-backup is installed, it
  * lists the backups of each monitored destination through the package's
  * `BackupDestination` API: count, newest date and the two newest sizes.
+ *
+ * For `php-opcache` and `php-production-ini` (#172) it prefers the web-SAPI
+ * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`) and
+ * otherwise reads the CLI values of this process.
  *
  * ponytail: Redis, Memcached and `select 1` on an already open connection
  * use the client's own timeouts; wrap them in a deadline if a hung service
@@ -103,6 +109,7 @@ final class LaravelPostureService
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
         private readonly DatabaseStatisticsService $databaseStatistics = new DatabaseStatisticsService,
+        private readonly PhpRuntimeContract $phpRuntime = new PhpRuntimeService,
     ) {}
 
     /**
@@ -174,6 +181,7 @@ final class LaravelPostureService
             defaultDatabaseDriverName: $databaseStatistics['driver'],
             databaseConnectionCount: $databaseStatistics['connectionCount'],
             databaseSize: $databaseStatistics['size'],
+            phpRuntime: $this->phpRuntime($application, $now),
         );
     }
 
@@ -623,6 +631,26 @@ final class LaravelPostureService
         } catch (Throwable) {
             return $unreachable;
         }
+    }
+
+    /**
+     * The web-SAPI snapshot when the health endpoint stored one, else the
+     * values of this CLI process.
+     *
+     * @return array{sapi: string, ageMinutes: int|null, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}
+     */
+    private function phpRuntime(Application $application, DateTimeImmutable $now): array
+    {
+        $snapshot = PhpWebRuntimeSnapshotService::read($application);
+
+        if ($snapshot === null) {
+            return ['sapi' => 'cli', 'ageMinutes' => null, ...$this->phpRuntime->read()];
+        }
+
+        $collectedAt = $snapshot['collectedAt'];
+        unset($snapshot['collectedAt']);
+
+        return ['sapi' => 'web', 'ageMinutes' => $this->ageMinutes($collectedAt, $now), ...$snapshot];
     }
 
     private function ageMinutes(?int $timestamp, DateTimeImmutable $now): ?int

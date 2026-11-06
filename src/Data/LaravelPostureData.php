@@ -52,6 +52,7 @@ final readonly class LaravelPostureData
      * @param  string|null  $defaultDatabaseDriverName  driver of that connection (`mysql`, `pgsql`, `sqlite`, …); null when unknown
      * @param  int|null  $databaseConnectionCount  open connections on the default connection's server (MySQL, MariaDB) or database (PostgreSQL); null when not measured
      * @param  array{sizeMb: float, largestTables: list<array{table: string, sizeMb: float}>}|null  $databaseSize  size of the default database and its five largest tables, in MB; null when not measured
+     * @param  array{sapi: string, ageMinutes: int|null, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null  $phpRuntime  OPcache status and production php.ini directives (#172): the web-SAPI snapshot the health endpoint stored (`sapi` `web`, `ageMinutes` its age) when there is one, else the CLI values of this run (`sapi` `cli`, `ageMinutes` null); null when not read
      */
     public function __construct(
         public string $environment,
@@ -91,5 +92,20 @@ final readonly class LaravelPostureData
         public ?string $defaultDatabaseDriverName = null,
         public ?int $databaseConnectionCount = null,
         public ?array $databaseSize = null,
+        public ?array $phpRuntime = null,
     ) {}
+
+    /**
+     * Which PHP the `php-opcache` and `php-production-ini` findings describe,
+     * for their messages: the web SAPI through the health endpoint snapshot,
+     * or the CLI that runs Artisan, whose values can differ from PHP-FPM's.
+     */
+    public function phpRuntimeSource(): string
+    {
+        if (($this->phpRuntime['sapi'] ?? 'cli') === 'web') {
+            return 'Checked on the web SAPI (health endpoint snapshot, '.($this->phpRuntime['ageMinutes'] ?? 0).' minutes old).';
+        }
+
+        return 'Checked on the CLI SAPI that runs Artisan, whose values can differ from the web server\'s; enable the health endpoint to check the web SAPI.';
+    }
 }

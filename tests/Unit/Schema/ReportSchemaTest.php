@@ -141,6 +141,8 @@ it('documents the details keys per check id', function () {
             'laravel-backups',
             'laravel-database-connections',
             'laravel-database-size',
+            'php-opcache',
+            'php-production-ini',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
@@ -154,5 +156,7 @@ it('documents the details keys per check id', function () {
         ->and($schema['$defs']['backupDestinationDetails']['required'])->toBe(['disk', 'ageHours', 'sizeMb', 'count'])
         ->and($keys('databaseConnectionsDetails'))->toBe(['connection', 'connectionCount'])
         ->and($keys('databaseSizeDetails'))->toBe(['connection', 'sizeMb', 'largestTables'])
-        ->and(array_keys($schema['$defs']['databaseSizeDetails']['properties']['largestTables']['items']['properties']))->toBe(['table', 'sizeMb']);
+        ->and(array_keys($schema['$defs']['databaseSizeDetails']['properties']['largestTables']['items']['properties']))->toBe(['table', 'sizeMb'])
+        ->and($keys('phpOpcacheDetails'))->toBe(['sapi', 'ageMinutes', 'isOpcacheEnabled', 'hitRate', 'memoryUsedPercent', 'cachedScripts', 'isValidateTimestampsEnabled'])
+        ->and($keys('phpProductionIniDetails'))->toBe(['directive', 'isEnabled', 'sapi', 'ageMinutes']);
 });

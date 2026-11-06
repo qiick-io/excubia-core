@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "9c5a111a5d6056ef1df69d8f4becd4a6cb054b31cb615bde84bbbca910f28c0e"
+            "sha256": "0ddd996f78863f1ff4f8676c03c75a3d6911def4d1777bb6f3d245c85056afa3"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -60,7 +60,9 @@
         "npm-outdated",
         "laravel-backups",
         "laravel-database-connections",
-        "laravel-database-size"
+        "laravel-database-size",
+        "php-opcache",
+        "php-production-ini"
     ],
     "sarif": {
         "fingerprintKeys": [
@@ -157,7 +159,8 @@
             }
         },
         "heartbeatCacheKey": "excubia:scheduler-heartbeat",
-        "workerHeartbeatCacheKeyPrefix": "excubia:worker-heartbeat:"
+        "workerHeartbeatCacheKeyPrefix": "excubia:worker-heartbeat:",
+        "phpWebRuntimeCacheKey": "excubia:php-runtime:web"
     },
     "environmentVariables": [
         "EXCUBIA_APP_TOKEN",

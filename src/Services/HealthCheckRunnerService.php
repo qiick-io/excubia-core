@@ -39,7 +39,9 @@ use Qiick\Excubia\Checks\NodeEndOfLifeCheck;
 use Qiick\Excubia\Checks\NpmAdvisoriesCheck;
 use Qiick\Excubia\Checks\NpmOutdatedCheck;
 use Qiick\Excubia\Checks\PhpEndOfLifeCheck;
+use Qiick\Excubia\Checks\PhpOpcacheCheck;
 use Qiick\Excubia\Checks\PhpPlatformRequirementsCheck;
+use Qiick\Excubia\Checks\PhpProductionIniCheck;
 use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Data\CheckResultData;
@@ -254,6 +256,8 @@ final class HealthCheckRunnerService
             new LaravelBackupsCheck,
             new LaravelDatabaseConnectionsCheck,
             new LaravelDatabaseSizeCheck,
+            new PhpOpcacheCheck,
+            new PhpProductionIniCheck,
         ];
     }
 }
