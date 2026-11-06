@@ -44,7 +44,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy', 'release'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -76,7 +76,30 @@ final class ExcubiaConfigurationLoader
             runtime: $this->runtime($document['runtime'] ?? []),
             exceptions: $this->exceptions($document['exceptions'] ?? []),
             skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
+            release: $this->release($document),
         );
+    }
+
+    /**
+     * The `release` key as written. Only its type is checked here: a string
+     * outside the release syntax is reported as a null release by
+     * `ReleaseService`, as for the environment variables.
+     *
+     * @param  array<string, mixed>  $document
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function release(array $document): ?string
+    {
+        if (! array_key_exists('release', $document)) {
+            return null;
+        }
+
+        if (! is_string($document['release'])) {
+            throw new InvalidConfigurationException('release must be a string.');
+        }
+
+        return $document['release'];
     }
 
     /**

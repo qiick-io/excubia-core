@@ -23,7 +23,8 @@ final class ExcubiaPushCommand extends Command
 {
     protected $signature = 'excubia:push
         {--config= : Config file}
-        {--strict : Do not send, exit 3, when a data source failure skipped a check}';
+        {--strict : Do not send, exit 3, when a data source failure skipped a check}
+        {--deploy : Mark the report as a deploy (adds deployedAt)}';
 
     protected $description = 'Run the checks and send the report to your excubia-app.';
 
@@ -40,7 +41,7 @@ final class ExcubiaPushCommand extends Command
 
         return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new PushCommand(reportListener: $reportListener, laravelPosture: $laravelPosture))->runWithOptions(
             ExcubiaCheckCommand::applicationBasePath($this->getLaravel()),
-            ['config' => $configPath, 'strict' => (bool) $this->option('strict')],
+            ['config' => $configPath, 'strict' => (bool) $this->option('strict'), 'deploy' => (bool) $this->option('deploy')],
             $this->output,
         ), $this->output);
     }

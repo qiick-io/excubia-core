@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "abb3864d4f3f1d36ff8a37766d63fe61a833f893e06a087a52cb946c4deba496"
+            "sha256": "c39a608a712e9b462221ebd9386b00526d0c0a2908fa00df9521fe36d4282d10"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -13,17 +13,17 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "ce7a8f76ae7acd6a4e5b07fecf40b3a00d833970456e71d9724c945b2757fee9"
+            "sha256": "e5db5945c459af44b8c672b608d954c5e0bd403472fe50dae0d58e484c51fd48"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
             "x-excubia-version": 1,
-            "sha256": "94e1926d20e2df0c5c9ea9975c2291c1839cf60b80bb60db24efaad87a330214"
+            "sha256": "86e8f05171004c32a16a9c895d9061e16e5faf3f93c5b90f86e6d9ce7a3f9d50"
         },
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "d2223f524fda128d947d3a625357b8cf3d7907636fed0c03188ccf9341f849e9"
+            "sha256": "14bfd52a47eaf5b5cb54ad2fcb908ba88c6cf246c742cfe389cf96178a418e1b"
         }
     },
     "checkIds": [
@@ -86,7 +86,8 @@
             },
             "options": {
                 "--config": "value required",
-                "--strict": "flag"
+                "--strict": "flag",
+                "--deploy": "flag"
             }
         },
         "cache:clear": {
@@ -120,7 +121,8 @@
                 "arguments": [],
                 "options": {
                     "--config": "value optional",
-                    "--strict": "flag"
+                    "--strict": "flag",
+                    "--deploy": "flag"
                 }
             },
             "excubia:push-runtime": {
@@ -140,6 +142,7 @@
         "EXCUBIA_APP_TOKEN",
         "EXCUBIA_APP_URL",
         "EXCUBIA_HEALTH_SECRET",
+        "EXCUBIA_RELEASE",
         "GITHUB_TOKEN"
     ],
     "push": {

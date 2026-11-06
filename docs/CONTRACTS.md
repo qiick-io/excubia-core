@@ -15,7 +15,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 | Artisan commands and options | `src/Laravel/ExcubiaCheckCommand.php`, `ExcubiaPushCommand.php`, `ExcubiaPushRuntimeCommand.php`, `ExcubiaHeartbeatCommand.php` | — | stable | `PublicContractsTest` (`artisan`), `tests/Laravel/ArtisanCommandsTest.php` |
 | Scheduled entries and the heartbeat cache key | `src/Laravel/ExcubiaServiceProvider.php`, `src/Laravel/ExcubiaHeartbeatCommand.php` | — | stable | `tests/Laravel/ScheduleAndRouteContractTest.php` (`laravel`), `PublicContractsTest` (`artisan.heartbeatCacheKey`) |
 | `excubia.json` keys | [`excubia.schema.json`](../excubia.schema.json), `src/Configuration/ExcubiaConfigurationLoader.php` | `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Feature/ExcubiaConfigurationLoaderTest.php`, `DocumentationCoverageTest` |
-| Environment variables | `src/Console/PushCommand.php`, `src/Laravel/HealthEndpointService.php`, `src/Laravel/ExcubiaPushRuntimeCommand.php`, `src/Services/GitHubRepositoryApiService.php` | — | stable | `PublicContractsTest` (`environmentVariables`), `DocumentationCoverageTest` |
+| Environment variables | `src/Console/PushCommand.php`, `src/Laravel/HealthEndpointService.php`, `src/Laravel/ExcubiaPushRuntimeCommand.php`, `src/Services/GitHubRepositoryApiService.php`, `src/Services/ReleaseService.php` | — | stable | `PublicContractsTest` (`environmentVariables`), `DocumentationCoverageTest` |
 | Push envelope and endpoints | [`docs/push-schema.json`](./push-schema.json), `src/Services/ReportPushService.php` | `protocolVersion` (`1`), schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash, `push`), `ReportSchemaTest`, `PushCommandTest` |
 | Runtime batch payload | [`docs/runtime-schema.json`](./runtime-schema.json), `src/Laravel/RuntimeCollectorService.php` | envelope `protocolVersion`, schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Laravel/RuntimeMonitoringTest.php` |
 | Exception batch payload | [`docs/exception-schema.json`](./exception-schema.json), `src/Laravel/ExceptionPayloadService.php` | envelope `protocolVersion`, schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Laravel/ExceptionPayloadTest.php` |
@@ -44,10 +44,10 @@ Precedence when several apply: `2` > `1` > `3`. The Artisan aliases `excubia:che
 ### Commands and options
 
 - `bin/excubia check [path]`: `--format` (`table`, `json`, `markdown`, `sarif`), `--output`, `--fail-on` (`critical`, `high`, `medium`, `low`, `none`), `--only`, `--skip`, `--no-dev`, `--offline`, `--no-cache`, `--config`, `--no-banner`, `--strict`.
-- `bin/excubia push [path]`: `--config`, `--strict`.
+- `bin/excubia push [path]`: `--config`, `--strict`, `--deploy` (#129).
 - `bin/excubia cache:clear [path]`: `--config`. It is the only cache command, and it exists only in `bin/excubia`, not in Artisan.
 - `php artisan excubia:check`: the `check` options, no `path` (the app base path).
-- `php artisan excubia:push`: `--config`, `--strict`.
+- `php artisan excubia:push`: `--config`, `--strict`, `--deploy` (#129).
 - `php artisan excubia:push-runtime`: `--config`.
 - `php artisan excubia:heartbeat`: no options.
 
@@ -59,8 +59,8 @@ The service provider schedules `excubia:heartbeat` every minute (`* * * * *`), a
 
 ### Configuration and environment
 
-- `excubia.json` keys: every key in `excubia.schema.json` (`failOn`, `includeDev`, `strict`, `checks.*`, `ignore[]`, `cache`, `app`, `privacy`, `healthEndpoint`, `runtime`, `exceptions`), with the types and defaults in the [configuration reference](./guides/configuration.md). Unknown keys stay a configuration error.
-- Environment variables: `EXCUBIA_APP_URL` and `EXCUBIA_APP_TOKEN` (override `app.url` / `app.token`), `EXCUBIA_HEALTH_SECRET` (health endpoint secret, at least 32 characters), `GITHUB_TOKEN` (optional, GitHub API rate limit).
+- `excubia.json` keys: every key in `excubia.schema.json` (`failOn`, `includeDev`, `strict`, `checks.*`, `ignore[]`, `cache`, `release`, `app`, `privacy`, `healthEndpoint`, `runtime`, `exceptions`), with the types and defaults in the [configuration reference](./guides/configuration.md). Unknown keys stay a configuration error.
+- Environment variables: `EXCUBIA_APP_URL` and `EXCUBIA_APP_TOKEN` (override `app.url` / `app.token`), `EXCUBIA_RELEASE` (release identifier, #129), `EXCUBIA_HEALTH_SECRET` (health endpoint secret, at least 32 characters), `GITHUB_TOKEN` (optional, GitHub API rate limit). The release is also read, in this order, from `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT` and `LARAVEL_CLOUD_COMMIT` (`ReleaseService::PLATFORM_VARIABLES`); this list and order are part of the contract.
 
 ### Push protocol
 
@@ -71,6 +71,8 @@ Envelope `protocolVersion: 1` with `batchId` (UUID v4) and `sentAt`, `Authorizat
 | `POST {url}/api/reports` | — | `report` (`docs/report-schema.json`) |
 | `POST {url}/api/runtime` | `runtime` | `runtime` (`docs/runtime-schema.json`, `bucketSeconds` `60`) |
 | `POST {url}/api/exceptions` | `exceptions` | `exceptions` (`docs/exception-schema.json`) |
+
+Optional, additive fields from #129 (versions stay `1`): report `release` and `deployedAt` (`push --deploy`), `runtime.release` and `exceptions.release` (one value per batch, not part of the exception fingerprint).
 
 ### Health endpoint
 

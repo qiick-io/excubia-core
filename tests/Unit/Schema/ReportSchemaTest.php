@@ -61,7 +61,7 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan'])
         ->and($schema['$defs']['project']['required'])->toBe(['php', 'laravel', 'node'])
         ->and(array_keys($schema['$defs']['project']['properties']))->not->toContain('name')
         ->and($schema['$defs']['projectRuntime']['required'])->toBe(['version', 'cycle', 'securitySupportEndsOn', 'activeSupportEndsOn'])

@@ -350,6 +350,35 @@ it('sends exception batches to /api/exceptions with runtime monitoring off and d
         ->assertExitCode(0);
 });
 
+it('adds the release to the exception batch without changing the group fingerprint', function () {
+    $fingerprints = [];
+    $payloads = [];
+
+    foreach ([null, 'v7.0.0'] as $release) {
+        bootExceptionProject($this->app);
+        $client = new FakeHttpClient([EXCEPTIONS_ENDPOINT => ['stored' => true]]);
+        $this->app->instance(HttpClientContract::class, $client);
+        report(new RuntimeException('same failure'));
+        $this->app->terminate();
+        putenv($release === null ? 'EXCUBIA_RELEASE' : 'EXCUBIA_RELEASE='.$release);
+
+        try {
+            $this->artisan('excubia:push-runtime')->assertExitCode(0);
+        } finally {
+            putenv('EXCUBIA_RELEASE');
+        }
+
+        $payloads[] = $client->postedPayloads[0]['exceptions'];
+        $fingerprints[] = $client->postedPayloads[0]['exceptions']['groups'][0]['fingerprint'];
+    }
+
+    expect($payloads[0])->not->toHaveKey('release')
+        ->and(array_keys($payloads[1]))->toBe(['release', 'groups'])
+        ->and($payloads[1]['release'])->toBe('v7.0.0')
+        ->and($fingerprints[1])->toBe($fingerprints[0])
+        ->and(exceptionSchemaErrors($payloads[1]))->toBe([]);
+});
+
 it('keeps a rejected exception batch and resends it with the same batchId', function () {
     bootExceptionProject($this->app);
     $failing = new FakeHttpClient([], [EXCEPTIONS_ENDPOINT => new DataSourceUnavailableException('http', 'The data source returned HTTP 503.', httpStatus: 503)]);

@@ -69,6 +69,7 @@ final class ReportPushService
      * Send one batch of runtime aggregates (`docs/runtime-schema.json`) to
      * `POST {url}/api/runtime`. The caller owns the batch id, so a batch that
      * failed earlier is sent again with the same id and stored once.
+     * `$release` is the release at send time (`ReleaseService`).
      *
      * @param  list<array<string, mixed>>  $aggregates
      *
@@ -82,16 +83,14 @@ final class ReportPushService
         #[\SensitiveParameter]
         ?string $appToken,
         DateTimeImmutable $sentAt,
+        ?string $release = null,
     ): void {
         $this->send(self::RUNTIME_PATH, 'the runtime batch', [
             'protocolVersion' => self::PROTOCOL_VERSION,
             'type' => self::RUNTIME_TYPE,
             'batchId' => $batchId,
             'sentAt' => self::sentAt($sentAt),
-            'runtime' => [
-                'bucketSeconds' => self::RUNTIME_BUCKET_SECONDS,
-                'aggregates' => $aggregates,
-            ],
+            'runtime' => ['bucketSeconds' => self::RUNTIME_BUCKET_SECONDS] + self::release($release) + ['aggregates' => $aggregates],
         ], $appUrl, $appToken);
     }
 
@@ -112,16 +111,26 @@ final class ReportPushService
         #[\SensitiveParameter]
         ?string $appToken,
         DateTimeImmutable $sentAt,
+        ?string $release = null,
     ): void {
         $this->send(self::EXCEPTIONS_PATH, 'the exception batch', [
             'protocolVersion' => self::PROTOCOL_VERSION,
             'type' => self::EXCEPTIONS_TYPE,
             'batchId' => $batchId,
             'sentAt' => self::sentAt($sentAt),
-            'exceptions' => [
-                'groups' => $groups,
-            ],
+            'exceptions' => self::release($release) + ['groups' => $groups],
         ], $appUrl, $appToken);
+    }
+
+    /**
+     * The optional `release` of a runtime or exception batch: one value for
+     * the whole batch, omitted when unknown. Fingerprints do not include it.
+     *
+     * @return array{release?: string}
+     */
+    private static function release(?string $release): array
+    {
+        return $release === null ? [] : ['release' => $release];
     }
 
     /**

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Release identifier and deploy markers (#129), all additive (schema and protocol versions stay `1`): an optional `release` on the JSON report and push payload, on runtime batches (`runtime.release`) and on exception batches (`exceptions.release`; the group fingerprint does not change). It is resolved from the new `excubia.json` key `release`, the new environment variable `EXCUBIA_RELEASE`, then `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`, and for the standalone CLI the commit in the project's `.git` (read from `HEAD` and the ref file or `packed-refs`, without running `git`). Up to 100 characters of `[A-Za-z0-9._+/@-]`, otherwise `null`. New option `--deploy` on `push` and `excubia:push` adds `deployedAt` to the report so excubia-app can draw a deploy marker; the CI and excubia-app guides show it as the post-deploy step.
+
+### Fixed
+
+- `check` and `push` with `--fail-on`, `--no-dev` or `--strict` dropped the `runtime`, `exceptions` and `privacy.skipPackages` settings of `excubia.json` for that run, so packages matched by `privacy.skipPackages` could be sent to the public data sources (#129).
+
 ## [1.0.0-beta.1] - 2026-11-03
 
 First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [`docs/CONTRACTS.md`](./docs/CONTRACTS.md) are frozen: until 1.0.0 only backwards-compatible fixes land. Upgrading from 0.x: [`docs/guides/upgrading.md`](./docs/guides/upgrading.md).

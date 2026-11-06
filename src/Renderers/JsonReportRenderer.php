@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Renderers;
 
+use DateTimeImmutable;
 use DateTimeZone;
 use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\EndOfLifeCycleData;
@@ -13,7 +14,8 @@ use Qiick\Excubia\Data\HealthReportData;
  * JSON report for schema version 1.
  *
  * Optional fields, all additive (still schema version 1): `generatedAt`,
- * `excubiaVersion` and `project` when the report carries them;
+ * `excubiaVersion`, `release`, `deployedAt` and `project` when the report
+ * carries them;
  * per finding `fingerprint` always, `advisoryId` when the finding names
  * one, `skipReason` on skipped rows and `details` when the check set any.
  */
@@ -87,11 +89,19 @@ final class JsonReportRenderer implements ReportRendererContract
         $document = ['schemaVersion' => $healthReport->schemaVersion];
 
         if ($healthReport->generatedAt !== null) {
-            $document['generatedAt'] = $healthReport->generatedAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+            $document['generatedAt'] = self::timestamp($healthReport->generatedAt);
         }
 
         if ($healthReport->excubiaVersion !== null) {
             $document['excubiaVersion'] = $healthReport->excubiaVersion;
+        }
+
+        if ($healthReport->release !== null) {
+            $document['release'] = $healthReport->release;
+        }
+
+        if ($healthReport->deployedAt !== null) {
+            $document['deployedAt'] = self::timestamp($healthReport->deployedAt);
         }
 
         if ($healthReport->project !== null) {
@@ -106,6 +116,11 @@ final class JsonReportRenderer implements ReportRendererContract
             'checks' => $checks,
             'upgradePlan' => $upgradePlan,
         ];
+    }
+
+    private static function timestamp(DateTimeImmutable $moment): string
+    {
+        return $moment->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
     }
 
     /**
