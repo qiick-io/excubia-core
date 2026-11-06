@@ -83,7 +83,7 @@ vendor/bin/excubia --version
 | `laravel-maintenance-mode` | Maintenance mode | Booted app | The app is in maintenance mode (medium) |
 | `laravel-app-key` | Application key | Booted app | `app.key` is empty, in any environment (critical) |
 | `laravel-session-security` | Session cookie security | Booted app | In `production`: `session.secure` false while `app.url` is https, or `session.http_only` false (medium, one row per key) |
-| `laravel-cors-wildcard` | CORS wildcard origin | Booted app | In `production`: `cors.allowed_origins` contains `*` with `cors.supports_credentials` (high), or `*` alone (low) |
+| `laravel-cors-wildcard` | CORS wildcard origin | Booted app | In `production`: `cors.allowed_origins` contains `*` with `cors.supports_credentials` (high). `*` alone passes |
 | `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
