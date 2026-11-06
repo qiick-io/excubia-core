@@ -81,8 +81,14 @@ vendor/bin/excubia --version
 | `laravel-failed-jobs` | Failed jobs | Failed job provider | Failed jobs exist (medium; high once the oldest is 24 hours old) |
 | `laravel-scheduler-heartbeat` | Scheduler heartbeat | Default cache store | The scheduler has not run for more than 10 minutes, or never (medium) |
 | `laravel-maintenance-mode` | Maintenance mode | Booted app | The app is in maintenance mode (medium) |
+| `laravel-app-key` | Application key | Booted app | `app.key` is empty, in any environment (critical) |
+| `laravel-session-security` | Session cookie security | Booted app | In `production`: `session.secure` false while `app.url` is https, or `session.http_only` false (medium, one row per key) |
+| `laravel-cors-wildcard` | CORS wildcard origin | Booted app | In `production`: `cors.allowed_origins` contains `*` with `cors.supports_credentials` (high), or `*` alone (low) |
+| `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
+| `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
+| `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
 
-- The six `laravel-*` posture checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
+- The twelve `laravel-*` posture checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - For `laravel-scheduler-heartbeat`, the service provider schedules `php artisan excubia:heartbeat` every minute. It stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store. Keep the usual `* * * * * php artisan schedule:run` cron (or `schedule:work`), and use a shared cache store (database, Redis) when the scheduler and `excubia:check` run on different machines.
 - Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements. It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`.
 - Thresholds (180 days, 24 months, 10 minutes, 24 hours) are configurable in [`excubia.json`](./docs/guides/configuration.md#checks). Full severity rules: [`docs/SPEC.md`](./docs/SPEC.md) section 3.
@@ -114,9 +120,12 @@ The JSON report also carries, as optional fields of schema version 1:
 | `laravel-pending-migrations` | `count` |
 | `laravel-failed-jobs` | `count`, `oldestAgeHours` (or `null`) |
 | `laravel-scheduler-heartbeat` | `minutesSinceLastRun` (`null`: never ran) |
+| `laravel-cors-wildcard` | `hasCredentials` |
+| `laravel-production-drivers` | `component` (`queue`, `cache`, `session`, `mail`), `driver` |
+| `laravel-dev-packages` | `package` |
 | private packages row of the five checks that send names | `count` |
 
-`laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).
+`laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-log-level` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).
 
 ## CLI
 

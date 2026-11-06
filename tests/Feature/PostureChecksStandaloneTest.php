@@ -13,6 +13,12 @@ const POSTURE_CHECK_IDS = [
     'laravel-failed-jobs',
     'laravel-scheduler-heartbeat',
     'laravel-maintenance-mode',
+    'laravel-app-key',
+    'laravel-session-security',
+    'laravel-cors-wildcard',
+    'laravel-production-drivers',
+    'laravel-log-level',
+    'laravel-dev-packages',
 ];
 
 /**
@@ -34,7 +40,7 @@ function standalonePostureReport(array $options = []): array
     return ['exitCode' => $exitCode, 'report' => json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR)];
 }
 
-it('skips all six posture checks with "requires Artisan" in the standalone CLI', function () {
+it('skips all twelve posture checks with "requires Artisan" in the standalone CLI', function () {
     $scan = standalonePostureReport();
     $results = array_values(array_filter(
         $scan['report']['checks'],
@@ -56,7 +62,7 @@ it('registers the posture checks after the existing checks and honours --skip', 
     $checkIds = array_column(standalonePostureReport()['report']['checks'], 'checkId');
     $skipped = array_column(standalonePostureReport(['--skip' => 'laravel-debug-mode,laravel-failed-jobs'])['report']['checks'], 'checkId');
 
-    expect(array_slice($checkIds, -6))->toBe(POSTURE_CHECK_IDS)
+    expect(array_slice($checkIds, -12))->toBe(POSTURE_CHECK_IDS)
         ->and(array_search('laravel-next-blocker', $checkIds, true))->toBeLessThan(array_search('laravel-debug-mode', $checkIds, true))
         ->and($skipped)->not->toContain('laravel-debug-mode', 'laravel-failed-jobs')
         ->and($skipped)->toContain('laravel-maintenance-mode');

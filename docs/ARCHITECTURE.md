@@ -24,7 +24,13 @@ qiick-io/excubia-core
 │   │   ├── LaravelPendingMigrationsCheck.php (laravel-pending-migrations) # skipped "requires Artisan"
 │   │   ├── LaravelFailedJobsCheck.php      (laravel-failed-jobs)          # when it is null
 │   │   ├── LaravelSchedulerHeartbeatCheck.php (laravel-scheduler-heartbeat)
-│   │   └── LaravelMaintenanceModeCheck.php (laravel-maintenance-mode)
+│   │   ├── LaravelMaintenanceModeCheck.php (laravel-maintenance-mode)
+│   │   ├── LaravelAppKeyCheck.php          (laravel-app-key)
+│   │   ├── LaravelSessionSecurityCheck.php (laravel-session-security)
+│   │   ├── LaravelCorsWildcardCheck.php    (laravel-cors-wildcard)
+│   │   ├── LaravelProductionDriversCheck.php (laravel-production-drivers)
+│   │   ├── LaravelLogLevelCheck.php        (laravel-log-level)
+│   │   └── LaravelDevPackagesCheck.php     (laravel-dev-packages)
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string

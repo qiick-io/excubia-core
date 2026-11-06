@@ -96,6 +96,9 @@ it('documents the details keys per check id', function () {
         ->and($keys('pendingMigrationsDetails'))->toBe(['count'])
         ->and($keys('failedJobsDetails'))->toBe(['count', 'oldestAgeHours'])
         ->and($keys('schedulerHeartbeatDetails'))->toBe(['minutesSinceLastRun'])
+        ->and($keys('corsWildcardDetails'))->toBe(['hasCredentials'])
+        ->and($keys('productionDriversDetails'))->toBe(['component', 'driver'])
+        ->and($keys('devPackagesDetails'))->toBe(['package'])
         ->and($ruledCheckIds)->toBe([
             'composer-advisories',
             'npm-advisories',
@@ -108,5 +111,8 @@ it('documents the details keys per check id', function () {
             'laravel-pending-migrations',
             'laravel-failed-jobs',
             'laravel-scheduler-heartbeat',
+            'laravel-cors-wildcard',
+            'laravel-production-drivers',
+            'laravel-dev-packages',
         ]);
 });

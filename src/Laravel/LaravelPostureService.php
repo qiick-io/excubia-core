@@ -6,6 +6,7 @@ namespace Qiick\Excubia\Laravel;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Queue\Failed\FailedJobProviderInterface;
@@ -25,14 +26,32 @@ use Throwable;
  */
 final class LaravelPostureService
 {
+    /**
+     * Development tools that must not run in production: their service
+     * providers (old and new namespaces) and the config flag that turns them
+     * off. `followsDebugWhenUnset` is true for the tools that default to
+     * `app.debug` when the flag is null; the others default to on.
+     *
+     * @var array<string, array{providers: list<string>, flag: string|null, followsDebugWhenUnset: bool}>
+     */
+    private const DEVELOPMENT_PACKAGES = [
+        'laravel/telescope' => ['providers' => ['Laravel\\Telescope\\TelescopeServiceProvider'], 'flag' => 'telescope.enabled', 'followsDebugWhenUnset' => false],
+        'barryvdh/laravel-debugbar' => ['providers' => ['Barryvdh\\Debugbar\\ServiceProvider', 'Fruitcake\\LaravelDebugbar\\ServiceProvider'], 'flag' => 'debugbar.enabled', 'followsDebugWhenUnset' => true],
+        'spatie/laravel-ray' => ['providers' => ['Spatie\\LaravelRay\\RayServiceProvider'], 'flag' => 'ray.enable', 'followsDebugWhenUnset' => false],
+        'laravel/pail' => ['providers' => ['Laravel\\Pail\\PailServiceProvider'], 'flag' => null, 'followsDebugWhenUnset' => false],
+        'itsgoingd/clockwork' => ['providers' => ['Clockwork\\Support\\Laravel\\ClockworkServiceProvider'], 'flag' => 'clockwork.enable', 'followsDebugWhenUnset' => true],
+    ];
+
     public function collect(Application $application, ?DateTimeImmutable $now = null): LaravelPostureData
     {
         $heartbeat = $this->schedulerHeartbeat($application);
         $failedJobs = $this->failedJobs($application);
+        $config = $application->make('config');
+        $applicationKey = $config->get('app.key');
 
         return new LaravelPostureData(
             environment: $application->environment(),
-            isDebugModeEnabled: (bool) $application->make('config')->get('app.debug'),
+            isDebugModeEnabled: (bool) $config->get('app.debug'),
             isConfigurationCached: $application->configurationIsCached(),
             areRoutesCached: $application->routesAreCached(),
             areEventsCached: $application->eventsAreCached(),
@@ -43,7 +62,92 @@ final class LaravelPostureService
             isSchedulerHeartbeatReadable: $heartbeat['isReadable'],
             schedulerHeartbeatAt: $heartbeat['at'],
             collectedAt: $now ?? new DateTimeImmutable('now', new DateTimeZone('UTC')),
+            hasApplicationKey: is_string($applicationKey) && $applicationKey !== '',
+            isApplicationUrlHttps: str_starts_with(strtolower((string) $config->get('app.url')), 'https://'),
+            isSessionCookieSecure: (bool) $config->get('session.secure'),
+            isSessionCookieHttpOnly: (bool) $config->get('session.http_only', true),
+            hasCorsWildcardOrigin: in_array('*', (array) $config->get('cors.allowed_origins', []), true),
+            isCorsCredentialSupportEnabled: (bool) $config->get('cors.supports_credentials'),
+            driverNames: $this->driverNames($config),
+            isDefaultLogLevelDebug: $this->isDefaultLogLevelDebug($config),
+            enabledDevelopmentPackageNames: $this->enabledDevelopmentPackageNames($application, $config),
         );
+    }
+
+    /**
+     * Driver of the default queue connection, cache store and mailer, and the
+     * session driver. Only the driver name is kept, never the connection
+     * settings.
+     *
+     * @return array<string, string>
+     */
+    private function driverNames(Repository $config): array
+    {
+        $candidates = [
+            'queue' => $config->get('queue.connections.'.$config->get('queue.default').'.driver'),
+            'cache' => $config->get('cache.stores.'.$config->get('cache.default').'.driver'),
+            'session' => $config->get('session.driver'),
+            'mail' => $config->get('mail.mailers.'.$config->get('mail.default').'.transport'),
+        ];
+
+        return array_filter($candidates, fn (mixed $driver): bool => is_string($driver) && $driver !== '');
+    }
+
+    /**
+     * True when the default log channel, or one of the channels it stacks,
+     * logs at `debug`. A channel without a level logs at `debug` (Monolog's
+     * default).
+     */
+    private function isDefaultLogLevelDebug(Repository $config): bool
+    {
+        $default = (string) $config->get('logging.default');
+        $channel = (array) $config->get('logging.channels.'.$default, []);
+        $channelNames = ($channel['driver'] ?? null) === 'stack' ? (array) ($channel['channels'] ?? []) : [$default];
+
+        foreach ($channelNames as $channelName) {
+            $level = $config->get('logging.channels.'.$channelName.'.level', 'debug');
+
+            if (is_string($level) && strtolower($level) === 'debug') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Names of the development tool packages whose provider is registered
+     * and whose enable flag is on.
+     *
+     * @return list<string>
+     */
+    private function enabledDevelopmentPackageNames(Application $application, Repository $config): array
+    {
+        $names = [];
+
+        foreach (self::DEVELOPMENT_PACKAGES as $name => $package) {
+            $isRegistered = false;
+
+            foreach ($package['providers'] as $provider) {
+                $isRegistered = $isRegistered || $application->getProviders($provider) !== [];
+            }
+
+            if (! $isRegistered) {
+                continue;
+            }
+
+            $flag = $package['flag'] === null ? true : $config->get($package['flag']);
+
+            if ($flag === null) {
+                $flag = $package['followsDebugWhenUnset'] ? $config->get('app.debug') : true;
+            }
+
+            if ((bool) $flag) {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
     }
 
     /**

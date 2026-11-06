@@ -17,6 +17,7 @@ final readonly class ProjectSnapshotData
     /**
      * @param  list<LockedPackageData>  $composerPackages
      * @param  list<LockedPackageData>  $npmPackages
+     * @param  list<string>  $requiredPackageNames  package names in `composer.json` `require` (not `require-dev`)
      */
     public function __construct(
         public ?string $phpVersion,
@@ -26,6 +27,7 @@ final readonly class ProjectSnapshotData
         public ?string $nodeVersionDeclaration,
         public bool $hasNpmLockfile = false,
         public ?LaravelPostureData $laravelPosture = null,
+        public array $requiredPackageNames = [],
     ) {}
 
     /**
@@ -41,6 +43,7 @@ final readonly class ProjectSnapshotData
             nodeVersionDeclaration: $this->nodeVersionDeclaration,
             hasNpmLockfile: $this->hasNpmLockfile,
             laravelPosture: $laravelPosture,
+            requiredPackageNames: $this->requiredPackageNames,
         );
     }
 }
