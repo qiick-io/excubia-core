@@ -46,11 +46,8 @@ final class ServerResourcesService implements ServerResourcesContract
 
         $loadAverages = sys_getloadavg();
 
-        if (! is_array($loadAverages)) {
-            return null;
-        }
-
-        return [(float) $loadAverages[0], (float) $loadAverages[1], (float) $loadAverages[2]];
+        // Through the same parser, so the result is typed whatever PHP's stubs say.
+        return is_array($loadAverages) ? self::parseLoadAverages(implode(' ', $loadAverages)) : null;
     }
 
     public function cpuCoreCount(): ?int
