@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Qiick\Excubia\Services\ServerMetricsService;
+use Qiick\Excubia\Services\ServerResourcesService;
 use Qiick\Excubia\Tests\Support\FakeServerDisk;
 use Qiick\Excubia\Tests\Support\FakeServerResources;
 
@@ -21,10 +22,12 @@ it('builds one server aggregate for the minute with load, cores, memory in MiB a
         'loadAverage5' => 0.5,
         'loadAverage15' => 1.0,
         'cpuCores' => 4,
+        'cpuLimit' => null,
         'memoryUsedMb' => 2048,
         'memoryTotalMb' => 8192,
         'diskUsedGb' => 30.0,
         'diskTotalGb' => 80.0,
+        'isContainer' => false,
     ])
         ->and($disk->measuredDirectory)->toBe('/srv/app/storage')
         ->and(json_encode($aggregate, JSON_THROW_ON_ERROR))->not->toContain('/srv/app');
@@ -39,11 +42,22 @@ it('reports null for every value a platform does not expose', function () {
         'loadAverage5' => null,
         'loadAverage15' => null,
         'cpuCores' => null,
+        'cpuLimit' => null,
         'memoryUsedMb' => null,
         'memoryTotalMb' => null,
         'diskUsedGb' => null,
         'diskTotalGb' => null,
+        'isContainer' => false,
     ]);
+});
+
+it('reports the container memory, the fractional CPU limit and isContainer from cgroup fixtures, without the cgroup path (#173)', function () {
+    $resources = new ServerResourcesService(dirname(__DIR__, 2).'/Fixtures/Server/linux', 'Linux', dirname(__DIR__, 2).'/Fixtures/Server/cgroup-v2');
+    $aggregate = (new ServerMetricsService($resources, new FakeServerDisk))->aggregate('web-1', '/srv/app/storage', 1.0, 0);
+
+    expect($aggregate)->toMatchArray(['cpuCores' => 4, 'cpuLimit' => 1.5, 'memoryUsedMb' => 600, 'memoryTotalMb' => 1024, 'isContainer' => true])
+        ->and(json_encode($aggregate, JSON_THROW_ON_ERROR))->not->toContain('cgroup')
+        ->and(json_encode($aggregate, JSON_THROW_ON_ERROR))->not->toContain('Fixtures');
 });
 
 it('identifies the server by its configured name, else by a stable hash that never holds the hostname', function () {
