@@ -190,6 +190,33 @@
                         }
                     }
                 },
+                "laravel-database-connections": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAt": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn (medium) when the default database connection has more open connections than this (MySQL, MariaDB: Threads_connected on the server; PostgreSQL: pg_stat_activity for the database). At most failAt. Default 50."
+                        },
+                        "failAt": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Fail (high) when the default database connection has more open connections than this. Default 100."
+                        }
+                    }
+                },
+                "laravel-database-size": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAtMb": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn (medium) when the default database is larger than this many MB. Unset by default: the size is only reported (pass, info)."
+                        }
+                    }
+                },
                 "laravel-queue-workers": {
                     "type": "object",
                     "additionalProperties": false,

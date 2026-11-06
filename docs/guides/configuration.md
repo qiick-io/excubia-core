@@ -30,7 +30,9 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "laravel-queue-backlog": { "maxOldestAgeMinutes": 15, "maxPendingJobs": 1000, "queues": [] },
     "env-example-sync": { "ignoreKeys": [], "useDefaultIgnoreKeys": true },
     "laravel-queue-workers": { "staleAfterMinutes": 5 },
-    "laravel-backups": { "maxAgeHours": 26 }
+    "laravel-backups": { "maxAgeHours": 26 },
+    "laravel-database-connections": { "warnAt": 50, "failAt": 100 },
+    "laravel-database-size": { "warnAtMb": 10240 }
   },
   "ignore": [
     {
@@ -135,6 +137,11 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.laravel-queue-workers.staleAfterMinutes` | integer ≥ 1 | `5` | Without Laravel Horizon: warn (medium) for a queue that has pending jobs when no worker heartbeat (`excubia:worker-heartbeat:<connection>:<queue>`) is newer than this many minutes. Ignored when Horizon is installed: its own status is read instead. |
 | `checks.laravel-backups` | object | | Settings of `laravel-backups`. |
 | `checks.laravel-backups.maxAgeHours` | integer ≥ 1 | `26` | Fail (high) for a spatie/laravel-backup destination whose newest backup is older than this many hours. |
+| `checks.laravel-database-connections` | object | | Settings of `laravel-database-connections`. |
+| `checks.laravel-database-connections.warnAt` | integer ≥ 1 | `50` | Warn (medium) when the default database connection has more open connections than this (MySQL / MariaDB: `Threads_connected` on the server; PostgreSQL: `pg_stat_activity` rows for the database). At most `failAt`. |
+| `checks.laravel-database-connections.failAt` | integer ≥ 1 | `100` | Fail (high) when the default database connection has more open connections than this. |
+| `checks.laravel-database-size` | object | | Settings of `laravel-database-size`. |
+| `checks.laravel-database-size.warnAtMb` | integer ≥ 1 | unset | Warn (medium) when the default database is larger than this many MB. Unset, the size and the five largest tables are only reported (pass, info). |
 
 ### Dependency licenses
 

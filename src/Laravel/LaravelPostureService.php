@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Laravel;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Queue\Failed\FailedJobProviderInterface;
@@ -19,6 +21,7 @@ use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LaravelPostureData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
+use Qiick\Excubia\Services\DatabaseStatisticsService;
 use Qiick\Excubia\Services\DiskSpaceService;
 use Throwable;
 
@@ -38,6 +41,10 @@ use Throwable;
  * `storage/` and `bootstrap/cache` are writable, measure the disk and count
  * pending jobs. Connections opened only for the probe get a short connect
  * timeout and are closed again.
+ *
+ * For `laravel-database-connections` and `laravel-database-size` (#169)
+ * it runs read-only statistics queries on the default connection through
+ * `DatabaseStatisticsService`, opened like the `select 1` probe.
  *
  * For `laravel-queue-workers` (#151) it reads the worker heartbeat key of
  * each queue the backlog probe read and, when Laravel Horizon is installed,
@@ -93,7 +100,10 @@ final class LaravelPostureService
      */
     private const BACKUP_DESTINATION = 'Spatie\\Backup\\BackupDestination\\BackupDestination';
 
-    public function __construct(private readonly DiskSpaceContract $diskSpace = new DiskSpaceService) {}
+    public function __construct(
+        private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
+        private readonly DatabaseStatisticsService $databaseStatistics = new DatabaseStatisticsService,
+    ) {}
 
     /**
      * The `excubia.json` the run will use, for the probe lists. An invalid
@@ -124,6 +134,7 @@ final class LaravelPostureService
         $queueBacklogs = $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now);
         $isHorizonInstalled = $this->isHorizonInstalled($application);
         $isBackupPackageInstalled = class_exists(self::BACKUP_DESTINATION);
+        $databaseStatistics = $this->defaultDatabaseStatistics($application, $config);
 
         return new LaravelPostureData(
             environment: $application->environment(),
@@ -159,6 +170,10 @@ final class LaravelPostureService
             scheduledTasks: $this->scheduledTasks($application, $configuration->schedulerLateAfterMinutes),
             isBackupPackageInstalled: $isBackupPackageInstalled,
             backupDestinations: $isBackupPackageInstalled ? $this->backupDestinations($config) : null,
+            defaultDatabaseConnectionName: $databaseStatistics['connection'],
+            defaultDatabaseDriverName: $databaseStatistics['driver'],
+            databaseConnectionCount: $databaseStatistics['connectionCount'],
+            databaseSize: $databaseStatistics['size'],
         );
     }
 
@@ -186,17 +201,35 @@ final class LaravelPostureService
     }
 
     /**
-     * Runs `select 1`. A connection the app has not opened yet is opened with
-     * a short connect timeout (MySQL, MariaDB, PostgreSQL), then closed and
-     * its configuration restored, so the probe leaves no trace.
+     * Runs `select 1`. An unknown name or a failing query is unreachable.
      */
     private function isDatabaseReachable(Application $application, Repository $config, string $name): bool
+    {
+        return $this->probeDatabase($application, $config, $name, static function (ConnectionInterface $connection): bool {
+            $connection->select('select 1');
+
+            return true;
+        }) ?? false;
+    }
+
+    /**
+     * Runs `$probe` on a connection. A connection the app has not opened yet
+     * is opened with a short connect timeout (MySQL, MariaDB, PostgreSQL),
+     * then closed and its configuration restored, so the probe leaves no
+     * trace. Null for an unknown name or when the probe throws.
+     *
+     * @template TResult
+     *
+     * @param  Closure(ConnectionInterface): TResult  $probe
+     * @return TResult|null
+     */
+    private function probeDatabase(Application $application, Repository $config, string $name, Closure $probe): mixed
     {
         $key = 'database.connections.'.$name;
         $settings = $config->get($key);
 
         if (! is_array($settings)) {
-            return false;
+            return null;
         }
 
         $shouldLimitTimeout = false;
@@ -213,17 +246,64 @@ final class LaravelPostureService
                 $config->set($key.'.options', $options + [PDO::ATTR_TIMEOUT => self::PROBE_TIMEOUT_SECONDS]);
             }
 
-            $database->connection($name)->select('select 1');
-
-            return true;
+            return $probe($database->connection($name));
         } catch (Throwable) {
-            return false;
+            return null;
         } finally {
             if ($shouldLimitTimeout) {
                 $application->make('db')->purge($name);
                 $config->set($key, $settings);
             }
         }
+    }
+
+    /**
+     * Open connections and size of the default connection (#169), through
+     * `DatabaseStatisticsService`. Only the connection name, the driver
+     * name, counts and megabytes are kept: the SQLite file path is read to
+     * measure the file and then dropped.
+     *
+     * @return array{connection: string|null, driver: string|null, connectionCount: int|null, size: array{sizeMb: float, largestTables: list<array{table: string, sizeMb: float}>}|null}
+     */
+    private function defaultDatabaseStatistics(Application $application, Repository $config): array
+    {
+        $name = $config->get('database.default');
+        $name = is_string($name) && $name !== '' ? $name : null;
+        $driver = $name === null ? null : $config->get('database.connections.'.$name.'.driver');
+        $driver = is_string($driver) && $driver !== '' ? $driver : null;
+        $unmeasured = ['connection' => $name, 'driver' => $driver, 'connectionCount' => null, 'size' => null];
+
+        if ($name === null || $driver === null || ! in_array($driver, DatabaseStatisticsService::SIZE_DRIVERS, true)) {
+            return $unmeasured;
+        }
+
+        $measured = $this->probeDatabase($application, $config, $name, function (ConnectionInterface $connection) use ($application, $driver): array {
+            $query = new LaravelDatabaseQueryService($connection);
+            $sqliteFile = $driver === 'sqlite' ? $this->sqliteFile($application, $connection->getConfig('database')) : null;
+
+            return [
+                'connectionCount' => $this->databaseStatistics->connectionCount($driver, $query),
+                'size' => $this->databaseStatistics->size($driver, $query, $sqliteFile),
+            ];
+        });
+
+        return $measured === null ? $unmeasured : ['connection' => $name, 'driver' => $driver, 'connectionCount' => $measured['connectionCount'], 'size' => $measured['size']];
+    }
+
+    /**
+     * The file of a SQLite connection, resolved as Laravel's connector does
+     * (as written, else relative to the app); null for `:memory:` or a
+     * missing file.
+     */
+    private function sqliteFile(Application $application, mixed $database): ?string
+    {
+        if (! is_string($database) || $database === '' || $database === ':memory:') {
+            return null;
+        }
+
+        $file = realpath($database) ?: realpath($application->basePath($database));
+
+        return $file === false ? null : $file;
     }
 
     /**

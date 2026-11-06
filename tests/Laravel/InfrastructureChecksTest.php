@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseConnectionsCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseSizeCheck;
 use Qiick\Excubia\Checks\LaravelDiskSpaceCheck;
 use Qiick\Excubia\Checks\LaravelQueueBacklogCheck;
 use Qiick\Excubia\Checks\LaravelQueueWorkersCheck;
@@ -183,6 +185,8 @@ it('reports every infrastructure check as skipped when the snapshot has no postu
     'storage' => fn () => new LaravelStorageCheck,
     'disk space' => fn () => new LaravelDiskSpaceCheck,
     'queue backlog' => fn () => new LaravelQueueBacklogCheck,
+    'database connections' => fn () => new LaravelDatabaseConnectionsCheck,
+    'database size' => fn () => new LaravelDatabaseSizeCheck,
 ]);
 
 describe('laravel-database', function () {
@@ -693,5 +697,93 @@ describe('laravel-queue-workers', function () {
             ->not->toContain('sentinel')
             ->not->toContain('4243')
             ->not->toContain('4242');
+    });
+});
+
+/**
+ * Points the default `testing` connection at a SQLite file of the project
+ * (relative to it when `$relativePath` is), with a `posts` table holding
+ * about 1.2 MB, and answers whether this SQLite build has `dbstat`.
+ */
+function sqliteFileApp(string $relativePath = 'database/app.sqlite', bool $shouldUseRelativePath = false): array
+{
+    $project = infrastructureApp();
+    @mkdir(dirname($project.'/'.$relativePath), 0777, true);
+    touch($project.'/'.$relativePath);
+    config(['database.connections.testing' => ['driver' => 'sqlite', 'database' => $shouldUseRelativePath ? $relativePath : $project.'/'.$relativePath, 'prefix' => '', 'password' => 'db-password-sentinel']]);
+    DB::purge('testing');
+    Schema::create('posts', function ($table) {
+        $table->id();
+        $table->text('body');
+    });
+
+    foreach (range(1, 12) as $row) {
+        DB::table('posts')->insert(['body' => str_repeat('p', 100 * 1024)]);
+    }
+
+    $hasDbstat = (bool) (DB::selectOne("select exists (select 1 from pragma_compile_options where compile_options = 'ENABLE_DBSTAT_VTAB') as enabled")->enabled ?? false);
+
+    return ['project' => $project, 'file' => $project.'/'.$relativePath, 'hasDbstat' => $hasDbstat];
+}
+
+describe('laravel-database-connections and laravel-database-size on a real SQLite database', function () {
+    it('reports the size of the SQLite file in MB, and its largest tables when dbstat is available', function (bool $shouldUseRelativePath) {
+        $app = sqliteFileApp(shouldUseRelativePath: $shouldUseRelativePath);
+        clearstatcache();
+        $result = infrastructureResult(new LaravelDatabaseSizeCheck);
+        $details = $result->findings[0]->details;
+
+        expect($result->status->value)->toBe('pass')
+            ->and($result->findings[0]->severity->value)->toBe('info')
+            ->and($result->findings[0]->subject)->toBe('testing')
+            ->and($details['connection'])->toBe('testing')
+            ->and($details['sizeMb'])->toBe(round(filesize($app['file']) / 1048576, 2))
+            ->and($details['sizeMb'])->toBeGreaterThan(1.0)
+            ->and($app['hasDbstat'] ? ($details['largestTables'][0]['table'] ?? null) : $details['largestTables'])->toBe($app['hasDbstat'] ? 'posts' : [])
+            ->and(infrastructureResult(new LaravelDatabaseSizeCheck, (new ExcubiaConfigurationLoader)->load(null, temporaryProject(['excubia.json' => '{"checks": {"laravel-database-size": {"warnAtMb": 1}}}'])))->status->value)->toBe('warn');
+    })->with(['absolute path' => false, 'path relative to the app' => true]);
+
+    it('skips the connection count on SQLite and the size of an in-memory or unreachable database', function () {
+        $project = infrastructureApp();
+        $connections = infrastructureResult(new LaravelDatabaseConnectionsCheck);
+        $inMemory = infrastructureResult(new LaravelDatabaseSizeCheck);
+        config(['database.connections.testing.database' => $project.'/missing-dir/db.sqlite']);
+        DB::purge('testing');
+        $unreachable = infrastructureResult(new LaravelDatabaseSizeCheck);
+
+        expect($connections->status->value)->toBe('skipped')
+            ->and($connections->findings[0]->message)->toContain('uses sqlite')
+            ->and($inMemory->status->value)->toBe('skipped')
+            ->and($inMemory->findings[0]->message)->toContain('could not be measured')
+            ->and($unreachable->status->value)->toBe('skipped')
+            ->and($unreachable->findings[0]->message)->toContain('could not be measured');
+    });
+
+    it('does not connect for a driver it cannot measure, and records the connection and driver names', function () {
+        infrastructureApp();
+        config(['database.connections.reporting' => ['driver' => 'sqlsrv', 'host' => 'sqlsrv-host-sentinel'], 'database.default' => 'reporting']);
+        $posture = (new LaravelPostureService(new FakeDiskSpace(10)))->collect(app());
+
+        expect([$posture->defaultDatabaseConnectionName, $posture->defaultDatabaseDriverName, $posture->databaseConnectionCount, $posture->databaseSize])->toBe(['reporting', 'sqlsrv', null, null])
+            ->and(DB::getConnections())->not->toHaveKey('reporting')
+            ->and(infrastructureResult(new LaravelDatabaseSizeCheck)->findings[0]->message)->toContain('uses sqlsrv');
+    });
+
+    it('keeps the SQLite path, the database name and credentials out of the findings', function () {
+        $app = sqliteFileApp('db-path-sentinel/app.sqlite');
+
+        Artisan::call('excubia:check', [
+            '--format' => 'json',
+            '--no-banner' => true,
+            '--fail-on' => 'none',
+            '--only' => 'laravel-database-connections,laravel-database-size',
+        ]);
+        $output = Artisan::output();
+
+        expect($output)->toContain('The database of connection testing takes', '"sizeMb"', 'open connections are counted on MySQL, MariaDB and PostgreSQL only')
+            ->not->toContain('sentinel')
+            ->not->toContain('app.sqlite')
+            ->not->toContain($app['project'])
+            ->not->toContain(sys_get_temp_dir());
     });
 });

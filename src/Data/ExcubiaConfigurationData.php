@@ -42,6 +42,11 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * a queue with pending jobs warns when no worker heartbeat is newer (default 5).
  * `backupsMaxAgeHours` is `checks.laravel-backups.maxAgeHours`: a monitored
  * backup destination fails when its newest backup is older (default 26).
+ * `databaseConnectionsWarnAt` and `databaseConnectionsFailAt` are
+ * `checks.laravel-database-connections.warnAt` / `failAt` (open connections
+ * above which the check warns or fails, default 50 and 100);
+ * `databaseSizeWarnAtMb` is `checks.laravel-database-size.warnAtMb` (null,
+ * the default, only reports the size).
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -94,6 +99,9 @@ final readonly class ExcubiaConfigurationData
         public int $queueWorkersStaleAfterMinutes = 5,
         public int $schedulerLateAfterMinutes = 5,
         public int $backupsMaxAgeHours = 26,
+        public int $databaseConnectionsWarnAt = 50,
+        public int $databaseConnectionsFailAt = 100,
+        public ?int $databaseSizeWarnAtMb = null,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -125,6 +133,14 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->diskSpaceWarnAtPercentUsed < 1 || $this->diskSpaceFailAtPercentUsed > 100 || $this->diskSpaceWarnAtPercentUsed > $this->diskSpaceFailAtPercentUsed) {
             throw new InvalidConfigurationException('laravel-disk-space needs 1 <= warnAtPercentUsed <= failAtPercentUsed <= 100.');
+        }
+
+        if ($this->databaseConnectionsWarnAt < 1 || $this->databaseConnectionsWarnAt > $this->databaseConnectionsFailAt) {
+            throw new InvalidConfigurationException('laravel-database-connections needs 1 <= warnAt <= failAt.');
+        }
+
+        if ($this->databaseSizeWarnAtMb !== null && $this->databaseSizeWarnAtMb < 1) {
+            throw new InvalidConfigurationException('checks.laravel-database-size.warnAtMb must be at least 1.');
         }
 
         if ($this->queueBacklogMaxOldestAgeMinutes < 1 || $this->queueBacklogMaxPendingJobs < 1) {

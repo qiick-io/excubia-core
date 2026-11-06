@@ -214,6 +214,9 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('npm-outdated', ['count' => 1]),
         $finding('laravel-backups', ['disk' => 's3', 'ageHours' => 30, 'sizeMb' => 12.5, 'count' => 7]),
         $finding('laravel-backups', ['disk' => 's3', 'ageHours' => null, 'sizeMb' => null, 'count' => null]),
+        $finding('laravel-database-connections', ['connection' => 'mysql', 'connectionCount' => 120]),
+        $finding('laravel-database-size', ['connection' => 'mysql', 'sizeMb' => 512.25, 'largestTables' => [['table' => 'activity_log', 'sizeMb' => 300.5], ['table' => 'users', 'sizeMb' => 2]]]),
+        $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 0.02, 'largestTables' => []]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
@@ -240,6 +243,14 @@ it('accepts every documented details shape and rejects one that does not fit its
         ->and(reportSchemaErrors($invalidOutdated))->not->toBe([])
         ->and(reportSchemaErrors($invalidNpmOutdated))->not->toBe([])
         ->and(reportSchemaErrors($invalidBackups))->not->toBe([]);
+
+    foreach ([
+        $finding('laravel-database-connections', ['connection' => 'mysql', 'connectionCount' => 120, 'host' => 'db.internal']),
+        $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 1.5, 'largestTables' => [], 'path' => '/srv/app/database.sqlite']),
+        $finding('laravel-database-size', ['connection' => 'mysql', 'sizeMb' => 1.5, 'largestTables' => [['table' => 'users', 'sizeMb' => 1.5, 'schema' => 'production_db']]]),
+    ] as $invalidDatabaseFinding) {
+        expect(reportSchemaErrors($render([$invalidDatabaseFinding])))->not->toBe([]);
+    }
 });
 
 /**

@@ -21,7 +21,7 @@ use Qiick\Excubia\Enums\SkipReasonEnum;
 final readonly class FindingData
 {
     /**
-     * @param  array<string, string|int|float|bool|list<string>|null>  $details
+     * @param  array<string, string|int|float|bool|list<string>|list<array<string, string|int|float>>|null>  $details  a float or a list of objects only where `docs/report-schema.json` says so (`laravel-database-size`)
      */
     public function __construct(
         public string $checkId,

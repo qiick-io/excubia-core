@@ -285,6 +285,9 @@ final class CheckCommand extends Command
             envExampleSync: $loaded->envExampleSync,
             queueWorkersStaleAfterMinutes: $loaded->queueWorkersStaleAfterMinutes,
             backupsMaxAgeHours: $loaded->backupsMaxAgeHours,
+            databaseConnectionsWarnAt: $loaded->databaseConnectionsWarnAt,
+            databaseConnectionsFailAt: $loaded->databaseConnectionsFailAt,
+            databaseSizeWarnAtMb: $loaded->databaseSizeWarnAtMb,
         );
     }
 
