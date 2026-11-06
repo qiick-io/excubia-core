@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Parsers;
 
 use Qiick\Excubia\Data\LockedPackageData;
+use Qiick\Excubia\Data\PlatformRequirementData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
 /**
- * Reads `composer.lock` packages and the locked platform PHP version.
+ * Reads `composer.lock` packages, the locked platform PHP version and the
+ * PHP / extension requirements for `php-platform-requirements`.
  *
  * Packages from `packages-dev` are marked as development dependencies.
  * Direct versus transitive is decided by the caller, which knows
@@ -26,19 +28,85 @@ final class ComposerLockParser
     /**
      * @param  array<string, mixed>  $document
      * @param  list<string>  $directPackageNames
-     * @return array{packages: list<LockedPackageData>, platformPhpVersion: string|null}
+     * @return array{
+     *     packages: list<LockedPackageData>,
+     *     platformPhpVersion: string|null,
+     *     platformRequirements: list<PlatformRequirementData>,
+     *     providedPlatformNames: list<string>,
+     *     platformOverrideNames: list<string>
+     * }
      */
     public function parse(array $document, array $directPackageNames): array
     {
         $direct = array_fill_keys($directPackageNames, true);
+        $packages = [
+            ...$this->lockedPackages($document['packages'] ?? [], false, $direct),
+            ...$this->lockedPackages($document['packages-dev'] ?? [], true, $direct),
+        ];
+        $requirements = [
+            ...$this->platformLinks($document['platform'] ?? null, PlatformRequirementData::ROOT_PACKAGE, false),
+            ...$this->platformLinks($document['platform-dev'] ?? null, PlatformRequirementData::ROOT_PACKAGE, true),
+        ];
+        $providedNames = [];
+
+        foreach (['packages' => false, 'packages-dev' => true] as $key => $isDevelopmentDependency) {
+            // The entries were validated by lockedPackages() above.
+            foreach (is_array($document[$key] ?? null) ? $document[$key] : [] as $package) {
+                if (! is_array($package) || ! is_string($package['name'] ?? null)) {
+                    continue;
+                }
+
+                $name = $package['name'];
+                $requirements = [...$requirements, ...$this->platformLinks($package['require'] ?? null, $name, $isDevelopmentDependency)];
+
+                foreach ([...$this->platformLinks($package['provide'] ?? null, $name, false), ...$this->platformLinks($package['replace'] ?? null, $name, false)] as $provided) {
+                    $providedNames[$provided->name] = $provided->name;
+                }
+            }
+        }
 
         return [
-            'packages' => [
-                ...$this->lockedPackages($document['packages'] ?? [], false, $direct),
-                ...$this->lockedPackages($document['packages-dev'] ?? [], true, $direct),
-            ],
+            'packages' => $packages,
             'platformPhpVersion' => $this->platformPhpVersion($document),
+            'platformRequirements' => $requirements,
+            'providedPlatformNames' => array_values($providedNames),
+            'platformOverrideNames' => array_map(
+                static fn (PlatformRequirementData $override): string => $override->name,
+                $this->platformLinks($document['platform-overrides'] ?? null, PlatformRequirementData::ROOT_PACKAGE, false),
+            ),
         ];
+    }
+
+    /**
+     * The `php` and `ext-*` entries of a link map (`require`, `provide`,
+     * `platform`, …). Other platform names (`lib-*`, `composer-*`, `php-64bit`)
+     * and packages are left out. A map or entry of the wrong type is skipped
+     * rather than failing the scan: these keys only feed one check.
+     *
+     * ponytail: `lib-*` and `php-64bit` / `php-zts` style requirements are not
+     * checked; add them here and in `PhpPlatformRequirementsCheck` if needed.
+     *
+     * @return list<PlatformRequirementData>
+     */
+    private function platformLinks(mixed $links, string $requiredBy, bool $isDevelopmentDependency): array
+    {
+        if (! is_array($links)) {
+            return [];
+        }
+
+        $requirements = [];
+
+        foreach ($links as $name => $constraint) {
+            $name = strtolower((string) $name);
+
+            if (! is_string($constraint) || ($name !== 'php' && ! str_starts_with($name, 'ext-'))) {
+                continue;
+            }
+
+            $requirements[] = new PlatformRequirementData($name, $constraint, $requiredBy, $isDevelopmentDependency);
+        }
+
+        return $requirements;
     }
 
     /**

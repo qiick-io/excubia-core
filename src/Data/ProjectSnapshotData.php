@@ -18,6 +18,9 @@ final readonly class ProjectSnapshotData
      * @param  list<LockedPackageData>  $composerPackages
      * @param  list<LockedPackageData>  $npmPackages
      * @param  list<string>  $requiredPackageNames  package names in `composer.json` `require` (not `require-dev`)
+     * @param  list<PlatformRequirementData>  $platformRequirements  `php` and `ext-*` requirements of the lockfile, without dev ones under `--no-dev`
+     * @param  list<string>  $providedPlatformNames  `ext-*` / `php` names a locked package provides or replaces (polyfills)
+     * @param  list<string>  $platformOverrideNames  names in the lockfile `platform-overrides` (`composer.json` `config.platform`)
      */
     public function __construct(
         public ?string $phpVersion,
@@ -28,6 +31,9 @@ final readonly class ProjectSnapshotData
         public bool $hasNpmLockfile = false,
         public ?LaravelPostureData $laravelPosture = null,
         public array $requiredPackageNames = [],
+        public array $platformRequirements = [],
+        public array $providedPlatformNames = [],
+        public array $platformOverrideNames = [],
     ) {}
 
     /**
@@ -44,6 +50,9 @@ final readonly class ProjectSnapshotData
             hasNpmLockfile: $this->hasNpmLockfile,
             laravelPosture: $laravelPosture,
             requiredPackageNames: $this->requiredPackageNames,
+            platformRequirements: $this->platformRequirements,
+            providedPlatformNames: $this->providedPlatformNames,
+            platformOverrideNames: $this->platformOverrideNames,
         );
     }
 }

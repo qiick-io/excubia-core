@@ -167,6 +167,54 @@
                                 "text": "Development packages"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-database",
+                            "name": "Database",
+                            "shortDescription": {
+                                "text": "Database"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-cache",
+                            "name": "Cache",
+                            "shortDescription": {
+                                "text": "Cache"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-storage",
+                            "name": "Writable storage",
+                            "shortDescription": {
+                                "text": "Writable storage"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-disk-space",
+                            "name": "Disk space",
+                            "shortDescription": {
+                                "text": "Disk space"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-queue-backlog",
+                            "name": "Queue backlog",
+                            "shortDescription": {
+                                "text": "Queue backlog"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "php-platform-requirements",
+                            "name": "Platform requirements",
+                            "shortDescription": {
+                                "text": "Platform requirements"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

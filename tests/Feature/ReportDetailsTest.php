@@ -200,10 +200,18 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-failed-jobs', ['count' => 3, 'oldestAgeHours' => null]),
         $finding('laravel-scheduler-heartbeat', ['minutesSinceLastRun' => 12]),
         $finding('laravel-debug-mode', []),
+        $finding('laravel-database', ['connection' => 'mysql']),
+        $finding('laravel-cache', ['store' => 'redis']),
+        $finding('laravel-storage', ['directory' => 'bootstrap/cache']),
+        $finding('laravel-disk-space', ['usedPercent' => 91]),
+        $finding('laravel-queue-backlog', ['queue' => 'default', 'pendingCount' => 1200, 'oldestAgeMinutes' => null]),
+        $finding('php-platform-requirements', ['requirement' => 'ext-intl', 'requiredBy' => ['laravel/framework'], 'checkedPhpVersion' => '8.4.1', 'isStandaloneCli' => true]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
         $finding('laravel-failed-jobs', ['count' => 3, 'payload' => 'secret']),
+        $finding('laravel-database', ['connection' => 'mysql', 'host' => 'db.internal']),
+        $finding('laravel-storage', ['directory' => '/srv/app/storage']),
     ]);
 
     expect(reportSchemaErrors($valid))->toBe([])

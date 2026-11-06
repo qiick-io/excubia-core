@@ -8,6 +8,7 @@ use Composer\Semver\Intervals;
 use Composer\Semver\VersionParser;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LockedPackageData;
+use Qiick\Excubia\Data\PlatformRequirementData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
@@ -104,6 +105,12 @@ final class ProjectSnapshotService
             ),
             hasNpmLockfile: is_file($packageLockPath),
             requiredPackageNames: $parsedComposerJson['directPackageNames'],
+            platformRequirements: array_values(array_filter(
+                $parsedLock['platformRequirements'],
+                static fn (PlatformRequirementData $requirement): bool => $configuration->isDevelopmentDependencyIncluded || ! $requirement->isDevelopmentDependency,
+            )),
+            providedPlatformNames: $parsedLock['providedPlatformNames'],
+            platformOverrideNames: $parsedLock['platformOverrideNames'],
         );
     }
 

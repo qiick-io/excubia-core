@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "1775e571e96c3c6bae607a08a23859dd9afeae40329a5f0bf44a30d1ab53ecf1"
+            "sha256": "b1eb93897407fe9dedf19208451a4d94afdccd162499545b69c51b9cb944a7a5"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "d2223f524fda128d947d3a625357b8cf3d7907636fed0c03188ccf9341f849e9"
+            "sha256": "21a42b3233dba73e569ad3f591c6f7ab68c8ca686484406d9e6acd3ca4cd2ccf"
         }
     },
     "checkIds": [
@@ -46,7 +46,13 @@
         "laravel-cors-wildcard",
         "laravel-production-drivers",
         "laravel-log-level",
-        "laravel-dev-packages"
+        "laravel-dev-packages",
+        "laravel-database",
+        "laravel-cache",
+        "laravel-storage",
+        "laravel-disk-space",
+        "laravel-queue-backlog",
+        "php-platform-requirements"
     ],
     "sarif": {
         "fingerprintKeys": [

@@ -52,6 +52,12 @@ final class SarifRenderer implements ReportRendererContract
         'laravel-production-drivers' => 'config/app.php',
         'laravel-log-level' => 'config/logging.php',
         'laravel-dev-packages' => 'composer.json',
+        'laravel-database' => 'config/database.php',
+        'laravel-cache' => 'config/cache.php',
+        'laravel-storage' => 'storage',
+        'laravel-disk-space' => 'storage',
+        'laravel-queue-backlog' => 'config/queue.php',
+        'php-platform-requirements' => 'composer.lock',
     ];
 
     /**

@@ -36,7 +36,7 @@ final class ExcubiaCheckCommand extends Command
     public function handle(): int
     {
         $configPath = $this->stringOption('config');
-        $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel());
+        $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel(), configuration: LaravelPostureService::configuration($this->getLaravel(), $configPath));
 
         return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new CheckCommand(reportListener: $reportListener, laravelPosture: $laravelPosture))->runWithOptions(self::applicationBasePath($this->getLaravel()), [
             'format' => $this->stringOption('format'),

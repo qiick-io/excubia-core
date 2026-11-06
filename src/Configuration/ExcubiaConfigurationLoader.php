@@ -76,6 +76,12 @@ final class ExcubiaConfigurationLoader
             runtime: $this->runtime($document['runtime'] ?? []),
             exceptions: $this->exceptions($document['exceptions'] ?? []),
             skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
+            databaseConnectionNames: $checks['databaseConnectionNames'],
+            diskSpaceWarnAtPercentUsed: $checks['diskSpaceWarnAtPercentUsed'],
+            diskSpaceFailAtPercentUsed: $checks['diskSpaceFailAtPercentUsed'],
+            queueBacklogMaxOldestAgeMinutes: $checks['queueBacklogMaxOldestAgeMinutes'],
+            queueBacklogMaxPendingJobs: $checks['queueBacklogMaxPendingJobs'],
+            queueBacklogQueueNames: $checks['queueBacklogQueueNames'],
         );
     }
 
@@ -241,7 +247,13 @@ final class ExcubiaConfigurationLoader
      *     laravelWarnDaysBeforeEndOfLife: int,
      *     isNodeEndOfLifeCheckEnabled: bool,
      *     schedulerHeartbeatStaleAfterMinutes: int,
-     *     failedJobHighSeverityAfterHours: int
+     *     failedJobHighSeverityAfterHours: int,
+     *     databaseConnectionNames: list<string>,
+     *     diskSpaceWarnAtPercentUsed: int,
+     *     diskSpaceFailAtPercentUsed: int,
+     *     queueBacklogMaxOldestAgeMinutes: int,
+     *     queueBacklogMaxPendingJobs: int,
+     *     queueBacklogQueueNames: list<string>
      * }
      */
     private function checks(mixed $checks, ExcubiaConfigurationData $defaults): array
@@ -250,7 +262,10 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog'], 'checks');
+        $database = $this->checkObject($checks, 'laravel-database', ['connections']);
+        $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
+        $queueBacklog = $this->checkObject($checks, 'laravel-queue-backlog', ['maxOldestAgeMinutes', 'maxPendingJobs', 'queues']);
 
         return [
             'staleAfterMonths' => $this->integerSetting($checks, 'composer-stale', 'staleAfterMonths', $defaults->staleAfterMonths),
@@ -259,7 +274,36 @@ final class ExcubiaConfigurationLoader
             'isNodeEndOfLifeCheckEnabled' => $this->booleanSetting($checks, 'node-eol', 'enabled', $defaults->isNodeEndOfLifeCheckEnabled),
             'schedulerHeartbeatStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-scheduler-heartbeat', 'staleAfterMinutes', $defaults->schedulerHeartbeatStaleAfterMinutes),
             'failedJobHighSeverityAfterHours' => $this->integerSetting($checks, 'laravel-failed-jobs', 'highSeverityAfterHours', $defaults->failedJobHighSeverityAfterHours),
+            'databaseConnectionNames' => $this->stringList($database['connections'] ?? [], 'checks.laravel-database.connections'),
+            'diskSpaceWarnAtPercentUsed' => array_key_exists('warnAtPercentUsed', $diskSpace) ? $this->integer($diskSpace['warnAtPercentUsed'], 'checks.laravel-disk-space.warnAtPercentUsed') : $defaults->diskSpaceWarnAtPercentUsed,
+            'diskSpaceFailAtPercentUsed' => array_key_exists('failAtPercentUsed', $diskSpace) ? $this->integer($diskSpace['failAtPercentUsed'], 'checks.laravel-disk-space.failAtPercentUsed') : $defaults->diskSpaceFailAtPercentUsed,
+            'queueBacklogMaxOldestAgeMinutes' => array_key_exists('maxOldestAgeMinutes', $queueBacklog) ? $this->integer($queueBacklog['maxOldestAgeMinutes'], 'checks.laravel-queue-backlog.maxOldestAgeMinutes') : $defaults->queueBacklogMaxOldestAgeMinutes,
+            'queueBacklogMaxPendingJobs' => array_key_exists('maxPendingJobs', $queueBacklog) ? $this->integer($queueBacklog['maxPendingJobs'], 'checks.laravel-queue-backlog.maxPendingJobs') : $defaults->queueBacklogMaxPendingJobs,
+            'queueBacklogQueueNames' => $this->stringList($queueBacklog['queues'] ?? [], 'checks.laravel-queue-backlog.queues'),
         ];
+    }
+
+    /**
+     * The settings object of one check, empty when absent; keys outside
+     * `$allowedKeys` are a configuration error.
+     *
+     * @param  array<mixed>  $checks
+     * @param  list<string>  $allowedKeys
+     * @return array<mixed>
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function checkObject(array $checks, string $checkId, array $allowedKeys): array
+    {
+        $check = $checks[$checkId] ?? [];
+
+        if (! is_array($check)) {
+            throw new InvalidConfigurationException('checks.'.$checkId.' must be an object.');
+        }
+
+        $this->rejectUnknownKeys($check, $allowedKeys, 'checks.'.$checkId);
+
+        return $check;
     }
 
     /**

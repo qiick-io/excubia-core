@@ -30,11 +30,18 @@ qiick-io/excubia-core
 │   │   ├── LaravelCorsWildcardCheck.php    (laravel-cors-wildcard)
 │   │   ├── LaravelProductionDriversCheck.php (laravel-production-drivers)
 │   │   ├── LaravelLogLevelCheck.php        (laravel-log-level)
-│   │   └── LaravelDevPackagesCheck.php     (laravel-dev-packages)
+│   │   ├── LaravelDevPackagesCheck.php     (laravel-dev-packages)
+│   │   ├── LaravelDatabaseCheck.php        (laravel-database)             # infrastructure checks: probes
+│   │   ├── LaravelCacheCheck.php           (laravel-cache)                # run by LaravelPostureService
+│   │   ├── LaravelStorageCheck.php         (laravel-storage)
+│   │   ├── LaravelDiskSpaceCheck.php       (laravel-disk-space)           # DiskSpaceContract, faked in tests
+│   │   ├── LaravelQueueBacklogCheck.php    (laravel-queue-backlog)
+│   │   └── PhpPlatformRequirementsCheck.php (php-platform-requirements)   # composer.lock vs running PHP, also standalone
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
-│   │   └── HttpClientContract.php           # getJson(), postJson() — faked in tests
+│   │   ├── HttpClientContract.php           # getJson(), postJson() — faked in tests
+│   │   └── DiskSpaceContract.php            # usedPercent(directory) — DiskSpaceService, faked in tests
 │   ├── Registries/
 │   │   └── HealthCheckRegistry.php          # ordered list of checks, --only/--skip filtering
 │   ├── Services/

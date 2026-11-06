@@ -36,7 +36,7 @@ final class ExcubiaPushCommand extends Command
         }
 
         $configPath = $config === '' ? null : $config;
-        $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel());
+        $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel(), configuration: LaravelPostureService::configuration($this->getLaravel(), $configPath));
 
         return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new PushCommand(reportListener: $reportListener, laravelPosture: $laravelPosture))->runWithOptions(
             ExcubiaCheckCommand::applicationBasePath($this->getLaravel()),

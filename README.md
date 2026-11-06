@@ -87,11 +87,19 @@ vendor/bin/excubia --version
 | `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
+| `laravel-database` | Database | Database connections | The default connection, or one listed in `checks.laravel-database.connections`, does not answer `select 1` (critical, one row per connection) |
+| `laravel-cache` | Cache | Default cache store | The default store cannot write, read and delete a probe key (high). Skipped with the `null` driver |
+| `laravel-storage` | Writable storage | Booted app | `storage` or `bootstrap/cache` is not writable (high, one row per directory) |
+| `laravel-disk-space` | Disk space | Disk holding `storage/` | At least 80 % used (medium), at least 90 % (high, fail) |
+| `laravel-queue-backlog` | Queue backlog | Default queue connection | A queue's oldest pending job has waited more than 15 minutes, or it holds more than 1000 pending jobs (medium, one row per queue). `database` and `redis` drivers only, others skipped |
+| `php-platform-requirements` | Platform requirements | `composer.lock`, running PHP | The running PHP misses an extension, or its version does not satisfy a `php` constraint, that a locked package or the root `platform` requires (high, one row per requirement), like `composer check-platform-reqs` |
 
-- The twelve `laravel-*` posture checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
+- The seventeen `laravel-*` checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
+- `php-platform-requirements` also runs in `vendor/bin/excubia`, but that is the PHP of the CLI, which can differ from the app's: its findings say so and carry `isStandaloneCli: true`. Under Artisan it checks the app's PHP. Extensions that a locked package provides (polyfills) count as present; `config.platform` overrides do not.
+- The infrastructure checks (`laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`) only read, except the cache probe key `excubia:cache-probe:<random>`, which is deleted right away. A service that does not answer is a finding, never an exception in the app. Findings name the connection, store, directory or queue, and carry percentages, counts and ages: never hostnames, DSNs, credentials or absolute paths.
 - For `laravel-scheduler-heartbeat`, the service provider schedules `php artisan excubia:heartbeat` every minute. It stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store. Keep the usual `* * * * * php artisan schedule:run` cron (or `schedule:work`), and use a shared cache store (database, Redis) when the scheduler and `excubia:check` run on different machines.
 - Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements. It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`.
-- Thresholds (180 days, 24 months, 10 minutes, 24 hours) are configurable in [`excubia.json`](./docs/guides/configuration.md#checks). Full severity rules: [`docs/SPEC.md`](./docs/SPEC.md) section 3.
+- Thresholds (180 days, 24 months, 10 minutes, 24 hours, 80 / 90 %, 15 minutes, 1000 jobs) are configurable in [`excubia.json`](./docs/guides/configuration.md#checks). Full severity rules: [`docs/SPEC.md`](./docs/SPEC.md) section 3.
 
 ## Formats
 
@@ -123,6 +131,12 @@ The JSON report also carries, as optional fields of schema version 1:
 | `laravel-cors-wildcard` | `hasCredentials` |
 | `laravel-production-drivers` | `component` (`queue`, `cache`, `session`, `mail`), `driver` |
 | `laravel-dev-packages` | `package` |
+| `laravel-database` | `connection` |
+| `laravel-cache` | `store` |
+| `laravel-storage` | `directory` (`storage` or `bootstrap/cache`) |
+| `laravel-disk-space` | `usedPercent` |
+| `laravel-queue-backlog` | `queue`, `pendingCount`, `oldestAgeMinutes` (or `null`) |
+| `php-platform-requirements` | `requirement` (`php` or `ext-*`), `requiredBy` (list of packages, `composer.json` for the root), `checkedPhpVersion`, `isStandaloneCli` |
 | private packages row of the five checks that send names | `count` |
 
 `laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-log-level` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).

@@ -261,6 +261,15 @@ final class CheckCommand extends Command
             healthEndpointPath: $loaded->healthEndpointPath,
             schedulerHeartbeatStaleAfterMinutes: $loaded->schedulerHeartbeatStaleAfterMinutes,
             failedJobHighSeverityAfterHours: $loaded->failedJobHighSeverityAfterHours,
+            runtime: $loaded->runtime,
+            exceptions: $loaded->exceptions,
+            skippedPackagePatterns: $loaded->skippedPackagePatterns,
+            databaseConnectionNames: $loaded->databaseConnectionNames,
+            diskSpaceWarnAtPercentUsed: $loaded->diskSpaceWarnAtPercentUsed,
+            diskSpaceFailAtPercentUsed: $loaded->diskSpaceFailAtPercentUsed,
+            queueBacklogMaxOldestAgeMinutes: $loaded->queueBacklogMaxOldestAgeMinutes,
+            queueBacklogMaxPendingJobs: $loaded->queueBacklogMaxPendingJobs,
+            queueBacklogQueueNames: $loaded->queueBacklogQueueNames,
         );
     }
 

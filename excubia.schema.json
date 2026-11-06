@@ -84,6 +84,62 @@
                             "description": "Failed jobs warn at medium; at high once the oldest is older than this many hours. Default 24."
                         }
                     }
+                },
+                "laravel-database": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "connections": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Database connection names (config/database.php) probed with select 1 on top of the default connection. Default none."
+                        }
+                    }
+                },
+                "laravel-disk-space": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Warn (medium) when the disk holding storage/ is at least this many percent used. Default 80; not above failAtPercentUsed."
+                        },
+                        "failAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Fail (high) when the disk holding storage/ is at least this many percent used. Default 90."
+                        }
+                    }
+                },
+                "laravel-queue-backlog": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "maxOldestAgeMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn when the oldest pending job of a queue has waited longer than this many minutes. Default 15."
+                        },
+                        "maxPendingJobs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn when a queue holds more than this many pending jobs. Default 1000."
+                        },
+                        "queues": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Redis only: queue names read on top of the default queue of the default connection. The database driver reads every queue in its table. Default none."
+                        }
+                    }
                 }
             }
         },

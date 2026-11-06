@@ -99,6 +99,12 @@ it('documents the details keys per check id', function () {
         ->and($keys('corsWildcardDetails'))->toBe(['hasCredentials'])
         ->and($keys('productionDriversDetails'))->toBe(['component', 'driver'])
         ->and($keys('devPackagesDetails'))->toBe(['package'])
+        ->and($keys('databaseDetails'))->toBe(['connection'])
+        ->and($keys('cacheDetails'))->toBe(['store'])
+        ->and($keys('storageDetails'))->toBe(['directory'])
+        ->and($keys('diskSpaceDetails'))->toBe(['usedPercent'])
+        ->and($keys('queueBacklogDetails'))->toBe(['queue', 'pendingCount', 'oldestAgeMinutes'])
+        ->and($keys('platformRequirementsDetails'))->toBe(['requirement', 'requiredBy', 'checkedPhpVersion', 'isStandaloneCli'])
         ->and($ruledCheckIds)->toBe([
             'composer-advisories',
             'npm-advisories',
@@ -114,5 +120,11 @@ it('documents the details keys per check id', function () {
             'laravel-cors-wildcard',
             'laravel-production-drivers',
             'laravel-dev-packages',
+            'laravel-database',
+            'laravel-cache',
+            'laravel-storage',
+            'laravel-disk-space',
+            'laravel-queue-backlog',
+            'php-platform-requirements',
         ]);
 });
