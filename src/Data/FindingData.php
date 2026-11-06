@@ -69,6 +69,49 @@ final readonly class FindingData
     }
 
     /**
+     * One warn row for a direct dependency with newer releases, shared by
+     * `composer-outdated` and `npm-outdated`: behind on a major or a minor
+     * is low, behind only on a patch is info. `$newer` comes from
+     * `ComposerConstraintService::newerReleases()` with at least
+     * `latestMinor` or `latestMajor` set.
+     *
+     * @param  array{latestPatch: string|null, latestMinor: string|null, latestMajor: string|null}  $newer
+     */
+    public static function outdatedPackage(string $checkId, string $packageName, string $lockedVersion, array $newer, string $evidenceUrl): self
+    {
+        $isMajorBehind = $newer['latestMajor'] !== null;
+        $isMinorBehind = $newer['latestMinor'] !== null && $newer['latestMinor'] !== $newer['latestPatch'];
+
+        if ($isMajorBehind) {
+            $message = 'A new major is available: '.$newer['latestMajor'].'.';
+            $fixHint = $newer['latestMinor'] === null
+                ? 'Plan the upgrade to '.$newer['latestMajor'].'.'
+                : 'Update to '.$newer['latestMinor'].', then plan the upgrade to '.$newer['latestMajor'].'.';
+        } else {
+            $message = ($isMinorBehind ? 'Behind on a minor' : 'Behind on a patch').': '.$newer['latestMinor'].' is available.';
+            $fixHint = 'Update to '.$newer['latestMinor'].'.';
+        }
+
+        return new self(
+            checkId: $checkId,
+            severity: $isMajorBehind || $isMinorBehind ? SeverityEnum::Low : SeverityEnum::Info,
+            status: FindingStatusEnum::Warn,
+            subject: $packageName,
+            message: $message,
+            fixHint: $fixHint,
+            evidenceUrl: $evidenceUrl,
+            details: [
+                'package' => $packageName,
+                'lockedVersion' => $lockedVersion,
+                'latestPatch' => $newer['latestPatch'],
+                'latestMinor' => $newer['latestMinor'],
+                'latestMajor' => $newer['latestMajor'],
+                'isMajorBehind' => $isMajorBehind,
+            ],
+        );
+    }
+
+    /**
      * Stable identity of the finding across reports: sha256 of check id,
      * subject and advisory id joined by NUL. Messages and fix hints carry
      * dates and recommended versions that move over time, so they are left

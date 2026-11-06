@@ -29,7 +29,8 @@ final class SarifRenderer implements ReportRendererContract
     /**
      * Manifest each check reads its findings from. `node-eol` is resolved by
      * the caller because the Node declaration can live in several files;
-     * `npm-advisories` uses the report's `javascriptLockfile` (#21).
+     * `npm-advisories` and `npm-outdated` use the report's
+     * `javascriptLockfile` (#21).
      * The `laravel-*` posture checks read the booted app, so they point at
      * the standard Laravel file where the fix usually starts.
      */
@@ -199,13 +200,13 @@ final class SarifRenderer implements ReportRendererContract
     }
 
     /**
-     * `npm-advisories` points at the JavaScript lockfile the report read,
+     * `npm-advisories` and `npm-outdated` point at the JavaScript lockfile the report read,
      * `dependency-licenses` at the lockfile of the finding's ecosystem;
      * every other check at its fixed manifest.
      */
     private function manifest(FindingData $finding, string $javascriptLockfile): string
     {
-        if ($finding->checkId === 'npm-advisories') {
+        if ($finding->checkId === 'npm-advisories' || $finding->checkId === 'npm-outdated') {
             return $javascriptLockfile;
         }
 

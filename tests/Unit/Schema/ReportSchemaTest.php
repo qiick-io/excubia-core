@@ -137,6 +137,7 @@ it('documents the details keys per check id', function () {
             'env-example-sync',
             'composer-outdated',
             'laravel-queue-workers',
+            'npm-outdated',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])

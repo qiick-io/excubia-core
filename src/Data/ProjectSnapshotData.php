@@ -23,6 +23,7 @@ final readonly class ProjectSnapshotData
      * @param  list<PlatformRequirementData>  $platformRequirements  `php` and `ext-*` requirements of the lockfile, without dev ones under `--no-dev`
      * @param  list<string>  $providedPlatformNames  `ext-*` / `php` names a locked package provides or replaces (polyfills)
      * @param  list<string>  $platformOverrideNames  names in the lockfile `platform-overrides` (`composer.json` `config.platform`)
+     * @param  list<string>  $npmDevelopmentPackageNames  names only in `package.json` `devDependencies` (not in `dependencies` or `optionalDependencies`)
      */
     public function __construct(
         public ?string $phpVersion,
@@ -38,6 +39,7 @@ final readonly class ProjectSnapshotData
         public array $platformOverrideNames = [],
         public ?EnvironmentKeysData $environmentKeys = null,
         public ?string $javascriptLockfile = null,
+        public array $npmDevelopmentPackageNames = [],
     ) {}
 
     /**
@@ -81,6 +83,7 @@ final readonly class ProjectSnapshotData
             platformOverrideNames: $this->platformOverrideNames,
             environmentKeys: $this->environmentKeys,
             javascriptLockfile: $this->javascriptLockfile,
+            npmDevelopmentPackageNames: $this->npmDevelopmentPackageNames,
         );
     }
 }

@@ -313,7 +313,7 @@
                     "enum": ["data-source-failure", "offline", "not-applicable"]
                 },
                 "details": {
-                    "description": "Check-specific values, so consumers do not parse message. Present only when the check sets any; the keys per checkId are fixed by the allOf rules of this definition. The private packages skip row of composer-advisories, npm-advisories, composer-abandoned, composer-stale, laravel-next-blocker and composer-outdated carries privatePackagesDetails. Other skipped rows, and laravel-debug-mode, laravel-production-caches, laravel-maintenance-mode, laravel-app-key, laravel-session-security and laravel-log-level findings, carry no details.",
+                    "description": "Check-specific values, so consumers do not parse message. Present only when the check sets any; the keys per checkId are fixed by the allOf rules of this definition. The private packages skip row of composer-advisories, npm-advisories, composer-abandoned, composer-stale, laravel-next-blocker, composer-outdated and npm-outdated carries privatePackagesDetails. Other skipped rows, and laravel-debug-mode, laravel-production-caches, laravel-maintenance-mode, laravel-app-key, laravel-session-security and laravel-log-level findings, carry no details.",
                     "type": "object"
                 }
             },
@@ -747,6 +747,30 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "npm-outdated"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/$defs/outdatedDetails"
+                                    },
+                                    {
+                                        "$ref": "#/$defs/privatePackagesDetails"
+                                    }
+                                ]
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1147,7 +1171,7 @@
             }
         },
         "outdatedDetails": {
-            "description": "composer-outdated finding, one per direct dependency with a newer release. Versions are as Packagist prints them. Only stable releases count, unless lockedVersion is a pre-release.",
+            "description": "composer-outdated and npm-outdated finding, one per direct dependency with a newer release. Versions are as Packagist or the npm registry prints them. Only stable releases count, unless lockedVersion is a pre-release.",
             "type": "object",
             "additionalProperties": false,
             "required": ["package", "lockedVersion", "latestPatch", "latestMinor", "latestMajor", "isMajorBehind"],
@@ -1157,7 +1181,7 @@
                     "type": "string"
                 },
                 "lockedVersion": {
-                    "description": "Locked version from composer.lock.",
+                    "description": "Locked version from composer.lock, or from the JavaScript lockfile for npm-outdated.",
                     "type": "string"
                 },
                 "latestPatch": {
