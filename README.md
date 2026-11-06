@@ -236,7 +236,7 @@ Unknown keys are a configuration error (exit `2`). Every key, type and default, 
 - [Configuration reference](./docs/guides/configuration.md): every `excubia.json` key and environment variable.
 - [CI](./docs/guides/ci.md): the GitHub Action with code scanning, and any other CI.
 - [Push to excubia-app](./docs/guides/excubia-app.md): from the scheduler and after a deploy.
-- [Runtime monitoring](./docs/guides/runtime-monitoring.md): request, query, job, task and outgoing HTTP aggregates, plus opt-in memory, queue wait, cache, mail, notification, log level and PHP deprecation counts and N+1 duplicate query detection.
+- [Runtime monitoring](./docs/guides/runtime-monitoring.md): request, query, job, task and outgoing HTTP aggregates, plus opt-in memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection and Artisan command runs.
 - [Exception capture](./docs/guides/exception-capture.md): masked exceptions grouped by fingerprint.
 - [Health endpoint](./docs/guides/health-endpoint.md): Oh Dear application health JSON.
 - [Privacy](./docs/guides/privacy.md): exactly what leaves the machine, per feature.

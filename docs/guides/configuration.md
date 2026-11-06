@@ -60,7 +60,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "notifications": { "enabled": false, "sampleRate": 1 },
     "logLevels": { "enabled": false, "sampleRate": 1 },
     "deprecations": { "enabled": false, "sampleRate": 1 },
-    "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 }
+    "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 },
+    "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] }
   },
   "exceptions": {
     "enabled": false,
@@ -272,6 +273,10 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.duplicateQueries.enabled` | boolean | `false` | Detect duplicate queries. |
 | `runtime.duplicateQueries.sampleRate` | number 0–1 | `1` | Share of requests and jobs evaluated. |
 | `runtime.duplicateQueries.threshold` | integer ≥ 2 | `5` | Executions of one query shape within one request or job from which it is recorded. |
+| `runtime.commands` | object | | Artisan command runs per command name and exit code class (`0`, `1`, `other`), with their duration; never arguments or options. Only the top-level command of a process; commands run by the scheduler are `scheduledTask`, and `excubia:*` is never counted. Off by default. |
+| `runtime.commands.enabled` | boolean | `false` | Collect command runs. |
+| `runtime.commands.sampleRate` | number 0–1 | `1` | Share of command runs recorded. |
+| `runtime.commands.ignore` | list of strings | `["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"]` | Command names, `*` wildcards allowed, never counted. Setting it replaces the default, so list the defaults you want to keep. |
 
 ## Exception capture
 
@@ -295,6 +300,7 @@ Excubia reads these from the process environment (`getenv()`), never from Larave
 | `EXCUBIA_APP_TOKEN` | `push`, `excubia:push`, `excubia:push-runtime` | Project push token. Wins over `app.token`. Never printed, cached or written to a report. |
 | `EXCUBIA_RELEASE` | `check`, `push`, their Artisan aliases, `excubia:push-runtime` | Release identifier. `release` in `excubia.json` wins; it wins over `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT` ([release identifier](#release-identifier)). |
 | `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header, at least 32 characters. Without it, or when it is shorter, the route is not registered. |
+| `EXCUBIA_INSIDE_SCHEDULER` | `runtime.commands` | Set to `1` by Excubia itself while `schedule:run`, `schedule:work` or `schedule:test` runs, and inherited by the task processes they start, so a scheduled Artisan command is counted as `scheduledTask` only. Do not set it by hand: every command of a process that has it is left out of `command`. |
 | `GITHUB_TOKEN` | `composer-stale` | Optional. Raises the GitHub API rate limit for the archived-repository lookup. Sent only to `api.github.com`; never printed, cached or written to a report. |
 | `HTTPS_PROXY` | all HTTP requests | Proxy for the data sources and the push, read by Symfony HttpClient. |
 | `NO_COLOR` | `table` format | Turns colours off. |

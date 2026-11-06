@@ -239,7 +239,12 @@ final class ExcubiaConfigurationLoader
         $sampleRates = [];
         $slowQueryThresholdMs = RuntimeConfigurationData::DEFAULT_SLOW_QUERY_THRESHOLD_MS;
         $duplicateQueryThreshold = RuntimeConfigurationData::DEFAULT_DUPLICATE_QUERY_THRESHOLD;
-        $extraKeys = [RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'], RuntimeTypeEnum::DuplicateQuery->value => ['threshold']];
+        $ignoredCommands = RuntimeConfigurationData::DEFAULT_IGNORED_COMMANDS;
+        $extraKeys = [
+            RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'],
+            RuntimeTypeEnum::DuplicateQuery->value => ['threshold'],
+            RuntimeTypeEnum::Command->value => ['ignore'],
+        ];
 
         foreach (RuntimeTypeEnum::cases() as $type) {
             $label = 'runtime.'.$type->configurationKey();
@@ -270,6 +275,10 @@ final class ExcubiaConfigurationLoader
             if (array_key_exists('threshold', $settings)) {
                 $duplicateQueryThreshold = $this->integer($settings['threshold'], $label.'.threshold');
             }
+
+            if (array_key_exists('ignore', $settings)) {
+                $ignoredCommands = $this->stringList($settings['ignore'], $label.'.ignore');
+            }
         }
 
         return new RuntimeConfigurationData(
@@ -279,6 +288,7 @@ final class ExcubiaConfigurationLoader
             slowQueryThresholdMs: $slowQueryThresholdMs,
             bufferMaxBytes: array_key_exists('bufferMaxBytes', $runtime) ? $this->integer($runtime['bufferMaxBytes'], 'runtime.bufferMaxBytes') : RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
             duplicateQueryThreshold: $duplicateQueryThreshold,
+            ignoredCommands: $ignoredCommands,
         );
     }
 

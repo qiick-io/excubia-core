@@ -7,16 +7,20 @@ use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyForgotten;
 use Illuminate\Cache\Events\KeyWritten;
+use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernelContract;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Client\Events\ResponseReceived;
 use Illuminate\Http\Request;
@@ -34,6 +38,7 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -46,6 +51,8 @@ use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
 use Qiick\Excubia\Services\RuntimeBufferService;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mime\Email;
 
@@ -1509,4 +1516,220 @@ it('records no duplicate query at sample rate 0', function () {
     $this->get('/sampled')->assertOk();
 
     expect(bufferedOfType($this->app, 'duplicateQuery'))->toHaveCount(0);
+});
+
+/**
+ * Run an Artisan command as `php artisan` would, with the Symfony console
+ * events re-routed to CommandStarting and CommandFinished (Laravel skips
+ * that in unit tests).
+ *
+ * @param  array<string, mixed>  $parameters
+ */
+function runArtisanWithEvents(Application $app, string $command, array $parameters = []): int
+{
+    $kernel = $app->make(ConsoleKernelContract::class);
+    assert($kernel instanceof ConsoleKernel);
+    $kernel->rerouteSymfonyCommandEvents();
+    // The console application built before the re-route has no dispatcher.
+    $kernel->setArtisan(null);
+
+    return $kernel->call($command, $parameters);
+}
+
+function registerRuntimeTestCommands(): void
+{
+    Artisan::command('runtime:deploy {token} {--password=}', fn () => 0);
+    Artisan::command('runtime:broken', fn () => 1);
+    Artisan::command('runtime:odd', fn () => 3);
+    Artisan::command('runtime:outer', function () {
+        Artisan::call('runtime:deploy', ['token' => 'nested-secret']);
+
+        return 0;
+    });
+}
+
+/**
+ * Dispatch a CommandStarting and CommandFinished pair for this command,
+ * with whatever the callback dispatches in between.
+ */
+function dispatchCommand(string $command, int $exitCode = 0, ?Closure $during = null): void
+{
+    $input = new ArrayInput([]);
+    $output = new NullOutput;
+    event(new CommandStarting($command, $input, $output));
+
+    if ($during !== null) {
+        $during();
+    }
+
+    event(new CommandFinished($command, $input, $output, $exitCode));
+}
+
+function forgetSchedulerMarker(): void
+{
+    unset($_ENV[RuntimeCollectorService::SCHEDULER_ENVIRONMENT_VARIABLE]);
+    putenv(RuntimeCollectorService::SCHEDULER_ENVIRONMENT_VARIABLE);
+}
+
+it('counts an Artisan command run with its duration and exit code class, and flushes when it finishes', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true]]);
+    $now = 1_800_000_000.0;
+    $collector = new RuntimeCollectorService(
+        new RuntimeConfigurationData(isEnabled: true, enabledTypes: ['command' => true]),
+        new RuntimeBufferService($this->app->storagePath('excubia/runtime'), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES),
+        $this->app->basePath(),
+        function () use (&$now): float {
+            $now += 0.04;
+
+            return $now;
+        },
+    );
+    $input = new ArrayInput([]);
+    $output = new NullOutput;
+
+    $collector->startCommand(new CommandStarting('migrate', $input, $output));
+    $collector->recordCommand(new CommandFinished('migrate', $input, $output, 0));
+
+    expect(bufferedRuntime($this->app))->toHaveCount(1)
+        ->and(bufferedRuntime($this->app)[0])->toMatchArray([
+            'type' => 'command',
+            'command' => 'migrate',
+            'exitCodeClass' => '0',
+            'count' => 1,
+            'errorCount' => 0,
+            'totalMs' => 40.0,
+            'maxMs' => 40.0,
+            'histogram' => runtimeHistogram([3 => 1]),
+            'sampleRate' => 1.0,
+        ]);
+});
+
+it('records real Artisan runs by name and exit code class, never their arguments or options', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true]]);
+    registerRuntimeTestCommands();
+
+    runArtisanWithEvents($this->app, 'runtime:deploy', ['token' => 'argument-secret', '--password' => 'option-secret']);
+    runArtisanWithEvents($this->app, 'runtime:deploy', ['token' => 'other-secret']);
+    runArtisanWithEvents($this->app, 'runtime:broken');
+    runArtisanWithEvents($this->app, 'runtime:odd');
+
+    $commands = bufferedOfType($this->app, 'command')->keyBy('command');
+
+    expect($commands->keys()->sort()->values()->all())->toBe(['runtime:broken', 'runtime:deploy', 'runtime:odd'])
+        ->and($commands['runtime:deploy'])->toMatchArray(['exitCodeClass' => '0', 'count' => 2, 'errorCount' => 0])
+        ->and($commands['runtime:broken'])->toMatchArray(['exitCodeClass' => '1', 'count' => 1, 'errorCount' => 1])
+        ->and($commands['runtime:odd'])->toMatchArray(['exitCodeClass' => 'other', 'count' => 1, 'errorCount' => 1])
+        ->and(array_sum($commands['runtime:deploy']['histogram']))->toBe(2)
+        ->and(rawBuffer($this->app))->not->toContain('secret')
+        ->not->toContain('token')
+        ->not->toContain('password');
+});
+
+it('counts only the top-level command, not the ones it calls', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true]]);
+    registerRuntimeTestCommands();
+
+    runArtisanWithEvents($this->app, 'runtime:outer');
+
+    expect(bufferedOfType($this->app, 'command')->pluck('command')->all())->toBe(['runtime:outer'])
+        ->and(rawBuffer($this->app))->not->toContain('nested-secret');
+});
+
+it('never counts Excubia\'s own commands and skips the ignore list, by default and as configured', function (?array $ignore, array $expected) {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => $ignore === null ? ['enabled' => true] : ['enabled' => true, 'ignore' => $ignore]]);
+
+    foreach (['excubia:check', 'excubia:push-runtime', 'schedule:work', 'queue:work', 'queue:listen', 'horizon', 'horizon:supervisor', 'tinker', 'migrate', 'app:sync-users'] as $command) {
+        dispatchCommand($command);
+    }
+
+    forgetSchedulerMarker();
+
+    expect(bufferedOfType($this->app, 'command')->pluck('command')->sort()->values()->all())->toBe($expected);
+})->with([
+    'default list' => [null, ['app:sync-users', 'migrate']],
+    'custom list replaces the default' => [['app:*'], ['horizon', 'horizon:supervisor', 'migrate', 'queue:listen', 'queue:work', 'schedule:work', 'tinker']],
+    'empty list' => [[], ['app:sync-users', 'horizon', 'horizon:supervisor', 'migrate', 'queue:listen', 'queue:work', 'schedule:work', 'tinker']],
+]);
+
+it('skips commands run by the scheduler, in its process and in the task processes it starts', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true, 'ignore' => []]]);
+    $marker = RuntimeCollectorService::SCHEDULER_ENVIRONMENT_VARIABLE;
+    $markerSeenByTasks = null;
+
+    // schedule:run marks the environment its task processes inherit while it
+    // runs; a scheduled closure that calls a command runs in its process.
+    dispatchCommand('schedule:run', 0, function () use ($marker, &$markerSeenByTasks): void {
+        $markerSeenByTasks = [getenv($marker), $_ENV[$marker] ?? null];
+        dispatchCommand('app:called-by-a-closure');
+    });
+
+    // A task process (`php artisan app:scheduled`) started with the inherited marker.
+    putenv($marker.'=1');
+    dispatchCommand('app:scheduled');
+    forgetSchedulerMarker();
+
+    // Once schedule:run is over, the same process counts commands again.
+    dispatchCommand('migrate');
+
+    expect($markerSeenByTasks)->toBe(['1', '1'])
+        ->and(getenv($marker))->toBeFalse()
+        ->and(bufferedOfType($this->app, 'command')->pluck('command')->sort()->values()->all())->toBe(['migrate', 'schedule:run']);
+});
+
+it('keeps the inherited marker when a task process runs the scheduler itself', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true, 'ignore' => []]]);
+    $marker = RuntimeCollectorService::SCHEDULER_ENVIRONMENT_VARIABLE;
+    putenv($marker.'=1');
+
+    // schedule:work starts schedule:run as a child process with the marker.
+    dispatchCommand('schedule:run');
+    $markerAfterwards = getenv($marker);
+    forgetSchedulerMarker();
+
+    expect($markerAfterwards)->toBe('1')
+        ->and(bufferedOfType($this->app, 'command'))->toHaveCount(0);
+});
+
+it('registers nothing and records nothing for commands while the type is off', function (array $runtime) {
+    $before = [count(Event::getListeners(CommandStarting::class)), count(Event::getListeners(CommandFinished::class))];
+    bootRuntimeProject($this->app, $runtime);
+    registerRuntimeTestCommands();
+
+    expect([count(Event::getListeners(CommandStarting::class)), count(Event::getListeners(CommandFinished::class))])->toBe($before);
+
+    runArtisanWithEvents($this->app, 'runtime:deploy', ['token' => 'off']);
+    dispatchCommand('migrate');
+
+    expect(bufferedOfType($this->app, 'command'))->toHaveCount(0);
+})->with([
+    'not switched on' => [['enabled' => true]],
+    'switched off' => [['enabled' => true, 'commands' => ['enabled' => false]]],
+    'runtime off' => [['enabled' => false, 'commands' => ['enabled' => true]]],
+]);
+
+it('registers the command listeners when the type is on', function () {
+    $before = [count(Event::getListeners(CommandStarting::class)), count(Event::getListeners(CommandFinished::class))];
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true]]);
+
+    expect([count(Event::getListeners(CommandStarting::class)), count(Event::getListeners(CommandFinished::class))])->toBe([$before[0] + 1, $before[1] + 1]);
+});
+
+it('records no command at sample rate 0 but still flushes the other aggregates when it finishes', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true, 'sampleRate' => 0], 'slowQueries' => ['thresholdMs' => 0]]);
+
+    dispatchCommand('migrate', 0, fn () => DB::select('select 1'));
+
+    expect(bufferedOfType($this->app, 'command'))->toHaveCount(0)
+        ->and(bufferedOfType($this->app, 'slowQuery'))->toHaveCount(1);
+});
+
+it('never lets a failure in the command collector reach the host app', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'commands' => ['enabled' => true]]);
+    $buffer = $this->app->storagePath('excubia/runtime');
+    @mkdir(dirname($buffer), 0777, true);
+    file_put_contents($buffer, 'not a directory');
+
+    dispatchCommand('migrate', 2);
+
+    expect(is_file($buffer))->toBeTrue();
 });
