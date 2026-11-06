@@ -59,7 +59,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "mail": { "enabled": false, "sampleRate": 1 },
     "notifications": { "enabled": false, "sampleRate": 1 },
     "logLevels": { "enabled": false, "sampleRate": 1 },
-    "deprecations": { "enabled": false, "sampleRate": 1 }
+    "deprecations": { "enabled": false, "sampleRate": 1 },
+    "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 }
   },
   "exceptions": {
     "enabled": false,
@@ -266,6 +267,10 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.deprecations` | object | | PHP deprecations counted per source (`app`, `vendor/<vendor>/<package>`), masked message and PHP version, through a chained error handler. Off by default. |
 | `runtime.deprecations.enabled` | boolean | `false` | Collect deprecation counts. |
 | `runtime.deprecations.sampleRate` | number 0–1 | `1` | Share of deprecations recorded. |
+| `runtime.duplicateQueries` | object | | N+1 detection: query shapes (normalised SQL, never bindings) that run at least `threshold` times in one request or job. Off by default. |
+| `runtime.duplicateQueries.enabled` | boolean | `false` | Detect duplicate queries. |
+| `runtime.duplicateQueries.sampleRate` | number 0–1 | `1` | Share of requests and jobs evaluated. |
+| `runtime.duplicateQueries.threshold` | integer ≥ 2 | `5` | Executions of one query shape within one request or job from which it is recorded. |
 
 ## Exception capture
 

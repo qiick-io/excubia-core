@@ -258,7 +258,11 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     Http::fake(['api.example.test/*' => Http::response(['ok' => true])]);
     recordOneRequest($this);
     DB::select('select 1');
-    dispatch(static function (): void {});
+    dispatch(static function (): void {
+        for ($i = 0; $i < 5; $i++) {
+            DB::select('select ? as repeated_column', [$i]);
+        }
+    });
     event(new ScheduledTaskFinished($this->app->make(Schedule::class)->command('inspire'), 0.1));
     Http::get('https://api.example.test/ping');
     Cache::put('settings:site', 'value');

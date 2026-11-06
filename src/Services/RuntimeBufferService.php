@@ -41,9 +41,10 @@ final class RuntimeBufferService
 
     /**
      * Metric fields that add up when two aggregates merge: integer counters
-     * and decimal totals. A type carries only the ones it needs (#132).
+     * and decimal totals. A type carries only the ones it needs (#132, and
+     * `totalRepeats` for `duplicateQuery`, #148).
      */
-    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats'];
 
     private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
 
@@ -53,9 +54,15 @@ final class RuntimeBufferService
     private const MAXIMUM_FIELDS = ['maxMs', 'maxMb'];
 
     /**
+     * Integer metric fields that keep the larger value when two aggregates
+     * merge, and stay integers (`maxRepeats` of `duplicateQuery`, #148).
+     */
+    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats'];
+
+    /**
      * Metric fields that hold one number each.
      */
-    private const NUMBER_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS];
+    private const NUMBER_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS, ...self::MAXIMUM_COUNTER_FIELDS];
 
     /**
      * Latency histogram of the duration types (#147): a list of counts, one
@@ -260,6 +267,12 @@ final class RuntimeBufferService
         foreach (self::MAXIMUM_FIELDS as $field) {
             if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
                 $into[$field] = max(self::numberValue($into[$field] ?? 0), self::numberValue($from[$field] ?? 0));
+            }
+        }
+
+        foreach (self::MAXIMUM_COUNTER_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = max(self::integerValue($into[$field] ?? 0), self::integerValue($from[$field] ?? 0));
             }
         }
 

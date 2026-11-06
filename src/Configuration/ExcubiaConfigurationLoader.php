@@ -237,6 +237,8 @@ final class ExcubiaConfigurationLoader
         $enabledTypes = [];
         $sampleRates = [];
         $slowQueryThresholdMs = RuntimeConfigurationData::DEFAULT_SLOW_QUERY_THRESHOLD_MS;
+        $duplicateQueryThreshold = RuntimeConfigurationData::DEFAULT_DUPLICATE_QUERY_THRESHOLD;
+        $extraKeys = [RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'], RuntimeTypeEnum::DuplicateQuery->value => ['threshold']];
 
         foreach (RuntimeTypeEnum::cases() as $type) {
             $label = 'runtime.'.$type->configurationKey();
@@ -246,7 +248,7 @@ final class ExcubiaConfigurationLoader
                 throw new InvalidConfigurationException($label.' must be an object.');
             }
 
-            $this->rejectUnknownKeys($settings, $type === RuntimeTypeEnum::SlowQuery ? ['enabled', 'sampleRate', 'thresholdMs'] : ['enabled', 'sampleRate'], $label);
+            $this->rejectUnknownKeys($settings, ['enabled', 'sampleRate', ...$extraKeys[$type->value] ?? []], $label);
 
             if (array_key_exists('enabled', $settings)) {
                 $enabledTypes[$type->value] = $this->boolean($settings['enabled'], $label.'.enabled');
@@ -263,6 +265,10 @@ final class ExcubiaConfigurationLoader
             if (array_key_exists('thresholdMs', $settings)) {
                 $slowQueryThresholdMs = $this->integer($settings['thresholdMs'], $label.'.thresholdMs');
             }
+
+            if (array_key_exists('threshold', $settings)) {
+                $duplicateQueryThreshold = $this->integer($settings['threshold'], $label.'.threshold');
+            }
         }
 
         return new RuntimeConfigurationData(
@@ -271,6 +277,7 @@ final class ExcubiaConfigurationLoader
             sampleRates: $sampleRates,
             slowQueryThresholdMs: $slowQueryThresholdMs,
             bufferMaxBytes: array_key_exists('bufferMaxBytes', $runtime) ? $this->integer($runtime['bufferMaxBytes'], 'runtime.bufferMaxBytes') : RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
+            duplicateQueryThreshold: $duplicateQueryThreshold,
         );
     }
 
