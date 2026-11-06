@@ -43,11 +43,14 @@ qiick-io/excubia-core
 │   │   ├── LaravelQueueWorkersCheck.php    (laravel-queue-workers)        # Horizon status, or worker heartbeat per queue with pending jobs
 │   │   ├── NpmOutdatedCheck.php            (npm-outdated)                 # package.json direct deps vs npm registry, names only
 │   │   └── LaravelBackupsCheck.php         (laravel-backups)              # spatie/laravel-backup destinations: age, size drop, count
+│   │   ├── LaravelDatabaseConnectionsCheck.php (laravel-database-connections) # open connections of the default connection
+│   │   └── LaravelDatabaseSizeCheck.php    (laravel-database-size)        # size and five largest tables, DatabaseStatisticsService
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
 │   │   ├── HttpClientContract.php           # getJson(), postJson() — faked in tests
-│   │   └── DiskSpaceContract.php            # usedPercent(directory) — DiskSpaceService, faked in tests
+│   │   ├── DiskSpaceContract.php            # usedPercent(directory) — DiskSpaceService, faked in tests
+│   │   └── DatabaseQueryContract.php        # select(query) on one connection — LaravelDatabaseQueryService, faked in tests
 │   ├── Registries/
 │   │   └── HealthCheckRegistry.php          # ordered list of checks, --only/--skip filtering
 │   ├── Services/

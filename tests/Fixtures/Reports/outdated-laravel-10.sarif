@@ -263,6 +263,22 @@
                                 "text": "Backups"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-database-connections",
+                            "name": "Database connections",
+                            "shortDescription": {
+                                "text": "Database connections"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-database-size",
+                            "name": "Database size",
+                            "shortDescription": {
+                                "text": "Database size"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

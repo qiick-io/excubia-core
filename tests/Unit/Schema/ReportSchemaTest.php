@@ -139,6 +139,8 @@ it('documents the details keys per check id', function () {
             'laravel-queue-workers',
             'npm-outdated',
             'laravel-backups',
+            'laravel-database-connections',
+            'laravel-database-size',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
@@ -149,5 +151,8 @@ it('documents the details keys per check id', function () {
         ->and($keys('queueWorkerHeartbeatDetails'))->toBe(['connection', 'queue', 'minutesSinceLastSeen'])
         ->and($keys('horizonStatusDetails'))->toBe(['status', 'processes', 'supervisors'])
         ->and($keys('backupDestinationDetails'))->toBe(['disk', 'ageHours', 'sizeMb', 'count'])
-        ->and($schema['$defs']['backupDestinationDetails']['required'])->toBe(['disk', 'ageHours', 'sizeMb', 'count']);
+        ->and($schema['$defs']['backupDestinationDetails']['required'])->toBe(['disk', 'ageHours', 'sizeMb', 'count'])
+        ->and($keys('databaseConnectionsDetails'))->toBe(['connection', 'connectionCount'])
+        ->and($keys('databaseSizeDetails'))->toBe(['connection', 'sizeMb', 'largestTables'])
+        ->and(array_keys($schema['$defs']['databaseSizeDetails']['properties']['largestTables']['items']['properties']))->toBe(['table', 'sizeMb']);
 });

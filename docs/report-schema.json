@@ -788,6 +788,40 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-database-connections"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/databaseConnectionsDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-database-size"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/databaseSizeDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1288,6 +1322,62 @@
                     "description": "Backups on the destination; null when it could not be reached.",
                     "type": ["integer", "null"],
                     "minimum": 0
+                }
+            }
+        },
+        "databaseConnectionsDetails": {
+            "description": "laravel-database-connections finding, when the default connection has more open connections than warnAt.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connection", "connectionCount"],
+            "properties": {
+                "connection": {
+                    "description": "Name of the default connection from config/database.php; never the host or DSN.",
+                    "type": "string"
+                },
+                "connectionCount": {
+                    "description": "Open connections: Threads_connected on the MySQL or MariaDB server, pg_stat_activity rows for the PostgreSQL database.",
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "databaseSizeDetails": {
+            "description": "laravel-database-size finding: a pass row at info, or a medium warning above checks.laravel-database-size.warnAtMb.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connection", "sizeMb", "largestTables"],
+            "properties": {
+                "connection": {
+                    "description": "Name of the default connection from config/database.php; never the database name, host or file path.",
+                    "type": "string"
+                },
+                "sizeMb": {
+                    "description": "Size of the default database in MB (1 MB = 1048576 bytes), rounded to two decimals. SQLite: the size of the database file.",
+                    "type": "number",
+                    "minimum": 0
+                },
+                "largestTables": {
+                    "description": "Up to five largest tables, largest first. Empty when the catalog cannot be read (SQLite without the dbstat table).",
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["table", "sizeMb"],
+                        "properties": {
+                            "table": {
+                                "description": "Table name, at most 64 characters.",
+                                "type": "string",
+                                "maxLength": 64
+                            },
+                            "sizeMb": {
+                                "description": "Data and index size of the table in MB, rounded to two decimals.",
+                                "type": "number",
+                                "minimum": 0
+                            }
+                        }
+                    }
                 }
             }
         },

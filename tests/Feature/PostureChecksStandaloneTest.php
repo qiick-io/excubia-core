@@ -26,6 +26,8 @@ const POSTURE_CHECK_IDS = [
     'laravel-queue-backlog',
     'laravel-queue-workers',
     'laravel-backups',
+    'laravel-database-connections',
+    'laravel-database-size',
 ];
 
 /**
@@ -47,7 +49,7 @@ function standalonePostureReport(array $options = []): array
     return ['exitCode' => $exitCode, 'report' => json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR)];
 }
 
-it('skips all seventeen posture checks with "requires Artisan" in the standalone CLI', function () {
+it('skips all twenty-one posture checks with "requires Artisan" in the standalone CLI', function () {
     $scan = standalonePostureReport();
     $results = array_values(array_filter(
         $scan['report']['checks'],
@@ -69,7 +71,7 @@ it('registers the posture checks after the existing checks and honours --skip', 
     $checkIds = array_column(standalonePostureReport()['report']['checks'], 'checkId');
     $skipped = array_column(standalonePostureReport(['--skip' => 'laravel-debug-mode,laravel-failed-jobs'])['report']['checks'], 'checkId');
 
-    expect(array_slice($checkIds, -24))->toBe([...array_slice(POSTURE_CHECK_IDS, 0, 12), 'dependency-licenses', ...array_slice(POSTURE_CHECK_IDS, 12, 5), 'php-platform-requirements', 'env-example-sync', 'composer-outdated', 'laravel-queue-workers', 'npm-outdated', 'laravel-backups'])
+    expect(array_slice($checkIds, -26))->toBe([...array_slice(POSTURE_CHECK_IDS, 0, 12), 'dependency-licenses', ...array_slice(POSTURE_CHECK_IDS, 12, 5), 'php-platform-requirements', 'env-example-sync', 'composer-outdated', 'laravel-queue-workers', 'npm-outdated', 'laravel-backups', 'laravel-database-connections', 'laravel-database-size'])
         ->and(array_search('laravel-next-blocker', $checkIds, true))->toBeLessThan(array_search('laravel-debug-mode', $checkIds, true))
         ->and($skipped)->not->toContain('laravel-debug-mode', 'laravel-failed-jobs')
         ->and($skipped)->toContain('laravel-maintenance-mode');

@@ -63,6 +63,8 @@ final class SarifRenderer implements ReportRendererContract
         'composer-outdated' => 'composer.lock',
         'laravel-queue-workers' => 'config/queue.php',
         'laravel-backups' => 'config/backup.php',
+        'laravel-database-connections' => 'config/database.php',
+        'laravel-database-size' => 'config/database.php',
     ];
 
     /**

@@ -17,6 +17,8 @@ use Qiick\Excubia\Checks\LaravelBackupsCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
 use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseConnectionsCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseSizeCheck;
 use Qiick\Excubia\Checks\LaravelDebugModeCheck;
 use Qiick\Excubia\Checks\LaravelDevPackagesCheck;
 use Qiick\Excubia\Checks\LaravelDiskSpaceCheck;
@@ -250,6 +252,8 @@ final class HealthCheckRunnerService
             new LaravelQueueWorkersCheck,
             new NpmOutdatedCheck(new NpmRegistryService($this->httpClient, $cache), $constraints),
             new LaravelBackupsCheck,
+            new LaravelDatabaseConnectionsCheck,
+            new LaravelDatabaseSizeCheck,
         ];
     }
 }

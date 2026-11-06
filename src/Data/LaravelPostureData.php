@@ -48,6 +48,10 @@ final readonly class LaravelPostureData
      * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null  $scheduledTasks  the schedule inventory (#146) for the report `schedule`; null when not read
      * @param  bool  $isBackupPackageInstalled  spatie/laravel-backup's `BackupDestination` class exists (#171)
      * @param  list<array{disk: string, isReachable: bool, count: int, newestAt: DateTimeImmutable|null, newestSizeBytes: int|null, previousSizeBytes: int|null}>|null  $backupDestinations  each monitored backup destination by disk name (never a path or bucket); null when spatie/laravel-backup is missing or its configuration could not be read
+     * @param  string|null  $defaultDatabaseConnectionName  name of the default database connection (#169); null when none is configured
+     * @param  string|null  $defaultDatabaseDriverName  driver of that connection (`mysql`, `pgsql`, `sqlite`, …); null when unknown
+     * @param  int|null  $databaseConnectionCount  open connections on the default connection's server (MySQL, MariaDB) or database (PostgreSQL); null when not measured
+     * @param  array{sizeMb: float, largestTables: list<array{table: string, sizeMb: float}>}|null  $databaseSize  size of the default database and its five largest tables, in MB; null when not measured
      */
     public function __construct(
         public string $environment,
@@ -83,5 +87,9 @@ final readonly class LaravelPostureData
         public ?array $scheduledTasks = null,
         public bool $isBackupPackageInstalled = false,
         public ?array $backupDestinations = null,
+        public ?string $defaultDatabaseConnectionName = null,
+        public ?string $defaultDatabaseDriverName = null,
+        public ?int $databaseConnectionCount = null,
+        public ?array $databaseSize = null,
     ) {}
 }
