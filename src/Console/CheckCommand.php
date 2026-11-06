@@ -288,6 +288,9 @@ final class CheckCommand extends Command
             databaseConnectionsWarnAt: $loaded->databaseConnectionsWarnAt,
             databaseConnectionsFailAt: $loaded->databaseConnectionsFailAt,
             databaseSizeWarnAtMb: $loaded->databaseSizeWarnAtMb,
+            redisMemoryWarnAtPercentUsed: $loaded->redisMemoryWarnAtPercentUsed,
+            redisMemoryFailAtPercentUsed: $loaded->redisMemoryFailAtPercentUsed,
+            redisMemoryConnectionNames: $loaded->redisMemoryConnectionNames,
         );
     }
 

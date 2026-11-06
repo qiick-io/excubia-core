@@ -238,6 +238,32 @@
                             "description": "Fail (high) for a spatie/laravel-backup destination whose newest backup is older than this many hours. Default 26."
                         }
                     }
+                },
+                "laravel-redis-memory": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Warn (medium) when a Redis connection uses this share of its maxmemory or more. Default 80."
+                        },
+                        "failAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Fail (high) when a Redis connection uses this share of its maxmemory or more. Default 90."
+                        },
+                        "connections": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Redis connection names (config/database.php redis.*) to read instead of the ones the default cache store, queue connection and session use. Default []."
+                        }
+                    }
                 }
             }
         },

@@ -54,6 +54,11 @@ use Throwable;
  * lists the backups of each monitored destination through the package's
  * `BackupDestination` API: count, newest date and the two newest sizes.
  *
+ * For `laravel-redis-memory` (#170) it reads `INFO memory` on each Redis
+ * connection the default cache store, the default queue connection or the
+ * session use (or on `checks.laravel-redis-memory.connections`): used and
+ * max memory and the eviction policy, nothing else of the reply.
+ *
  * ponytail: Redis, Memcached and `select 1` on an already open connection
  * use the client's own timeouts; wrap them in a deadline if a hung service
  * ever blocks a run.
@@ -174,6 +179,7 @@ final class LaravelPostureService
             defaultDatabaseDriverName: $databaseStatistics['driver'],
             databaseConnectionCount: $databaseStatistics['connectionCount'],
             databaseSize: $databaseStatistics['size'],
+            redisMemory: $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames),
         );
     }
 
@@ -623,6 +629,112 @@ final class LaravelPostureService
         } catch (Throwable) {
             return $unreachable;
         }
+    }
+
+    /**
+     * `INFO memory` of each Redis connection in use: the connection of the
+     * default cache store, of the default queue connection and of the
+     * session when their driver is `redis`, or `$configuredNames` when not
+     * empty. A connection that throws or answers without `used_memory` keeps
+     * a null `usedBytes`; the error is dropped because it can carry a host.
+     *
+     * @param  list<string>  $configuredNames
+     * @return list<array{connection: string, isCacheConnection: bool, usedBytes: int|null, maxBytes: int|null, policy: string|null}>
+     */
+    private function redisMemory(Application $application, Repository $config, array $configuredNames): array
+    {
+        $cacheStore = $config->get('cache.stores.'.$config->get('cache.default'));
+        $queueConnection = $config->get('queue.connections.'.$config->get('queue.default'));
+        $cacheConnection = $this->redisConnectionName($cacheStore);
+        $connectionNames = [
+            $cacheConnection,
+            $this->redisConnectionName($queueConnection),
+            $config->get('session.driver') === 'redis' ? $this->redisConnectionName(['driver' => 'redis', 'connection' => $config->get('session.connection')]) : null,
+        ];
+        $names = $configuredNames !== [] ? $configuredNames : array_values(array_unique(array_filter($connectionNames, is_string(...))));
+        $memory = [];
+
+        foreach ($names as $name) {
+            $info = $this->redisMemoryInfo($application, $name);
+            $memory[] = [
+                'connection' => $name,
+                'isCacheConnection' => $name === $cacheConnection,
+                'usedBytes' => $info['used_memory'] ?? null,
+                'maxBytes' => isset($info['used_memory']) ? ($info['maxmemory'] ?? 0) : null,
+                'policy' => isset($info['used_memory']) ? ($info['maxmemory_policy'] ?? null) : null,
+            ];
+        }
+
+        return $memory;
+    }
+
+    /**
+     * The Redis connection name of a cache store or queue connection whose
+     * driver is `redis` (`default` when it names none); null otherwise.
+     */
+    private function redisConnectionName(mixed $settings): ?string
+    {
+        if (! is_array($settings) || ($settings['driver'] ?? null) !== 'redis') {
+            return null;
+        }
+
+        $connection = $settings['connection'] ?? null;
+
+        return is_string($connection) && $connection !== '' ? $connection : 'default';
+    }
+
+    /**
+     * `used_memory`, `maxmemory` and `maxmemory_policy` from `INFO memory`.
+     * phpredis answers a flat array, Predis one nested under the `Memory`
+     * section, and a raw client the `key:value` text; all three are read.
+     * Every other field is dropped, and a policy that is not a plain
+     * `allkeys-lru`-style word is too.
+     *
+     * @return array{used_memory?: int, maxmemory?: int, maxmemory_policy?: string}
+     */
+    private function redisMemoryInfo(Application $application, string $name): array
+    {
+        try {
+            $reply = $application->make('redis')->connection($name)->command('info', ['memory']);
+        } catch (Throwable) {
+            return [];
+        }
+
+        if (is_string($reply)) {
+            $lines = preg_split('/\r?\n/', $reply) ?: [];
+            $reply = [];
+
+            foreach ($lines as $line) {
+                if (str_contains($line, ':')) {
+                    [$key, $value] = explode(':', $line, 2);
+                    $reply[$key] = $value;
+                }
+            }
+        }
+
+        if (! is_array($reply)) {
+            return [];
+        }
+
+        if (! isset($reply['used_memory']) && is_array($reply['Memory'] ?? null)) {
+            $reply = $reply['Memory'];
+        }
+
+        $info = [];
+
+        foreach (['used_memory', 'maxmemory'] as $key) {
+            if (is_numeric($reply[$key] ?? null)) {
+                $info[$key] = (int) $reply[$key];
+            }
+        }
+
+        $policy = $reply['maxmemory_policy'] ?? null;
+
+        if (is_string($policy) && preg_match('/^[a-z-]{1,32}$/', $policy) === 1) {
+            $info['maxmemory_policy'] = $policy;
+        }
+
+        return $info;
     }
 
     private function ageMinutes(?int $timestamp, DateTimeImmutable $now): ?int

@@ -47,6 +47,10 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * above which the check warns or fails, default 50 and 100);
  * `databaseSizeWarnAtMb` is `checks.laravel-database-size.warnAtMb` (null,
  * the default, only reports the size).
+ * `redisMemoryWarnAtPercentUsed` and `redisMemoryFailAtPercentUsed` are the
+ * `checks.laravel-redis-memory` thresholds on the share of `maxmemory` used
+ * (default 80 and 90); `redisMemoryConnectionNames`, when not empty, replaces
+ * the Redis connections found through the cache, queue and session config.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -65,6 +69,7 @@ final readonly class ExcubiaConfigurationData
      * @param  list<string>  $skippedPackagePatterns
      * @param  list<string>  $databaseConnectionNames
      * @param  list<string>  $queueBacklogQueueNames
+     * @param  list<string>  $redisMemoryConnectionNames
      */
     public function __construct(
         public ?SeverityEnum $failOnSeverity,
@@ -102,6 +107,9 @@ final readonly class ExcubiaConfigurationData
         public int $databaseConnectionsWarnAt = 50,
         public int $databaseConnectionsFailAt = 100,
         public ?int $databaseSizeWarnAtMb = null,
+        public int $redisMemoryWarnAtPercentUsed = 80,
+        public int $redisMemoryFailAtPercentUsed = 90,
+        public array $redisMemoryConnectionNames = [],
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -141,6 +149,16 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->databaseSizeWarnAtMb !== null && $this->databaseSizeWarnAtMb < 1) {
             throw new InvalidConfigurationException('checks.laravel-database-size.warnAtMb must be at least 1.');
+        }
+
+        if ($this->redisMemoryWarnAtPercentUsed < 1 || $this->redisMemoryFailAtPercentUsed > 100 || $this->redisMemoryWarnAtPercentUsed > $this->redisMemoryFailAtPercentUsed) {
+            throw new InvalidConfigurationException('laravel-redis-memory needs 1 <= warnAtPercentUsed <= failAtPercentUsed <= 100.');
+        }
+
+        foreach ($this->redisMemoryConnectionNames as $name) {
+            if ($name === '') {
+                throw new InvalidConfigurationException('checks.laravel-redis-memory.connections entries must be non-empty names.');
+            }
         }
 
         if ($this->queueBacklogMaxOldestAgeMinutes < 1 || $this->queueBacklogMaxPendingJobs < 1) {

@@ -42,9 +42,10 @@ qiick-io/excubia-core
 │   │   ├── ComposerOutdatedCheck.php       (composer-outdated)            # direct deps vs newest stable, same p2 metadata
 │   │   ├── LaravelQueueWorkersCheck.php    (laravel-queue-workers)        # Horizon status, or worker heartbeat per queue with pending jobs
 │   │   ├── NpmOutdatedCheck.php            (npm-outdated)                 # package.json direct deps vs npm registry, names only
-│   │   └── LaravelBackupsCheck.php         (laravel-backups)              # spatie/laravel-backup destinations: age, size drop, count
+│   │   ├── LaravelBackupsCheck.php         (laravel-backups)              # spatie/laravel-backup destinations: age, size drop, count
 │   │   ├── LaravelDatabaseConnectionsCheck.php (laravel-database-connections) # open connections of the default connection
-│   │   └── LaravelDatabaseSizeCheck.php    (laravel-database-size)        # size and five largest tables, DatabaseStatisticsService
+│   │   ├── LaravelDatabaseSizeCheck.php    (laravel-database-size)        # size and five largest tables, DatabaseStatisticsService
+│   │   └── LaravelRedisMemoryCheck.php     (laravel-redis-memory)         # INFO memory of the Redis connections in use: used / max, policy
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
