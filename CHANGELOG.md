@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Six more configuration posture checks (#130), run by `php artisan excubia:check` and `excubia:push` like the #73 ones and `skipped` ("requires Artisan", `not-applicable`) in `vendor/bin/excubia`: `laravel-app-key` (`app.key` empty, in any environment: fail, critical), `laravel-session-security` (in `production`, `session.secure` false while `app.url` is https, or `session.http_only` false: warn, medium, one row per key), `laravel-cors-wildcard` (in `production`, `cors.allowed_origins` contains `*` with `cors.supports_credentials`: fail, high; `*` alone: warn, low), `laravel-production-drivers` (in `production`, queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array`: warn, medium, one row per driver), `laravel-log-level` (in `production`, the default log channel logs at `debug`: warn, low) and `laravel-dev-packages` (in `production`, Telescope, Debugbar, Ray, Pail or Clockwork listed in `composer.json` `require` instead of `require-dev` and enabled in the booted app: warn, medium, one row per package). Findings name the config key and the problem, never the value. New `details`: `laravel-cors-wildcard` `hasCredentials`, `laravel-production-drivers` `component`, `driver`, `laravel-dev-packages` `package`, documented in `docs/report-schema.json`. SARIF locations `config/app.php`, `config/session.php`, `config/cors.php`, `config/logging.php` and `composer.json`. Additive: new check ids registered after the existing ones, optional `details`; `schemaVersion` stays `1`.
+
 ## [1.0.0-beta.1] - 2026-11-03
 
 First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [`docs/CONTRACTS.md`](./docs/CONTRACTS.md) are frozen: until 1.0.0 only backwards-compatible fixes land. Upgrading from 0.x: [`docs/guides/upgrading.md`](./docs/guides/upgrading.md).

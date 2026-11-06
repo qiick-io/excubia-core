@@ -46,6 +46,12 @@ final class SarifRenderer implements ReportRendererContract
         'laravel-failed-jobs' => 'config/queue.php',
         'laravel-scheduler-heartbeat' => 'routes/console.php',
         'laravel-maintenance-mode' => 'config/app.php',
+        'laravel-app-key' => 'config/app.php',
+        'laravel-session-security' => 'config/session.php',
+        'laravel-cors-wildcard' => 'config/cors.php',
+        'laravel-production-drivers' => 'config/app.php',
+        'laravel-log-level' => 'config/logging.php',
+        'laravel-dev-packages' => 'composer.json',
     ];
 
     /**

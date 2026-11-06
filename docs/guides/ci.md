@@ -113,4 +113,4 @@ To send the report to your own `excubia-app` after a deploy, see [Push to excubi
 
 ## Posture checks in CI
 
-The six `laravel-*` posture checks read the booted app, so they only run through `php artisan excubia:check`. In CI they would describe the CI environment, not production, so use `vendor/bin/excubia` there (the posture checks are `skipped`), and run the posture checks on the server or through the scheduled push.
+The `laravel-*` posture checks after `laravel-next-blocker` read the booted app, so they only run through `php artisan excubia:check`. In CI they would describe the CI environment, not production, so use `vendor/bin/excubia` there (the posture checks are `skipped`), and run the posture checks on the server or through the scheduled push.

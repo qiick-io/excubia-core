@@ -103,6 +103,7 @@ final class ProjectSnapshotService
                 $this->enginesNode($packageJson),
             ),
             hasNpmLockfile: is_file($packageLockPath),
+            requiredPackageNames: $parsedComposerJson['directPackageNames'],
         );
     }
 

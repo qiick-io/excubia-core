@@ -119,6 +119,54 @@
                                 "text": "Maintenance mode"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-app-key",
+                            "name": "Application key",
+                            "shortDescription": {
+                                "text": "Application key"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-session-security",
+                            "name": "Session cookie security",
+                            "shortDescription": {
+                                "text": "Session cookie security"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-cors-wildcard",
+                            "name": "CORS wildcard origin",
+                            "shortDescription": {
+                                "text": "CORS wildcard origin"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-production-drivers",
+                            "name": "Production drivers",
+                            "shortDescription": {
+                                "text": "Production drivers"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-log-level",
+                            "name": "Log level",
+                            "shortDescription": {
+                                "text": "Log level"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-dev-packages",
+                            "name": "Development packages",
+                            "shortDescription": {
+                                "text": "Development packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }
