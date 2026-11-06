@@ -178,7 +178,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
 
   Each check that would send names (`composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`) adds one `skipped` row with subject `private packages`, `skipReason` `not-applicable` and the message "N private packages not sent to <source>: name, name." The names come from the local lockfile and stay in the report (they reach only the user's own `excubia-app` through the opt-in push); a check with no other finding reports `skipped`, never `fail`, so `--strict` and the exit code are unchanged.
 - No telemetry, no analytics, no phone-home to qiick or any third party. The only exception is the opt-in push to the user's own `excubia-app` (section 13), which is off until the user configures an app URL and token.
-- Opt-in runtime monitoring (`runtime.enabled` in `excubia.json`, off by default, #75) sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs` and its `sampleRate` (`docs/runtime-schema.json`):
+- Opt-in runtime monitoring (`runtime.enabled` in `excubia.json`, off by default, #75) sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs`, an optional latency `histogram` (counts per fixed duration bucket, #147) and its `sampleRate` (`docs/runtime-schema.json`):
   - requests: route name (or `unnamed`), HTTP method, status class (`2xx`…);
   - slow queries: SQL text without bindings, with inline literals (single-quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name;
   - jobs: job class, queue and connection names, `processed` or `failed`;
