@@ -207,7 +207,11 @@ final class YarnLockParser
                 continue;
             }
 
-            $server = $scope !== null && $indent > $scopeIndent ? $this->registryServer(ltrim($line, ' ')) : null;
+            if ($scope === null || $indent <= $scopeIndent) {
+                continue;
+            }
+
+            $server = $this->registryServer(ltrim($line, ' '));
 
             if ($server !== null && ! PackageLockParser::isPublicRegistryUrl($server)) {
                 $scopes[] = $scope;
