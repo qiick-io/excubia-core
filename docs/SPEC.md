@@ -209,7 +209,7 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
   - job memory: job class and queue, peak MB (the PHP peak is reset when the job starts);
   - queue wait: job class and queue, wait in ms between the push and the first attempt without the delay (`totalMs`, `maxMs`), from an `excubiaQueuedAt` timestamp added to job payloads, else Horizon's `pushedAt`;
   - cache: store name and the key prefix before the first `:` or `.`, through the exception message masks, `[masked]` when it still holds a digit, `@`, a space or other punctuation, hex-only text, more than 64 characters or only a mask placeholder; `hits`, `misses`, `writes`, `deletes`;
-  - mail: mailable class (else the mail notification class, else `unknown`) and mailer name; failed mails only when exception capture sees a reported Symfony Mailer transport exception (Laravel has no mail failure event);
+  - mail: mailable class (else the mail notification class, else `unknown`) and mailer name; failed mails from a `MessageSending` with no `MessageSent` by the end of its scope (next send, job or attempt end, command end, terminate), with or without exception capture (#175; Laravel has no mail failure event);
   - notifications: notification class and channel;
   - log levels: the PSR-3 level only (Laravel's `MessageLogged` carries no channel);
   - deprecations (#133): PHP `E_DEPRECATED` and `E_USER_DEPRECATED` from an error handler chained in front of Laravel's, which always runs after it: source (`app`, `vendor/<vendor>/<package>` or `unknown`), the message through the exception message masks and cut to 300 characters, and the PHP major and minor version. No file path, line or stack;

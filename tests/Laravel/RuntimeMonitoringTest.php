@@ -54,6 +54,8 @@ use Qiick\Excubia\Services\RuntimeBufferService;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mailer\Transport\AbstractTransport;
 use Symfony\Component\Mime\Email;
 
 final class RuntimeMonitoringTestJob implements ShouldQueue
@@ -814,7 +816,31 @@ it('counts sent mail per mailable and mailer without recipients, subjects or bod
     }
 });
 
-it('counts a failed mail when exception capture sees a mail transport exception', function () {
+/**
+ * Register the `failing` mailer, whose transport always throws a Symfony
+ * Mailer transport exception naming a host, and make `array` the default.
+ */
+function registerFailingMailer(): void
+{
+    config([
+        'mail.default' => 'array',
+        'mail.mailers.failing' => ['transport' => 'failing'],
+    ]);
+    Mail::extend('failing', fn () => new class extends AbstractTransport
+    {
+        protected function doSend(SentMessage $message): void
+        {
+            throw new TransportException('Connection to smtp.mail-host-secret.test:587 refused for failed-recipient-secret@example.test');
+        }
+
+        public function __toString(): string
+        {
+            return 'failing://';
+        }
+    });
+}
+
+it('counts a failed mail once when exception capture also reports the transport exception', function () {
     bootExcubiaDocument($this->app, [
         'runtime' => ['enabled' => true, 'mail' => ['enabled' => true]],
         'exceptions' => ['enabled' => true, 'ignore' => [TransportException::class]],
@@ -828,10 +854,77 @@ it('counts a failed mail when exception capture sees a mail transport exception'
 
     $mail = bufferedOfType($this->app, 'mail')->keyBy('mailable');
 
-    expect($mail->keys()->all())->toEqualCanonicalizing([RuntimeMonitoringTestMail::class, 'unknown'])
+    expect($mail->keys()->all())->toBe([RuntimeMonitoringTestMail::class])
         ->and($mail[RuntimeMonitoringTestMail::class])->toMatchArray(['mailer' => 'smtp', 'count' => 1, 'errorCount' => 1])
-        ->and($mail['unknown'])->toMatchArray(['mailer' => 'unknown', 'count' => 1, 'errorCount' => 1])
         ->and(rawBuffer($this->app))->not->toContain('secret');
+});
+
+it('counts failed mail sends with exception capture off, per mailable and mailer, without hosts or recipients', function () {
+    bootExcubiaDocument($this->app, ['runtime' => ['enabled' => true, 'mail' => ['enabled' => true]]]);
+    registerFailingMailer();
+
+    try {
+        Mail::mailer('failing')->to('failed-recipient-secret@example.test')->send(new RuntimeMonitoringTestMail);
+    } catch (TransportException) {
+        // The app catches the failure and goes on: the next send settles it.
+    }
+
+    Mail::to('mail-recipient-secret@example.test')->send(new RuntimeMonitoringTestMail);
+
+    try {
+        Mail::mailer('failing')->to('failed-recipient-secret@example.test')->send(new RuntimeMonitoringTestMail);
+    } catch (TransportException) {
+        // Still pending when the request terminates.
+    }
+
+    $this->app->terminate();
+
+    $mail = bufferedOfType($this->app, 'mail')->keyBy('mailer');
+    $raw = rawBuffer($this->app);
+
+    expect($mail['failing'])->toMatchArray(['mailable' => RuntimeMonitoringTestMail::class, 'count' => 2, 'errorCount' => 2])
+        ->and($mail['array'])->toMatchArray(['mailable' => RuntimeMonitoringTestMail::class, 'count' => 1, 'errorCount' => 0]);
+
+    foreach (['mail-host-secret', 'smtp.', 'recipient-secret', 'mail-subject-secret', 'mail-body-secret', ':587'] as $secret) {
+        expect($raw)->not->toContain($secret);
+    }
+});
+
+it('counts a queued mail that fails in its job once, also with exception capture on', function (bool $isCapturingExceptions) {
+    bootExcubiaDocument($this->app, [
+        'runtime' => ['enabled' => true, 'mail' => ['enabled' => true], 'jobs' => ['enabled' => true]],
+        'exceptions' => ['enabled' => $isCapturingExceptions],
+    ]);
+    registerFailingMailer();
+    config(['queue.default' => 'sync']);
+
+    try {
+        Mail::mailer('failing')->to('failed-recipient-secret@example.test')->queue(new RuntimeMonitoringTestMail);
+    } catch (TransportException $exception) {
+        report($exception);
+    }
+
+    $this->app->terminate();
+
+    $mail = bufferedOfType($this->app, 'mail');
+
+    expect($mail)->toHaveCount(1)
+        ->and($mail[0])->toMatchArray(['mailable' => RuntimeMonitoringTestMail::class, 'mailer' => 'failing', 'count' => 1, 'errorCount' => 1])
+        ->and(rawBuffer($this->app))->not->toContain('secret');
+})->with(['exception capture off' => false, 'exception capture on' => true]);
+
+it('counts a send left pending when its job attempt or Artisan command ends, before that scope flushes', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'mail' => ['enabled' => true]]);
+    $sending = fn () => event(new MessageSending(new Email, ['__laravel_mailable' => RuntimeMonitoringTestMail::class, 'mailer' => 'smtp']));
+
+    $sending();
+    event(new JobExceptionOccurred('sync', new SyncJob($this->app, '{}', 'sync', 'default'), new RuntimeException('released')));
+    $sending();
+    event(new CommandFinished('app:send', new ArrayInput([]), new NullOutput, 1));
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $collector->flush();
+
+    expect(bufferedOfType($this->app, 'mail')[0])->toMatchArray(['mailer' => 'smtp', 'count' => 2, 'errorCount' => 2]);
 });
 
 it('counts no mail failure when the mail type is off', function () {
@@ -953,7 +1046,7 @@ it('never lets an exception inside the new listeners reach the host app', functi
     RuntimeMonitoringTestJob::dispatch();
     Mail::to('x@example.test')->send(new RuntimeMonitoringTestMail);
     $collector->recordNotification(new NotificationSent(new stdClass, new stdClass, ['not a string']));
-    $collector->recordMailFailure(new TransportException('x'));
+    $collector->settlePendingMail();
     $this->app->terminate();
 
     expect(Cache::get('still:works'))->toBe('yes')
