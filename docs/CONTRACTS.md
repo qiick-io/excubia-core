@@ -28,7 +28,49 @@ Each contract has a contract test. Most of them compare the code with the commit
 
 ### Check ids
 
-In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements`, `env-example-sync`, `composer-outdated`, `laravel-queue-workers`, `npm-outdated`, `laravel-backups`, `laravel-database-connections`, `laravel-database-size`, `laravel-redis-memory`, `php-opcache`, `php-production-ini` (the seventeen before `laravel-backups` added in 1.0.0-beta.2; `laravel-backups`, `laravel-database-connections`, `laravel-database-size`, `laravel-redis-memory`, `php-opcache` and `php-production-ini` in 1.0.0-beta.3, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
+In run order, the same list and order as `checkIds` in the snapshot (`PublicContractsTest` fails when this table and the snapshot differ):
+
+| # | Check id |
+| --- | --- |
+| 1 | `php-eol` |
+| 2 | `laravel-eol` |
+| 3 | `node-eol` |
+| 4 | `composer-advisories` |
+| 5 | `npm-advisories` |
+| 6 | `composer-abandoned` |
+| 7 | `composer-stale` |
+| 8 | `laravel-next-blocker` |
+| 9 | `laravel-debug-mode` |
+| 10 | `laravel-production-caches` |
+| 11 | `laravel-pending-migrations` |
+| 12 | `laravel-failed-jobs` |
+| 13 | `laravel-scheduler-heartbeat` |
+| 14 | `laravel-maintenance-mode` |
+| 15 | `laravel-app-key` |
+| 16 | `laravel-session-security` |
+| 17 | `laravel-cors-wildcard` |
+| 18 | `laravel-production-drivers` |
+| 19 | `laravel-log-level` |
+| 20 | `laravel-dev-packages` |
+| 21 | `dependency-licenses` |
+| 22 | `laravel-database` |
+| 23 | `laravel-cache` |
+| 24 | `laravel-storage` |
+| 25 | `laravel-disk-space` |
+| 26 | `laravel-queue-backlog` |
+| 27 | `php-platform-requirements` |
+| 28 | `env-example-sync` |
+| 29 | `composer-outdated` |
+| 30 | `laravel-queue-workers` |
+| 31 | `npm-outdated` |
+| 32 | `laravel-backups` |
+| 33 | `laravel-database-connections` |
+| 34 | `laravel-database-size` |
+| 35 | `laravel-redis-memory` |
+| 36 | `php-opcache` |
+| 37 | `php-production-ini` |
+
+Ids 1 to 14 are the 1.0.0-beta.1 set; every later id was appended, additively. The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
 
 ### Exit codes
 
