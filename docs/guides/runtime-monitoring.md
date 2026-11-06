@@ -50,6 +50,7 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "logLevels": { "enabled": true },
     "deprecations": { "enabled": true },
     "duplicateQueries": { "enabled": true, "threshold": 5 },
+    "server": { "enabled": true },
     "commands": { "enabled": true }
   }
 }
@@ -109,6 +110,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `logLevels` | `MessageLogged` | — |
 | `deprecations` | A PHP error handler for `E_DEPRECATED` / `E_USER_DEPRECATED`, chained in front of Laravel's | — |
 | `duplicateQueries` | `QueryExecuted`, evaluated at `RequestHandled` or when a job ends (`JobProcessed` / `JobFailed` / `JobExceptionOccurred`) | — |
+| `server` | One sample per `excubia:push-runtime` run, on each server | — |
 | `commands` | `CommandStarting` / `CommandFinished`, top-level commands only | Non-zero exit code |
 
 Notes on the newer types:
@@ -128,11 +130,32 @@ Notes on the newer types:
 
   The buffer is written when each command finishes, because a long-lived process (Octane, a worker calling `Artisan::call()`) does not terminate after it; for a plain `php artisan` run, the flush when the app terminates then finds nothing left. A command that calls `exit()` fires no `CommandFinished` and is not counted. Laravel fires these events only for commands run through the console kernel (`php artisan`, `Artisan::call()`), not in its own test runs.
 
+### Server metrics
+
+With `runtime.server.enabled`, every `excubia:push-runtime` run (each minute, on every server that runs the scheduler) first takes one sample of the machine and sends it with the batch, as `server` aggregates (1.0.0-beta.3, #149):
+
+| Field | Linux | macOS and others |
+| --- | --- | --- |
+| `loadAverage1`, `loadAverage5`, `loadAverage15` | `/proc/loadavg` | `sys_getloadavg()` |
+| `cpuCores` | `processor` entries of `/proc/cpuinfo` | `null` |
+| `memoryUsedMb`, `memoryTotalMb` (MiB) | `/proc/meminfo`: `MemTotal - MemAvailable` | `null` |
+| `diskUsedGb`, `diskTotalGb` (GiB) | the disk that holds `storage/` | the same |
+
+Everything is read with PHP, never through a shell; macOS exposes cores and memory only through `sysctl` and `vm_stat`, so they are `null` there. A value that cannot be read is `null`. Inside a container `/proc` usually shows the host; cgroup limits are not read. The values are gauges: when one server has two samples in the same minute, each field keeps the larger one.
+
+Each server pushes its own samples, so a server that does not run the scheduler sends none. Name each server so the dashboard shows it readably:
+
+```json
+{ "runtime": { "enabled": true, "server": { "enabled": true, "name": "web-1" } } }
+```
+
+`excubia.json` is usually the same file on every server, so set `runtime.server.name` in your deploy step on each server (for example with `jq '.runtime.server.name = "web-1"'`). Without a name the server is the first 12 hex characters of sha256(hostname + sha256(app key)): stable for one machine and app, and not reversible to the hostname. The hostname and the storage path are never sent.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, and Artisan command names and exit code classes. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, and the server name or hashed id with its load, CPU core count, memory and disk sizes. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

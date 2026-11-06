@@ -61,6 +61,7 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "logLevels": { "enabled": false, "sampleRate": 1 },
     "deprecations": { "enabled": false, "sampleRate": 1 },
     "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 },
+    "server": { "enabled": false, "sampleRate": 1 },
     "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] }
   },
   "exceptions": {
@@ -273,6 +274,10 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.duplicateQueries.enabled` | boolean | `false` | Detect duplicate queries. |
 | `runtime.duplicateQueries.sampleRate` | number 0–1 | `1` | Share of requests and jobs evaluated. |
 | `runtime.duplicateQueries.threshold` | integer ≥ 2 | `5` | Executions of one query shape within one request or job from which it is recorded. |
+| `runtime.server` | object | | Server CPU, memory and disk: one sample of this machine per `excubia:push-runtime` run (load average 1, 5 and 15 minutes, CPU cores, memory used and total, disk used and total for the disk that holds `storage/`). Off by default. |
+| `runtime.server.enabled` | boolean | `false` | Take server samples. |
+| `runtime.server.sampleRate` | number 0–1 | `1` | Share of runs that take a sample. |
+| `runtime.server.name` | string | hashed id | Readable server name in excubia-app: 1 to 64 letters, digits, `.`, `_` or `-`. Unset, the server is the first 12 hex characters of sha256(hostname + sha256(app key)); the hostname is never sent. See [runtime monitoring](./runtime-monitoring.md#server-metrics). |
 | `runtime.commands` | object | | Artisan command runs per command name and exit code class (`0`, `1`, `other`), with their duration; never arguments or options. Only the top-level command of a process; commands run by the scheduler are `scheduledTask`, and `excubia:*` is never counted. Off by default. |
 | `runtime.commands.enabled` | boolean | `false` | Collect command runs. |
 | `runtime.commands.sampleRate` | number 0–1 | `1` | Share of command runs recorded. |

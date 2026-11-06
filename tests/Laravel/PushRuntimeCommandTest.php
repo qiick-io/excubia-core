@@ -19,11 +19,15 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use JsonSchema\Validator;
 use Qiick\Excubia\Console\CheckCommand;
+use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
+use Qiick\Excubia\Contracts\ServerResourcesContract;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
+use Qiick\Excubia\Tests\Support\FakeServerDisk;
+use Qiick\Excubia\Tests\Support\FakeServerResources;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -320,6 +324,66 @@ it('sends each batch with histograms that add up to count, and the schema reject
         ->and(runtimeSchemaErrors($second))->toBe([])
         ->and(runtimeSchemaErrors($broken))->not->toBe([]);
 });
+
+it('sends one server sample per run, named by runtime.server.name, before the buffered data', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => ['enabled' => true, 'name' => 'web-1']]]);
+    $resources = new FakeServerResources;
+    $disk = new FakeServerDisk;
+    $this->app->instance(ServerResourcesContract::class, $resources);
+    $this->app->instance(DiskSpaceContract::class, $disk);
+    recordOneRequest($this);
+
+    $this->artisan('excubia:push-runtime')->expectsOutputToContain('Sent 1 runtime batch to excubia-app.')->assertExitCode(0);
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $first = $client->postedPayloads[0]['runtime'];
+    $server = collect($first['aggregates'])->firstWhere('type', 'server');
+
+    expect($resources->readCount)->toBe(2)
+        ->and($client->postedPayloads)->toHaveCount(2)
+        ->and(collect($first['aggregates'])->pluck('type')->sort()->values()->all())->toBe(['request', 'server'])
+        ->and($server)->toMatchArray(['server' => 'web-1', 'count' => 1, 'loadAverage1' => 0.52, 'cpuCores' => 4, 'memoryUsedMb' => 2048, 'memoryTotalMb' => 8192, 'diskUsedGb' => 30.0, 'diskTotalGb' => 80.0])
+        ->and($disk->measuredDirectory)->toBe($this->app->storagePath())
+        ->and(collect($client->postedPayloads[1]['runtime']['aggregates'])->pluck('type')->all())->toBe(['server'])
+        ->and(runtimeSchemaErrors($first))->toBe([]);
+});
+
+it('never sends the hostname or a path in a server sample, and names an unnamed server by a hash', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => ['enabled' => true]]]);
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('k', 32))]);
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtime = $client->postedPayloads[0]['runtime'];
+    $encoded = json_encode($runtime, JSON_THROW_ON_ERROR);
+    $hostname = (string) gethostname();
+
+    expect($runtime['aggregates'])->toHaveCount(1)
+        ->and($runtime['aggregates'][0]['server'])->toBe(substr(hash('sha256', $hostname.hash('sha256', 'base64:'.base64_encode(str_repeat('k', 32)))), 0, 12))
+        ->and($hostname)->not->toBe('')
+        ->and($encoded)->not->toContain($hostname)
+        ->and($encoded)->not->toContain($this->app->storagePath())
+        ->and($encoded)->not->toContain($this->app->basePath())
+        ->and($encoded)->not->toContain(sys_get_temp_dir())
+        ->and(runtimeSchemaErrors($runtime))->toBe([]);
+});
+
+it('takes no server sample when the type is off or not sampled, and still pushes when a reader fails', function (array $server, bool $shouldFail) {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => $server]]);
+    $this->app->instance(ServerResourcesContract::class, new FakeServerResources(shouldFail: $shouldFail));
+    recordOneRequest($this);
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    expect(collect($client->postedPayloads[0]['runtime']['aggregates'])->pluck('type')->all())->toBe(['request']);
+})->with([
+    'off by default' => [[], false],
+    'sample rate 0' => [['enabled' => true, 'sampleRate' => 0], false],
+    'reader fails' => [['enabled' => true], true],
+]);
 
 it('registers excubia:push-runtime', function () {
     expect(array_keys(Artisan::all()))->toContain('excubia:push-runtime');

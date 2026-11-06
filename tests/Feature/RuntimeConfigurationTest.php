@@ -47,7 +47,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Command];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {
@@ -87,6 +87,26 @@ it('keeps duplicate query detection off by default and reads its threshold', fun
         ->and(fn () => $load(['duplicateQueries' => ['threshold' => '5']]))->toThrow(InvalidConfigurationException::class, 'runtime.duplicateQueries.threshold must be an integer.')
         ->and(fn () => $load(['duplicateQueries' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.duplicateQueries key [thresholdMs].')
         ->and(fn () => $load(['slowQueries' => ['threshold' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.slowQueries key [threshold].');
+});
+
+it('keeps server metrics off by default and reads the server name', function () {
+    $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+    $defaults = $load(['enabled' => true]);
+    $switched = $load(['enabled' => true, 'server' => ['enabled' => true, 'sampleRate' => 0.5, 'name' => 'web-1.eu_west']]);
+
+    expect($defaults->isTypeEnabled(RuntimeTypeEnum::Server))->toBeFalse()
+        ->and($defaults->serverName)->toBeNull()
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::Server))->toBeTrue()
+        ->and($switched->sampleRate(RuntimeTypeEnum::Server))->toBe(0.5)
+        ->and($switched->serverName)->toBe('web-1.eu_west')
+        ->and(fn () => $load(['server' => ['name' => 7]]))->toThrow(InvalidConfigurationException::class, 'runtime.server.name must be a string.')
+        ->and(fn () => $load(['server' => ['name' => '']]))->toThrow(InvalidConfigurationException::class, 'runtime.server.name must be 1 to 64 letters, digits, dots, underscores or hyphens.')
+        ->and(fn () => $load(['server' => ['name' => 'web 1']]))->toThrow(InvalidConfigurationException::class, 'runtime.server.name must be 1 to 64 letters, digits, dots, underscores or hyphens.')
+        ->and(fn () => $load(['server' => ['name' => str_repeat('a', 65)]]))->toThrow(InvalidConfigurationException::class, 'runtime.server.name must be 1 to 64 letters, digits, dots, underscores or hyphens.')
+        ->and(fn () => $load(['server' => ['threshold' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.server key [threshold].')
+        ->and(fn () => $load(['jobs' => ['name' => 'web-1']]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.jobs key [name].');
 });
 
 it('keeps command runs off by default and reads their ignore list', function () {

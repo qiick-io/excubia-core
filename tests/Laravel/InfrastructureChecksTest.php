@@ -40,6 +40,13 @@ final class FakeDiskSpace implements DiskSpaceContract
 
         return $this->usedPercent;
     }
+
+    public function usage(string $directory): ?array
+    {
+        $this->measuredDirectory = $directory;
+
+        return $this->usedPercent === null ? null : ['usedBytes' => (float) $this->usedPercent, 'totalBytes' => 100.0];
+    }
 }
 
 /**

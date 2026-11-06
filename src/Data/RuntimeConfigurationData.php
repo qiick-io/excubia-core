@@ -20,6 +20,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `ignoredCommands` are the Artisan command names, `*` wildcards allowed,
  * that `command` never records (#152); Excubia's own `excubia:*` commands
  * are never recorded whatever the list holds.
+ * `serverName` (`runtime.server.name`, #149) names this machine in `server`
+ * aggregates; without it the server is a hashed id, never the hostname.
  * `bufferMaxBytes` caps the local buffer under `storage/excubia/runtime/`;
  * the oldest entries are dropped first.
  */
@@ -42,6 +44,11 @@ final readonly class RuntimeConfigurationData
      */
     public const DEFAULT_IGNORED_COMMANDS = ['schedule:run', 'schedule:work', 'queue:work', 'queue:listen', 'horizon*', 'tinker'];
 
+    /**
+     * A readable server name: letters, digits, `.`, `_` and `-`, at most 64.
+     */
+    public const SERVER_NAME_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/';
+
     public const DEFAULT_BUFFER_MAX_BYTES = 1048576;
 
     public const MINIMUM_BUFFER_MAX_BYTES = 4096;
@@ -61,7 +68,12 @@ final readonly class RuntimeConfigurationData
         public int $bufferMaxBytes = self::DEFAULT_BUFFER_MAX_BYTES,
         public int $duplicateQueryThreshold = self::DEFAULT_DUPLICATE_QUERY_THRESHOLD,
         public array $ignoredCommands = self::DEFAULT_IGNORED_COMMANDS,
+        public ?string $serverName = null,
     ) {
+        if ($this->serverName !== null && preg_match(self::SERVER_NAME_PATTERN, $this->serverName) !== 1) {
+            throw new InvalidConfigurationException('runtime.server.name must be 1 to 64 letters, digits, dots, underscores or hyphens.');
+        }
+
         if ($this->slowQueryThresholdMs < 0) {
             throw new InvalidConfigurationException('runtime.slowQueries.thresholdMs must be zero or greater.');
         }
