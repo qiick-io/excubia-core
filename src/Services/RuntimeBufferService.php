@@ -66,7 +66,13 @@ final class RuntimeBufferService
      * null), so the merge does not depend on order and an alert never
      * misses a peak.
      */
-    public const GAUGE_FIELDS = ['loadAverage1', 'loadAverage5', 'loadAverage15', 'cpuCores', 'memoryUsedMb', 'memoryTotalMb', 'diskUsedGb', 'diskTotalGb'];
+    public const GAUGE_FIELDS = ['loadAverage1', 'loadAverage5', 'loadAverage15', 'cpuCores', 'cpuLimit', 'memoryUsedMb', 'memoryTotalMb', 'diskUsedGb', 'diskTotalGb'];
+
+    /**
+     * Boolean metric fields: true when either side of a merge is true
+     * (`isContainer` of `server`, #173). A missing value counts as false.
+     */
+    private const FLAG_FIELDS = ['isContainer'];
 
     /**
      * Metric fields that hold one number each.
@@ -83,7 +89,7 @@ final class RuntimeBufferService
      * Every metric field. Every other field is a dimension and part of the
      * merge key.
      */
-    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, self::HISTOGRAM_FIELD];
+    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, ...self::FLAG_FIELDS, self::HISTOGRAM_FIELD];
 
     public function __construct(
         private readonly string $directory,
@@ -292,6 +298,12 @@ final class RuntimeBufferService
             }
         }
 
+        foreach (self::FLAG_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = ($into[$field] ?? false) === true || ($from[$field] ?? false) === true;
+            }
+        }
+
         if (array_key_exists(self::HISTOGRAM_FIELD, $into) || array_key_exists(self::HISTOGRAM_FIELD, $from)) {
             $histogram = self::sumHistograms($into[self::HISTOGRAM_FIELD] ?? null, $from[self::HISTOGRAM_FIELD] ?? null);
 
@@ -357,7 +369,7 @@ final class RuntimeBufferService
     /**
      * Every aggregate has a type, a bucket, `count` and `errorCount`; any
      * other metric field it carries is a number, a gauge is a number or
-     * null, and a histogram is a list of non-negative counts.
+     * null, a flag is a boolean, and a histogram is a list of non-negative counts.
      *
      * @param  array<mixed>  $aggregate
      */
@@ -378,6 +390,12 @@ final class RuntimeBufferService
 
         foreach (self::GAUGE_FIELDS as $field) {
             if (array_key_exists($field, $aggregate) && $aggregate[$field] !== null && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
+                return false;
+            }
+        }
+
+        foreach (self::FLAG_FIELDS as $field) {
+            if (array_key_exists($field, $aggregate) && ! is_bool($aggregate[$field])) {
                 return false;
             }
         }

@@ -18,20 +18,47 @@ use Qiick\Excubia\Contracts\ServerResourcesContract;
  * `vm_stat`; read them through `symfony/process` if it ever becomes a
  * dependency of this package. Production servers are Linux.
  *
- * ponytail: the values are what `/proc` shows, inside a container usually
- * the host's; cgroup limits are not read.
+ * - Containers (#173): inside Docker or Kubernetes `/proc` shows the host.
+ *   When the cgroup of the process has a memory limit, memory is the
+ *   cgroup's (used minus inactive page cache, out of the limit); when it
+ *   has a CPU quota, `cpuLimit()` is quota / period in cores. cgroup v2
+ *   (`memory.max`, `memory.current`, `cpu.max`) is tried first, then v1
+ *   (`memory/memory.limit_in_bytes`, `memory/memory.usage_in_bytes`,
+ *   `cpu/cpu.cfs_quota_us`, `cpu/cpu.cfs_period_us`). `max`, `-1`, a v1
+ *   "unlimited" value and a limit at or above the machine's memory are no
+ *   limit. `isContainer()` is true when either limit applies.
+ *
+ * ponytail: only the cgroup mounted at `/sys/fs/cgroup` is read, which is
+ * the process's own one inside a container (cgroup namespace). A host
+ * process in a limited systemd slice is not seen; resolving
+ * `/proc/self/cgroup` would cover it if that is ever needed.
  */
 final class ServerResourcesService implements ServerResourcesContract
 {
     private const KIBIBYTE = 1024;
 
     /**
+     * cgroup v1 writes a page-aligned `PHP_INT_MAX` for "no limit"; anything
+     * at or above 2^60 bytes (1 EiB) is treated as that.
+     */
+    private const CGROUP_UNLIMITED_BYTES = 1 << 60;
+
+    /**
+     * The cgroup readings, read once per instance.
+     *
+     * @var array{memory: array{usedBytes: int, totalBytes: int}|null, cpuLimit: float|null}|null
+     */
+    private ?array $cgroupLimits = null;
+
+    /**
      * @param  string  $procDirectory  `/proc`; tests point it at fixtures
      * @param  string  $operatingSystemFamily  `PHP_OS_FAMILY`; tests pass another one
+     * @param  string  $cgroupDirectory  `/sys/fs/cgroup`; tests point it at fixtures
      */
     public function __construct(
         private readonly string $procDirectory = '/proc',
         private readonly string $operatingSystemFamily = PHP_OS_FAMILY,
+        private readonly string $cgroupDirectory = '/sys/fs/cgroup',
     ) {}
 
     public function loadAverages(): ?array
@@ -59,9 +86,71 @@ final class ServerResourcesService implements ServerResourcesContract
 
     public function memory(): ?array
     {
-        $contents = $this->isLinux() ? $this->procFile('meminfo') : null;
+        return $this->cgroupLimits()['memory'] ?? $this->hostMemory();
+    }
 
-        return $contents === null ? null : self::parseMemory($contents);
+    public function cpuLimit(): ?float
+    {
+        return $this->cgroupLimits()['cpuLimit'];
+    }
+
+    public function isContainer(): bool
+    {
+        $limits = $this->cgroupLimits();
+
+        return $limits['memory'] !== null || $limits['cpuLimit'] !== null;
+    }
+
+    /**
+     * Cores from a CFS quota and period (`cpu.max` holds both, v1 has one
+     * file each), 2 decimals; null for no quota (`max`, `-1`) or nonsense.
+     */
+    public static function parseCpuLimit(string $quota, string $period): ?float
+    {
+        $quota = trim($quota);
+        $period = trim($period);
+
+        if (preg_match('/^\d+$/', $quota) !== 1 || preg_match('/^\d+$/', $period) !== 1 || (int) $quota <= 0 || (int) $period <= 0) {
+            return null;
+        }
+
+        return round((int) $quota / (int) $period, 2);
+    }
+
+    /**
+     * Used and total memory of a cgroup: usage minus the inactive page cache
+     * (`inactive_file` in v2, `total_inactive_file` in v1 `memory.stat`), as
+     * `docker stats` reports it, out of the limit. Null when there is no
+     * limit: `max`, v1's unlimited value, or not below `$hostTotalBytes`.
+     *
+     * @return array{usedBytes: int, totalBytes: int}|null
+     */
+    public static function parseCgroupMemory(string $limit, string $usage, ?string $statistics, ?int $hostTotalBytes): ?array
+    {
+        $limit = trim($limit);
+        $usage = trim($usage);
+
+        if (preg_match('/^\d+$/', $limit) !== 1 || preg_match('/^\d+$/', $usage) !== 1) {
+            return null;
+        }
+
+        $totalBytes = (int) $limit;
+
+        if ($totalBytes <= 0 || $totalBytes >= self::CGROUP_UNLIMITED_BYTES || ($hostTotalBytes !== null && $totalBytes >= $hostTotalBytes)) {
+            return null;
+        }
+
+        $inactiveBytes = 0;
+
+        // v1 has both; its `total_` line counts the child cgroups too.
+        if ($statistics !== null && (preg_match('/^total_inactive_file\s+(\d+)\s*$/m', $statistics, $matches) === 1 || preg_match('/^inactive_file\s+(\d+)\s*$/m', $statistics, $matches) === 1)) {
+            $inactiveBytes = (int) $matches[1];
+        }
+
+        return [
+            'usedBytes' => min(max((int) $usage - $inactiveBytes, 0), $totalBytes),
+            'totalBytes' => $totalBytes,
+        ];
     }
 
     /**
@@ -119,6 +208,68 @@ final class ServerResourcesService implements ServerResourcesContract
         ];
     }
 
+    /**
+     * @return array{usedBytes: int, totalBytes: int}|null
+     */
+    private function hostMemory(): ?array
+    {
+        $contents = $this->isLinux() ? $this->procFile('meminfo') : null;
+
+        return $contents === null ? null : self::parseMemory($contents);
+    }
+
+    /**
+     * The memory and CPU limits of the cgroup, v2 first, then v1; both null
+     * outside Linux or without a cgroup limit.
+     *
+     * @return array{memory: array{usedBytes: int, totalBytes: int}|null, cpuLimit: float|null}
+     */
+    private function cgroupLimits(): array
+    {
+        if ($this->cgroupLimits !== null) {
+            return $this->cgroupLimits;
+        }
+
+        if (! $this->isLinux()) {
+            return $this->cgroupLimits = ['memory' => null, 'cpuLimit' => null];
+        }
+
+        $hostTotalBytes = $this->hostMemory()['totalBytes'] ?? null;
+        $memory = null;
+        $cpuLimit = null;
+        $memoryLimit = $this->cgroupFile('memory.max');
+
+        if ($memoryLimit !== null) {
+            $memory = self::parseCgroupMemory($memoryLimit, $this->cgroupFile('memory.current') ?? '', $this->cgroupFile('memory.stat'), $hostTotalBytes);
+        } else {
+            $memoryLimit = $this->cgroupFile('memory/memory.limit_in_bytes');
+
+            if ($memoryLimit !== null) {
+                $memory = self::parseCgroupMemory($memoryLimit, $this->cgroupFile('memory/memory.usage_in_bytes') ?? '', $this->cgroupFile('memory/memory.stat'), $hostTotalBytes);
+            }
+        }
+
+        $cpuMaximum = $this->cgroupFile('cpu.max');
+
+        if ($cpuMaximum !== null) {
+            $parts = preg_split('/\s+/', trim($cpuMaximum));
+            $cpuLimit = self::parseCpuLimit($parts[0] ?? '', $parts[1] ?? '');
+        } else {
+            $quota = $this->cgroupFile('cpu/cpu.cfs_quota_us');
+
+            if ($quota !== null) {
+                $cpuLimit = self::parseCpuLimit($quota, $this->cgroupFile('cpu/cpu.cfs_period_us') ?? '');
+            }
+        }
+
+        return $this->cgroupLimits = ['memory' => $memory, 'cpuLimit' => $cpuLimit];
+    }
+
+    private function cgroupFile(string $name): ?string
+    {
+        return self::readFile($this->cgroupDirectory.DIRECTORY_SEPARATOR.$name);
+    }
+
     private function isLinux(): bool
     {
         return $this->operatingSystemFamily === 'Linux';
@@ -126,7 +277,11 @@ final class ServerResourcesService implements ServerResourcesContract
 
     private function procFile(string $name): ?string
     {
-        $path = $this->procDirectory.DIRECTORY_SEPARATOR.$name;
+        return self::readFile($this->procDirectory.DIRECTORY_SEPARATOR.$name);
+    }
+
+    private static function readFile(string $path): ?string
+    {
         $contents = is_readable($path) ? @file_get_contents($path) : false;
 
         return is_string($contents) && $contents !== '' ? $contents : null;

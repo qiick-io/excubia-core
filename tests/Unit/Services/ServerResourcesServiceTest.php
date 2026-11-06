@@ -73,3 +73,55 @@ it('reads this machine without failing', function () {
             ->and($cpuCoreCount)->toBeNull();
     }
 });
+
+it('reads the memory and CPU limits of a cgroup v2 container instead of the host (#173)', function () {
+    $resources = new ServerResourcesService(serverFixtures('linux'), 'Linux', serverFixtures('cgroup-v2'));
+
+    expect($resources->memory())->toBe(['usedBytes' => 734003200 - 104857600, 'totalBytes' => 1073741824])
+        ->and($resources->cpuLimit())->toBe(1.5)
+        ->and($resources->cpuCoreCount())->toBe(4)
+        ->and($resources->isContainer())->toBeTrue();
+});
+
+it('reads the memory and CPU limits of a cgroup v1 container, without its inactive page cache (#173)', function () {
+    $resources = new ServerResourcesService(serverFixtures('linux'), 'Linux', serverFixtures('cgroup-v1'));
+
+    expect($resources->memory())->toBe(['usedBytes' => 1048576000 - 209715200, 'totalBytes' => 2147483648])
+        ->and($resources->cpuLimit())->toBe(2.0)
+        ->and($resources->isContainer())->toBeTrue();
+});
+
+it('keeps the host readings for a cgroup without limits: max, -1 and the v1 unlimited value (#173)', function (string $cgroup) {
+    $resources = new ServerResourcesService(serverFixtures('linux'), 'Linux', serverFixtures($cgroup));
+
+    expect($resources->memory())->toBe(['usedBytes' => (8048208 - 3024104) * 1024, 'totalBytes' => 8048208 * 1024])
+        ->and($resources->cpuLimit())->toBeNull()
+        ->and($resources->isContainer())->toBeFalse();
+})->with(['cgroup-v2-unlimited', 'cgroup-v1-unlimited']);
+
+it('keeps the host readings outside a container and never reads cgroups outside Linux (#173)', function () {
+    $host = new ServerResourcesService(serverFixtures('linux'), 'Linux', serverFixtures('missing'));
+    $macOs = new ServerResourcesService(serverFixtures('linux'), 'Darwin', serverFixtures('cgroup-v2'));
+
+    expect($host->memory())->toBe(['usedBytes' => (8048208 - 3024104) * 1024, 'totalBytes' => 8048208 * 1024])
+        ->and($host->cpuLimit())->toBeNull()
+        ->and($host->isContainer())->toBeFalse()
+        ->and($macOs->memory())->toBeNull()
+        ->and($macOs->cpuLimit())->toBeNull()
+        ->and($macOs->isContainer())->toBeFalse();
+});
+
+it('parses cgroup limits and treats nonsense or a limit at or above the host memory as no limit (#173)', function () {
+    expect(ServerResourcesService::parseCpuLimit('50000', '100000'))->toBe(0.5)
+        ->and(ServerResourcesService::parseCpuLimit('max', '100000'))->toBeNull()
+        ->and(ServerResourcesService::parseCpuLimit('-1', '100000'))->toBeNull()
+        ->and(ServerResourcesService::parseCpuLimit('100000', '0'))->toBeNull()
+        ->and(ServerResourcesService::parseCpuLimit('', ''))->toBeNull()
+        ->and(ServerResourcesService::parseCgroupMemory('1000', '400', null, null))->toBe(['usedBytes' => 400, 'totalBytes' => 1000])
+        ->and(ServerResourcesService::parseCgroupMemory('1000', '400', "inactive_file 500\n", 2000))->toBe(['usedBytes' => 0, 'totalBytes' => 1000])
+        ->and(ServerResourcesService::parseCgroupMemory('1000', '1500', null, 2000))->toBe(['usedBytes' => 1000, 'totalBytes' => 1000])
+        ->and(ServerResourcesService::parseCgroupMemory('2000', '400', null, 2000))->toBeNull()
+        ->and(ServerResourcesService::parseCgroupMemory('0', '400', null, null))->toBeNull()
+        ->and(ServerResourcesService::parseCgroupMemory('1000', '', null, null))->toBeNull()
+        ->and(ServerResourcesService::parseCgroupMemory('max', '400', null, null))->toBeNull();
+});

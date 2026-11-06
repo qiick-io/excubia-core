@@ -24,6 +24,8 @@ final class FakeServerResources implements ServerResourcesContract
         private readonly ?int $cpuCoreCount = 4,
         private readonly ?array $memory = ['usedBytes' => 2147483648, 'totalBytes' => 8589934592],
         private readonly bool $shouldFail = false,
+        private readonly ?float $cpuLimit = null,
+        private readonly bool $isContainer = false,
     ) {}
 
     public function loadAverages(): ?array
@@ -45,5 +47,15 @@ final class FakeServerResources implements ServerResourcesContract
     public function memory(): ?array
     {
         return $this->memory;
+    }
+
+    public function cpuLimit(): ?float
+    {
+        return $this->cpuLimit;
+    }
+
+    public function isContainer(): bool
+    {
+        return $this->isContainer;
     }
 }

@@ -13,7 +13,7 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "d156ededb73b9be66278d8907c951503493c21d337a0e22e8ec90971c18f5472"
+            "sha256": "2b84e7d08911c685e499e7159c6efc775a2249f7f41bf881c30274f839b207e3"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
