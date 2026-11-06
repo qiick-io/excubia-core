@@ -131,20 +131,31 @@ final class LaravelPostureService
     /**
      * `$configuration` supplies the extra database connections and Redis
      * queues to probe; null means the defaults (default connection and queue).
+     *
+     * `$checkIds` limits the probes to the ones those checks read, for the
+     * `health` runtime type (#188), which runs one check at a time every
+     * minute; the other probe fields keep their "not probed" value (null,
+     * empty or false). The configuration reads always run: they are cheap.
+     * Null probes everything, for a full `excubia:check`.
+     *
+     * @param  list<string>|null  $checkIds
      */
-    public function collect(Application $application, ?DateTimeImmutable $now = null, ?ExcubiaConfigurationData $configuration = null): LaravelPostureData
+    public function collect(Application $application, ?DateTimeImmutable $now = null, ?ExcubiaConfigurationData $configuration = null, ?array $checkIds = null): LaravelPostureData
     {
         $now ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $configuration ??= ExcubiaConfigurationData::defaults();
-        $heartbeat = $this->schedulerHeartbeat($application);
-        $failedJobs = $this->failedJobs($application);
+        $isProbed = static fn (string ...$probedCheckIds): bool => $checkIds === null || array_intersect($probedCheckIds, $checkIds) !== [];
+        $heartbeat = $isProbed('laravel-scheduler-heartbeat') ? $this->schedulerHeartbeat($application) : ['isReadable' => false, 'at' => null];
+        $failedJobs = $isProbed('laravel-failed-jobs') ? $this->failedJobs($application) : ['count' => null, 'oldestFailedAt' => null];
         $config = $application->make('config');
         $applicationKey = $config->get('app.key');
-        $cacheProbe = $this->cacheProbe($application, $config);
-        $queueBacklogs = $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now);
-        $isHorizonInstalled = $this->isHorizonInstalled($application);
-        $isBackupPackageInstalled = class_exists(self::BACKUP_DESTINATION);
-        $databaseStatistics = $this->defaultDatabaseStatistics($application, $config);
+        $cacheProbe = $isProbed('laravel-cache') ? $this->cacheProbe($application, $config) : ['store' => null, 'isWorking' => null];
+        $queueBacklogs = $isProbed('laravel-queue-backlog', 'laravel-queue-workers') ? $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now) : null;
+        $isHorizonInstalled = $isProbed('laravel-queue-workers') && $this->isHorizonInstalled($application);
+        $isBackupPackageInstalled = $isProbed('laravel-backups') && class_exists(self::BACKUP_DESTINATION);
+        $databaseStatistics = $isProbed('laravel-database-connections', 'laravel-database-size')
+            ? $this->defaultDatabaseStatistics($application, $config)
+            : ['connection' => null, 'driver' => null, 'connectionCount' => null, 'size' => null];
 
         return new LaravelPostureData(
             environment: $application->environment(),
@@ -153,7 +164,7 @@ final class LaravelPostureService
             areRoutesCached: $application->routesAreCached(),
             areEventsCached: $application->eventsAreCached(),
             isMaintenanceModeActive: $application->isDownForMaintenance(),
-            pendingMigrations: $this->pendingMigrations($application),
+            pendingMigrations: $isProbed('laravel-pending-migrations') ? $this->pendingMigrations($application) : null,
             failedJobCount: $failedJobs['count'],
             oldestFailedJobAt: $failedJobs['oldestFailedAt'],
             isSchedulerHeartbeatReadable: $heartbeat['isReadable'],
@@ -168,24 +179,24 @@ final class LaravelPostureService
             driverNames: $this->driverNames($config),
             isDefaultLogLevelDebug: $this->isDefaultLogLevelDebug($config),
             enabledDevelopmentPackageNames: $this->enabledDevelopmentPackageNames($application, $config),
-            databaseConnectionReachability: $this->databaseConnectionReachability($application, $config, $configuration->databaseConnectionNames),
+            databaseConnectionReachability: $isProbed('laravel-database') ? $this->databaseConnectionReachability($application, $config, $configuration->databaseConnectionNames) : [],
             cacheStoreName: $cacheProbe['store'],
             isCacheStoreWorking: $cacheProbe['isWorking'],
-            unwritableDirectoryNames: $this->unwritableDirectoryNames($application),
-            diskUsedPercent: $this->diskSpace->usedPercent($application->storagePath()),
+            unwritableDirectoryNames: $isProbed('laravel-storage') ? $this->unwritableDirectoryNames($application) : [],
+            diskUsedPercent: $isProbed('laravel-disk-space') ? $this->diskSpace->usedPercent($application->storagePath()) : null,
             queueBacklogs: $queueBacklogs,
-            queueWorkerHeartbeats: $this->queueWorkerHeartbeats($application, $config, $queueBacklogs),
+            queueWorkerHeartbeats: $isProbed('laravel-queue-workers') ? $this->queueWorkerHeartbeats($application, $config, $queueBacklogs) : null,
             isHorizonInstalled: $isHorizonInstalled,
             horizonStatus: $isHorizonInstalled ? $this->horizonStatus($application) : null,
-            scheduledTasks: $this->scheduledTasks($application, $configuration->schedulerLateAfterMinutes),
+            scheduledTasks: $checkIds === null ? $this->scheduledTasks($application, $configuration->schedulerLateAfterMinutes) : null,
             isBackupPackageInstalled: $isBackupPackageInstalled,
             backupDestinations: $isBackupPackageInstalled ? $this->backupDestinations($config) : null,
             defaultDatabaseConnectionName: $databaseStatistics['connection'],
             defaultDatabaseDriverName: $databaseStatistics['driver'],
             databaseConnectionCount: $databaseStatistics['connectionCount'],
             databaseSize: $databaseStatistics['size'],
-            redisMemory: $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames),
-            phpRuntime: $this->phpRuntime($application, $now),
+            redisMemory: $isProbed('laravel-redis-memory') ? $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames) : null,
+            phpRuntime: $isProbed('php-opcache', 'php-production-ini') ? $this->phpRuntime($application, $now) : null,
         );
     }
 

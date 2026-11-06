@@ -38,10 +38,11 @@
                     { "$ref": "#/$defs/deprecation" },
                     { "$ref": "#/$defs/duplicateQuery" },
                     { "$ref": "#/$defs/server" },
-                    { "$ref": "#/$defs/command" }
+                    { "$ref": "#/$defs/command" },
+                    { "$ref": "#/$defs/health" }
                 ]
             },
-            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation; additive), duplicateQuery in 1.0.0-beta.3 (#148, additive), server (#149, additive) and command (#152, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); histograms add up element by element. isContainer is a metric field, not a dimension."
+            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation; additive), duplicateQuery in 1.0.0-beta.3 (#148, additive), server (#149, additive), command (#152, additive) and health (#188, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server; status, severity, findingCount and fingerprints for health. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); histograms add up element by element; a health entry keeps the worst status (fail, then warn, then pass, then skipped), the most serious severity, the larger findingCount and the union of fingerprints. isContainer, status, severity, findingCount and fingerprints are metric fields, not dimensions."
         }
     },
     "$defs": {
@@ -69,7 +70,7 @@
         "errorCount": {
             "type": "integer",
             "minimum": 0,
-            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types."
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types. For health, the samples whose status is fail."
         },
         "milliseconds": {
             "type": "number",
@@ -384,6 +385,30 @@
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
                 "maxMs": { "$ref": "#/$defs/milliseconds" },
                 "histogram": { "$ref": "#/$defs/histogram" }
+            }
+        },
+        "health": {
+            "type": "object",
+            "description": "Minute-level health samples (#188, additive): when runtime.health is on, every php artisan excubia:push-runtime run, at most once per UTC minute on each server, runs the checks of runtime.health.checks (default laravel-database, laravel-cache, laravel-storage, laravel-disk-space, laravel-queue-backlog, laravel-queue-workers, laravel-scheduler-heartbeat, laravel-redis-memory, laravel-maintenance-mode) with local probes only, never a data source, and sends one entry per check, with the same status and fingerprints as the check has in the report (ignore rules applied). A check that would start after runtime.health.totalBudgetMs minus checkBudgetMs of the run, or whose probe threw, is skipped. Two entries with the same server, checkId, bucket and sampleRate merge: count and errorCount add up, the worst status wins (fail, then warn, then pass, then skipped: a skipped sample has no reading and never hides one), the most serious severity wins, the larger findingCount wins, and fingerprints are the union, sorted, at most 20. Never a finding message, subject, fix hint or detail value, a hostname or a path.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "server", "checkId", "count", "errorCount", "status", "severity", "findingCount", "fingerprints"],
+            "properties": {
+                "type": { "const": "health" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "server": { "$ref": "#/$defs/server/properties/server" },
+                "checkId": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$", "description": "The check id, as in the report (docs/report-schema.json). Today one of the ids above; accept others, a later version may allow more local checks." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "status": { "enum": ["pass", "warn", "fail", "skipped"], "description": "The check status, as in the report: the worst finding status (fail, warn, skipped, pass), pass when it has no finding. skipped also when the check did not run in this sample (time budget, or a probe threw)." },
+                "severity": { "enum": ["critical", "high", "medium", "low", "info"], "description": "The most serious severity of the warn and fail findings; info when there are none." },
+                "findingCount": { "$ref": "#/$defs/counter", "description": "Number of warn and fail findings of the check." },
+                "fingerprints": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "description": "The fingerprints of the warn and fail findings, sorted, at most 20: the same sha256 values as the report's finding fingerprint (check id, subject and advisory id joined by NUL), so the app can link an alert to the report finding and tell one failing connection or queue from another without receiving its name."
+                }
             }
         }
     }

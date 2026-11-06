@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
+use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
@@ -47,7 +48,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command, RuntimeTypeEnum::Health];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {
@@ -157,6 +158,32 @@ it('reads EXCUBIA_SERVER_NAME from the process environment by default', function
     }
 
     expect($runtime->serverName)->toBe('web-from-env');
+});
+
+it('keeps health samples off by default and reads their checks and budgets', function () {
+    $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+    $defaults = $load(['enabled' => true]);
+    $switched = $load(['enabled' => true, 'health' => ['enabled' => true, 'checks' => ['laravel-queue-backlog', 'laravel-database'], 'checkBudgetMs' => 500, 'totalBudgetMs' => 2000]]);
+    $budgetMessage = 'runtime.health.checkBudgetMs must be at least 1 and no more than runtime.health.totalBudgetMs.';
+
+    expect($defaults->isTypeEnabled(RuntimeTypeEnum::Health))->toBeFalse()
+        ->and($defaults->healthCheckIds)->toBe(RuntimeConfigurationData::HEALTH_CHECK_IDS)
+        ->and($defaults->healthCheckBudgetMs)->toBe(3000)
+        ->and($defaults->healthTotalBudgetMs)->toBe(15000)
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::Health))->toBeTrue()
+        ->and($switched->healthCheckIds)->toBe(['laravel-queue-backlog', 'laravel-database'])
+        ->and($switched->healthCheckBudgetMs)->toBe(500)
+        ->and($switched->healthTotalBudgetMs)->toBe(2000)
+        ->and(fn () => $load(['health' => ['checks' => ['composer-advisories']]]))->toThrow(InvalidConfigurationException::class, 'runtime.health.checks takes only laravel-database, laravel-cache, laravel-storage, laravel-disk-space, laravel-queue-backlog, laravel-queue-workers, laravel-scheduler-heartbeat, laravel-redis-memory, laravel-maintenance-mode; [composer-advisories] is not one of them.')
+        ->and(fn () => $load(['health' => ['checks' => ['laravel-cache', 'laravel-cache']]]))->toThrow(InvalidConfigurationException::class, 'runtime.health.checks lists [laravel-cache] more than once.')
+        ->and(fn () => $load(['health' => ['checks' => 'laravel-cache']]))->toThrow(InvalidConfigurationException::class, 'runtime.health.checks must be a list of strings.')
+        ->and(fn () => $load(['health' => ['checkBudgetMs' => 0]]))->toThrow(InvalidConfigurationException::class, $budgetMessage)
+        ->and(fn () => $load(['health' => ['checkBudgetMs' => 4000, 'totalBudgetMs' => 3000]]))->toThrow(InvalidConfigurationException::class, $budgetMessage)
+        ->and(fn () => $load(['health' => ['totalBudgetMs' => '15s']]))->toThrow(InvalidConfigurationException::class, 'runtime.health.totalBudgetMs must be an integer.')
+        ->and(fn () => $load(['health' => ['name' => 'web-1']]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.health key [name].')
+        ->and(fn () => $load(['server' => ['checks' => []]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.server key [checks].');
 });
 
 it('rejects an invalid runtime key', function (string $runtime, string $message) {
