@@ -17,7 +17,7 @@ use Qiick\Excubia\Data\LicenseInventoryData;
  * Optional fields, all additive (still schema version 1): `generatedAt`,
  * `excubiaVersion`, `release`, `deployedAt`, `project` and
  * `javascriptLockfile` (#21) when the report carries them, `licenses` when
- * `dependency-licenses` ran;
+ * `dependency-licenses` ran, `schedule` (#146) from the Artisan commands;
  * per finding `fingerprint` always, `advisoryId` when the finding names
  * one, `skipReason` on skipped rows and `details` when the check set any.
  */
@@ -126,6 +126,10 @@ final class JsonReportRenderer implements ReportRendererContract
 
         if ($licenses !== null) {
             $document['licenses'] = $this->licenses($licenses);
+        }
+
+        if ($healthReport->schedule !== null) {
+            $document['schedule'] = $healthReport->schedule;
         }
 
         return $document;

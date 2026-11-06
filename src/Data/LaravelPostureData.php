@@ -45,6 +45,7 @@ final readonly class LaravelPostureData
      * @param  list<array{connection: string, queue: string, lastSeenAt: DateTimeImmutable|null}>|null  $queueWorkerHeartbeats  last worker heartbeat per queue of `$queueBacklogs` (#151); null when the backlog or the cache store could not be read
      * @param  bool  $isHorizonInstalled  Laravel Horizon's master supervisor repository is bound in the container
      * @param  array{status: string, processes: int, supervisors: list<string>}|null  $horizonStatus  Horizon's `inactive`, `paused` or `running` status, its worker process count and its supervisor names (without the host prefix); null when Horizon is missing or could not be read
+     * @param  list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null  $scheduledTasks  the schedule inventory (#146) for the report `schedule`; null when not read
      */
     public function __construct(
         public string $environment,
@@ -77,5 +78,6 @@ final readonly class LaravelPostureData
         public ?array $queueWorkerHeartbeats = null,
         public bool $isHorizonInstalled = false,
         public ?array $horizonStatus = null,
+        public ?array $scheduledTasks = null,
     ) {}
 }

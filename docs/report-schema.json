@@ -4,7 +4,7 @@
     "x-excubia-version": 1,
     "$comment": "Contract version of this file, always equal to the schemaVersion const. Stable from 1.0.0-beta (docs/CONTRACTS.md).",
     "title": "Excubia health report",
-    "description": "Version 1 of the JSON report. Upgrade steps never affect the process exit code. advisoryId is optional and exists so an ignore rule can name one advisory. generatedAt, excubiaVersion, project, licenses (#134), javascriptLockfile (#21) and the per-finding fingerprint, advisoryId and details are optional, additive fields (#92), and so are release and deployedAt (#129), so schemaVersion stays 1; consumers must ignore fields they do not know. This schema covers --format=json only. --format=sarif follows the official SARIF 2.1.0 schema instead: one rule per checkId, one result per fail or warn finding (level error for critical and high, warning for medium, note for low and info), the Excubia severity, status, subject, advisoryId and evidenceUrl in result properties, the source manifest as a path relative to the scanned project, and a partialFingerprints entry built from checkId, subject and advisoryId. The upgrade plan is not part of the SARIF log.",
+    "description": "Version 1 of the JSON report. Upgrade steps never affect the process exit code. advisoryId is optional and exists so an ignore rule can name one advisory. generatedAt, excubiaVersion, project, licenses (#134), javascriptLockfile (#21), schedule (#146) and the per-finding fingerprint, advisoryId and details are optional, additive fields (#92), and so are release and deployedAt (#129), so schemaVersion stays 1; consumers must ignore fields they do not know. This schema covers --format=json only. --format=sarif follows the official SARIF 2.1.0 schema instead: one rule per checkId, one result per fail or warn finding (level error for critical and high, warning for medium, note for low and info), the Excubia severity, status, subject, advisoryId and evidenceUrl in result properties, the source manifest as a path relative to the scanned project, and a partialFingerprints entry built from checkId, subject and advisoryId. The upgrade plan is not part of the SARIF log.",
     "type": "object",
     "additionalProperties": false,
     "required": ["schemaVersion", "checks", "upgradePlan"],
@@ -50,9 +50,69 @@
         "javascriptLockfile": {
             "description": "The JavaScript lockfile npm-advisories and dependency-licenses read (#21), relative to the project: the one of the packageManager in package.json when it exists, else the first present of pnpm-lock.yaml, yarn.lock and package-lock.json. Omitted when the project has none. The SARIF location of npm findings is this file.",
             "enum": ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
+        },
+        "schedule": {
+            "description": "Schedule inventory of the booted app (#146): one entry per event of Illuminate\\Console\\Scheduling\\Schedule, in schedule order, so excubia-app can flag a run that never happened, is late or failed by matching the runtime scheduledTask aggregates on taskId. Set by php artisan excubia:check and excubia:push only; the standalone CLI cannot boot the app and omits it. Excubia does not compute missed runs itself; each entry carries the grace the app applies (lateAfterMinutes).",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/scheduledTask"
+            }
         }
     },
     "$defs": {
+        "scheduledTask": {
+            "description": "One scheduled event. Never its arguments, command line, output path or user.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["taskId", "task", "expression", "timezone", "withoutOverlapping", "onOneServer", "runsInMaintenanceMode", "environments"],
+            "properties": {
+                "taskId": {
+                    "description": "Stable id of a scheduled task (#146): sha256 of task, a NUL byte and the cron expression, lowercase hex. The same in the report schedule inventory and in the runtime scheduledTask aggregates, so a run matches its schedule entry.",
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "task": {
+                    "description": "Same naming as the runtime scheduledTask task (#109): the task description as set by the developer, with paths relative to the project (a file name outside it) and secrets masked as in exception messages; else artisan <command name> for an Artisan command or the executable's file name for an exec() task, without any argument; else Closure.",
+                    "type": "string",
+                    "minLength": 1
+                },
+                "expression": {
+                    "description": "The cron expression, five fields (or six with seconds when the app schedules sub-minute tasks).",
+                    "type": "string",
+                    "minLength": 1
+                },
+                "timezone": {
+                    "description": "IANA name (or offset) of the timezone the expression is read in: the task's own, else the schedule's (app.schedule_timezone or app.timezone), else the PHP default.",
+                    "type": "string",
+                    "minLength": 1
+                },
+                "withoutOverlapping": {
+                    "description": "The task uses withoutOverlapping(): a run is skipped while the previous one holds the lock.",
+                    "type": "boolean"
+                },
+                "onOneServer": {
+                    "description": "The task uses onOneServer(): only one server runs each due time.",
+                    "type": "boolean"
+                },
+                "runsInMaintenanceMode": {
+                    "description": "The task uses evenInMaintenanceMode(): it still runs while the app is down.",
+                    "type": "boolean"
+                },
+                "environments": {
+                    "description": "Environment names the task is limited to (environments()); empty means all.",
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "lateAfterMinutes": {
+                    "description": "Optional: the user's grace for missed-run detection, from checks.laravel-scheduler-heartbeat.lateAfterMinutes (default 5). The app treats a due time with no run of this taskId within this many minutes as late. When absent, the app applies 5.",
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "release": {
             "description": "Release identifier of the deployed code: the release key of excubia.json, EXCUBIA_RELEASE, then GITHUB_SHA, CI_COMMIT_SHA, VERCEL_GIT_COMMIT_SHA, FORGE_DEPLOY_COMMIT or LARAVEL_CLOUD_COMMIT, and for the standalone CLI only the commit checked out in the project's .git (read from the files, git is not run). Omitted when none is set or the first one set is not valid. Never a branch name, author or commit message.",
             "type": "string",

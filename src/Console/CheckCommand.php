@@ -269,6 +269,7 @@ final class CheckCommand extends Command
             isHealthEndpointEnabled: $loaded->isHealthEndpointEnabled,
             healthEndpointPath: $loaded->healthEndpointPath,
             schedulerHeartbeatStaleAfterMinutes: $loaded->schedulerHeartbeatStaleAfterMinutes,
+            schedulerLateAfterMinutes: $loaded->schedulerLateAfterMinutes,
             failedJobHighSeverityAfterHours: $loaded->failedJobHighSeverityAfterHours,
             runtime: $loaded->runtime,
             exceptions: $loaded->exceptions,

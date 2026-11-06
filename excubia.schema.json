@@ -71,6 +71,11 @@
                             "type": "integer",
                             "minimum": 1,
                             "description": "Warn when the scheduler heartbeat written by excubia:heartbeat is older than this many minutes. Default 10."
+                        },
+                        "lateAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Grace for missed-run detection (#146): excubia-app treats a scheduled task as late when no run of it started within this many minutes of a due time in the report schedule inventory. Core does not use it itself. Default 5."
                         }
                     }
                 },

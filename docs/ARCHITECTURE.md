@@ -109,7 +109,8 @@ qiick-io/excubia-core
 │   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
 │   │   ├── ExceptionCollectorService.php    # reportable() callback, context (job/route/command), in-memory groups, flush
 │   │   ├── ExceptionPayloadService.php      # masking, relative frames, fingerprint, group merge (pure)
-│   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache)
+│   │   ├── ScheduledTaskIdentityService.php # scheduled task name + taskId, shared by the runtime aggregates and the schedule inventory (#146)
+│   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache, schedule inventory)
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
 │       ├── LockfileNotFoundException.php

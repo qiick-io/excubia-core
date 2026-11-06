@@ -74,6 +74,7 @@ final class ExcubiaConfigurationLoader
             isHealthEndpointEnabled: $healthEndpoint['enabled'],
             healthEndpointPath: $healthEndpoint['path'],
             schedulerHeartbeatStaleAfterMinutes: $checks['schedulerHeartbeatStaleAfterMinutes'],
+            schedulerLateAfterMinutes: $checks['schedulerLateAfterMinutes'],
             failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
             runtime: $this->runtime($document['runtime'] ?? []),
             exceptions: $this->exceptions($document['exceptions'] ?? []),
@@ -331,6 +332,7 @@ final class ExcubiaConfigurationLoader
      *     laravelWarnDaysBeforeEndOfLife: int,
      *     isNodeEndOfLifeCheckEnabled: bool,
      *     schedulerHeartbeatStaleAfterMinutes: int,
+     *     schedulerLateAfterMinutes: int,
      *     failedJobHighSeverityAfterHours: int,
      *     databaseConnectionNames: list<string>,
      *     diskSpaceWarnAtPercentUsed: int,
@@ -348,6 +350,7 @@ final class ExcubiaConfigurationLoader
         }
 
         $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync', 'laravel-queue-workers'], 'checks');
+        $schedulerHeartbeat = $this->checkObject($checks, 'laravel-scheduler-heartbeat', ['staleAfterMinutes', 'lateAfterMinutes']);
         $database = $this->checkObject($checks, 'laravel-database', ['connections']);
         $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
         $queueBacklog = $this->checkObject($checks, 'laravel-queue-backlog', ['maxOldestAgeMinutes', 'maxPendingJobs', 'queues']);
@@ -357,7 +360,8 @@ final class ExcubiaConfigurationLoader
             'phpWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'php-eol', 'warnDaysBeforeEol', $defaults->phpWarnDaysBeforeEndOfLife),
             'laravelWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'laravel-eol', 'warnDaysBeforeEol', $defaults->laravelWarnDaysBeforeEndOfLife),
             'isNodeEndOfLifeCheckEnabled' => $this->booleanSetting($checks, 'node-eol', 'enabled', $defaults->isNodeEndOfLifeCheckEnabled),
-            'schedulerHeartbeatStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-scheduler-heartbeat', 'staleAfterMinutes', $defaults->schedulerHeartbeatStaleAfterMinutes),
+            'schedulerHeartbeatStaleAfterMinutes' => array_key_exists('staleAfterMinutes', $schedulerHeartbeat) ? $this->integer($schedulerHeartbeat['staleAfterMinutes'], 'checks.laravel-scheduler-heartbeat.staleAfterMinutes') : $defaults->schedulerHeartbeatStaleAfterMinutes,
+            'schedulerLateAfterMinutes' => array_key_exists('lateAfterMinutes', $schedulerHeartbeat) ? $this->integer($schedulerHeartbeat['lateAfterMinutes'], 'checks.laravel-scheduler-heartbeat.lateAfterMinutes') : $defaults->schedulerLateAfterMinutes,
             'failedJobHighSeverityAfterHours' => $this->integerSetting($checks, 'laravel-failed-jobs', 'highSeverityAfterHours', $defaults->failedJobHighSeverityAfterHours),
             'databaseConnectionNames' => $this->stringList($database['connections'] ?? [], 'checks.laravel-database.connections'),
             'diskSpaceWarnAtPercentUsed' => array_key_exists('warnAtPercentUsed', $diskSpace) ? $this->integer($diskSpace['warnAtPercentUsed'], 'checks.laravel-disk-space.warnAtPercentUsed') : $defaults->diskSpaceWarnAtPercentUsed,
