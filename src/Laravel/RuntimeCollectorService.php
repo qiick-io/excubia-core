@@ -23,6 +23,7 @@ use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Notifications\Events\NotificationFailed;
 use Illuminate\Notifications\Events\NotificationSent;
+use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -52,7 +53,9 @@ use WeakMap;
  * Artisan commands, outgoing hosts, peak memory, queue wait times, cache
  * store names and masked key prefixes, mailable, mailer, notification and
  * channel names, log levels, the source package, masked message and PHP
- * minor version of PHP deprecations. Never request or response bodies,
+ * minor version of PHP deprecations, and the normalised SQL shape, connection
+ * and route name or job class of queries repeated within one request or job
+ * (`duplicateQuery`, #148). Never request or response bodies,
  * headers, cookies, users, IP addresses, query bindings, exception messages,
  * whole cache keys or values, recipients, log messages or context, absolute
  * paths, or the line and stack of a deprecation.
@@ -64,6 +67,12 @@ use WeakMap;
  * ponytail: the aggregates are flushed by `terminating()`; under Octane that
  * runs per request on the sandbox. A worker that never terminates and runs no
  * job keeps at most MAX_PENDING_AGGREGATES in memory before it writes them.
+ *
+ * ponytail: `duplicateQuery` evaluates the queries of an HTTP request at
+ * `RequestHandled` and those of a queued job when it ends. Queries outside
+ * both (Artisan commands, scheduled tasks, a worker between jobs) are never
+ * evaluated and are dropped when the process terminates; a command or task
+ * scope is the upgrade path.
  *
  * ponytail: request peak memory is the process peak; under Octane it only
  * grows across requests. Reset it per request if Octane users need it.
@@ -83,6 +92,18 @@ final class RuntimeCollectorService
     public const MASKED_KEY_PREFIX = '[masked]';
 
     public const MAX_DEPRECATION_MESSAGE_LENGTH = 300;
+
+    /**
+     * Distinct query shapes counted per request or job (`duplicateQuery`);
+     * a new shape past it is ignored, so memory stays bounded.
+     */
+    public const MAX_QUERY_SHAPES = 200;
+
+    /**
+     * Raw SQL longer than this is normalised on every execution instead of
+     * being remembered, so the memo of normalised SQL stays small.
+     */
+    private const MAX_MEMOISED_SQL_LENGTH = 4000;
 
     private const BYTES_PER_MEGABYTE = 1048576;
 
@@ -119,6 +140,34 @@ final class RuntimeCollectorService
     /** @var list<string>|null */
     private ?array $projectPrefixes = null;
 
+    private readonly bool $isCountingQueryShapes;
+
+    /**
+     * Executions per normalised SQL and connection in the current request or
+     * job (`duplicateQuery`), at most MAX_QUERY_SHAPES shapes.
+     *
+     * @var array<string, array<string, int>> connection => normalised SQL => executions
+     */
+    private array $queryShapes = [];
+
+    private int $queryShapeCount = 0;
+
+    /**
+     * The counts of the request or job around each running job, put back
+     * when the job ends, so a sync job inside a request is counted apart.
+     *
+     * @var WeakMap<object, array{array<string, array<string, int>>, int}>
+     */
+    private WeakMap $outerQueryShapes;
+
+    /**
+     * Normalised SQL by raw SQL, so a query repeated in a loop is normalised
+     * once. At most MAX_QUERY_SHAPES entries; cleared when full.
+     *
+     * @var array<string, string>
+     */
+    private array $normalisedSql = [];
+
     /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
      */
@@ -130,6 +179,8 @@ final class RuntimeCollectorService
     ) {
         $this->jobStartedAt = new WeakMap;
         $this->recordedTasks = new WeakMap;
+        $this->outerQueryShapes = new WeakMap;
+        $this->isCountingQueryShapes = $configuration->isTypeEnabled(RuntimeTypeEnum::DuplicateQuery);
     }
 
     /**
@@ -148,18 +199,25 @@ final class RuntimeCollectorService
         /** @var Dispatcher $events */
         $events = $application->make('events');
 
-        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Request) || $configuration->isTypeEnabled(RuntimeTypeEnum::RequestMemory)) {
+        $isCountingQueryShapes = $configuration->isTypeEnabled(RuntimeTypeEnum::DuplicateQuery);
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Request) || $configuration->isTypeEnabled(RuntimeTypeEnum::RequestMemory) || $isCountingQueryShapes) {
             $events->listen(RequestHandled::class, fn (RequestHandled $event) => $collector->recordRequest($event));
         }
 
-        if ($configuration->isTypeEnabled(RuntimeTypeEnum::SlowQuery)) {
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::SlowQuery) || $isCountingQueryShapes) {
             $events->listen(QueryExecuted::class, fn (QueryExecuted $event) => $collector->recordQuery($event));
         }
 
-        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Job) || $configuration->isTypeEnabled(RuntimeTypeEnum::JobMemory) || $configuration->isTypeEnabled(RuntimeTypeEnum::QueueWait)) {
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Job) || $configuration->isTypeEnabled(RuntimeTypeEnum::JobMemory) || $configuration->isTypeEnabled(RuntimeTypeEnum::QueueWait) || $isCountingQueryShapes) {
             $events->listen(JobProcessing::class, fn (JobProcessing $event) => $collector->startJob($event));
             $events->listen(JobProcessed::class, fn (JobProcessed $event) => $collector->recordJob($event));
             $events->listen(JobFailed::class, fn (JobFailed $event) => $collector->recordJob($event));
+        }
+
+        if ($isCountingQueryShapes) {
+            // A job that throws and is released for a retry fires neither JobProcessed nor JobFailed.
+            $events->listen(JobExceptionOccurred::class, fn (JobExceptionOccurred $event) => $collector->recordJobQueryShapes($event));
         }
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::QueueWait)) {
@@ -203,7 +261,10 @@ final class RuntimeCollectorService
             $events->listen(ResponseReceived::class, fn (ResponseReceived $event) => $collector->recordOutgoingHttp($event));
         }
 
-        $application->terminating(fn () => $collector->flush());
+        $application->terminating(function () use ($collector): void {
+            $collector->forgetQueryShapes();
+            $collector->flush();
+        });
     }
 
     public function recordRequest(RequestHandled $event): void
@@ -229,13 +290,21 @@ final class RuntimeCollectorService
             if ($this->shouldRecord(RuntimeTypeEnum::RequestMemory)) {
                 $this->addMemory(RuntimeTypeEnum::RequestMemory, $dimensions, max($this->peakMemoryBytes, memory_get_peak_usage()));
             }
+
+            if ($this->isCountingQueryShapes) {
+                $this->recordQueryShapes('request', $dimensions['route']);
+            }
         });
     }
 
     public function recordQuery(QueryExecuted $event): void
     {
         $this->guard(function () use ($event): void {
-            if ($event->time < $this->configuration->slowQueryThresholdMs || ! $this->isSampled(RuntimeTypeEnum::SlowQuery)) {
+            if ($this->isCountingQueryShapes) {
+                $this->countQueryShape($event->sql, (string) $event->connectionName);
+            }
+
+            if ($event->time < $this->configuration->slowQueryThresholdMs || ! $this->shouldRecord(RuntimeTypeEnum::SlowQuery)) {
                 return;
             }
 
@@ -247,14 +316,122 @@ final class RuntimeCollectorService
     }
 
     /**
+     * Drop the query shapes counted so far: after each request and job, and
+     * when the process terminates (queries outside a request or job).
+     */
+    public function forgetQueryShapes(): void
+    {
+        $this->queryShapes = [];
+        $this->queryShapeCount = 0;
+    }
+
+    /**
+     * Evaluate the query shapes of a job that ends (processed, failed, or
+     * thrown and released), then put back the counts of the request or job
+     * around it. A job whose start was not seen, or that was already
+     * evaluated (`JobExceptionOccurred` then `JobFailed`), is skipped.
+     */
+    public function recordJobQueryShapes(JobProcessed|JobFailed|JobExceptionOccurred $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $outer = $this->outerQueryShapes[$event->job] ?? null;
+
+            if ($outer === null) {
+                return;
+            }
+
+            unset($this->outerQueryShapes[$event->job]);
+
+            try {
+                $this->recordQueryShapes('job', $this->className($event->job->resolveName()));
+            } finally {
+                [$this->queryShapes, $this->queryShapeCount] = $outer;
+            }
+        });
+    }
+
+    /**
+     * One execution of a query shape: the SQL normalised (`normaliseSql()`)
+     * per connection. Bindings are never read. A new shape past
+     * MAX_QUERY_SHAPES is ignored.
+     */
+    private function countQueryShape(string $sql, string $connection): void
+    {
+        $normalised = $this->normalisedSql[$sql] ?? null;
+
+        if ($normalised === null) {
+            $normalised = self::normaliseSql($sql);
+
+            if (strlen($sql) <= self::MAX_MEMOISED_SQL_LENGTH) {
+                if (count($this->normalisedSql) >= self::MAX_QUERY_SHAPES) {
+                    $this->normalisedSql = [];
+                }
+
+                $this->normalisedSql[$sql] = $normalised;
+            }
+        }
+
+        if (isset($this->queryShapes[$connection][$normalised])) {
+            $this->queryShapes[$connection][$normalised]++;
+
+            return;
+        }
+
+        if ($this->queryShapeCount >= self::MAX_QUERY_SHAPES) {
+            return;
+        }
+
+        $this->queryShapes[$connection][$normalised] = 1;
+        $this->queryShapeCount++;
+    }
+
+    /**
+     * Record one `duplicateQuery` occurrence per query shape of the request
+     * or job that ran at least `runtime.duplicateQueries.threshold` times,
+     * then forget the counts. The sample rate applies per request or job.
+     *
+     * @param  'request'|'job'  $origin
+     */
+    private function recordQueryShapes(string $origin, string $name): void
+    {
+        $queryShapes = $this->queryShapes;
+        $this->forgetQueryShapes();
+
+        if ($queryShapes === [] || ! $this->isSampled(RuntimeTypeEnum::DuplicateQuery)) {
+            return;
+        }
+
+        foreach ($queryShapes as $connection => $executions) {
+            foreach ($executions as $sql => $repeats) {
+                if ($repeats < $this->configuration->duplicateQueryThreshold) {
+                    continue;
+                }
+
+                $this->record(RuntimeTypeEnum::DuplicateQuery, [
+                    'origin' => $origin,
+                    'name' => $name,
+                    'sql' => (string) $sql,
+                    'connection' => (string) $connection,
+                ], ['totalRepeats' => $repeats, 'maxRepeats' => $repeats]);
+            }
+        }
+    }
+
+    /**
      * Start timing the job, record its queue wait (`queueWait`) and, for
      * `jobMemory`, reset the PHP peak so the job's own peak can be read when
-     * it ends (the earlier peak is kept for the request around it).
+     * it ends (the earlier peak is kept for the request around it). For
+     * `duplicateQuery`, set the counts of the request or job around it aside.
      */
     public function startJob(JobProcessing $event): void
     {
         $this->guard(function () use ($event): void {
             $this->jobStartedAt[$event->job] = $this->now();
+
+            if ($this->isCountingQueryShapes) {
+                $this->outerQueryShapes[$event->job] = [$this->queryShapes, $this->queryShapeCount];
+                $this->forgetQueryShapes();
+            }
 
             if ($this->shouldRecord(RuntimeTypeEnum::QueueWait)) {
                 $this->recordQueueWait($event);
@@ -272,6 +449,11 @@ final class RuntimeCollectorService
         $this->guard(function () use ($event): void {
             $startedAt = $this->jobStartedAt[$event->job] ?? null;
             unset($this->jobStartedAt[$event->job]);
+
+            if ($this->isCountingQueryShapes) {
+                $this->recordJobQueryShapes($event);
+            }
+
             $job = $this->className($event->job->resolveName());
             $queue = (string) $event->job->getQueue();
 
@@ -683,6 +865,29 @@ final class RuntimeCollectorService
      */
     public static function maskSql(string $sql): string
     {
+        return mb_strimwidth(self::maskLiterals($sql), 0, self::MAX_SQL_LENGTH, '…');
+    }
+
+    /**
+     * The shape of a query for `duplicateQuery` (#148): the literals of
+     * `maskSql()` masked, runs of whitespace as one space, and a list of
+     * placeholders after `IN` (`IN (?, ?, ?)`, also `$1, $2`) as `IN (…)`,
+     * so the same query with lists of any length is one shape. At most
+     * MAX_SQL_LENGTH characters. The slow query `sql` stays `maskSql()`.
+     */
+    public static function normaliseSql(string $sql): string
+    {
+        $collapsed = preg_replace('/\s+/', ' ', trim(self::maskLiterals($sql))) ?? '?';
+        $normalised = preg_replace('/\b(in) ?\( ?(?:\?|\$\d+)(?: ?, ?(?:\?|\$\d+))* ?\)/i', '$1 (…)', $collapsed) ?? $collapsed;
+
+        return mb_strimwidth($normalised, 0, self::MAX_SQL_LENGTH, '…');
+    }
+
+    /**
+     * The literals of `maskSql()` replaced by `?`, without the cut.
+     */
+    private static function maskLiterals(string $sql): string
+    {
         $masked = preg_replace(
             [
                 '/\$([a-z_]\w*|)\$.*?\$\1\$/is',
@@ -697,9 +902,8 @@ final class RuntimeCollectorService
             static fn (array $matches): string => isset($matches[1]) && $matches[1] !== '' ? $matches[1] : '?',
             $masked,
         );
-        $masked ??= '?';
 
-        return mb_strimwidth($masked, 0, self::MAX_SQL_LENGTH, '…');
+        return $masked ?? '?';
     }
 
     /**

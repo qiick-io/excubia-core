@@ -363,6 +363,25 @@
                 "deprecations": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "PHP deprecations (E_DEPRECATED, E_USER_DEPRECATED) counted per source (app, vendor/<vendor>/<package> or unknown), masked message (at most 300 characters) and PHP minor version, through an error handler chained in front of Laravel's, which still runs. Never the file path, line or stack. Off by default (#133)."
+                },
+                "duplicateQueries": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "N+1 detection: within one HTTP request or queued job, database queries are grouped by normalised SQL (literals as ?, IN lists as IN (…), whitespace collapsed; bindings are never read) and connection. A shape that runs at least threshold times is recorded once for that request or job, with the route name or job class and how many times it ran. At most 200 shapes per request or job. Off by default (#148).",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "description": "Share of requests and jobs evaluated, 0 to 1. Default 1.",
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "threshold": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "description": "Executions of one query shape within one request or job from which it is recorded. Default 5."
+                        }
+                    }
                 }
             }
         },

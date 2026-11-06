@@ -5,12 +5,14 @@ declare(strict_types=1);
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyWritten;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -25,9 +27,11 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
  *
  * It prints the numbers and fails only if the collector cost per request
  * with every type on, at the default sample rate, is above 1 ms. It also
- * prints the cost of one latency histogram sample (#147). The
- * benchmark route reads and writes the cache three times and logs once, so
- * the cache and log level listeners run as in a typical request.
+ * prints the cost of one latency histogram sample (#147) and of one query
+ * counted for duplicate query detection (#148). The benchmark route reads
+ * and writes the cache three times, logs once and runs the same query five
+ * times (an N+1 that `duplicateQuery` records), so the cache, log level and
+ * query listeners run as in a typical request.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -64,6 +68,10 @@ it('adds less than 1 ms per request with every type on at the default sample rat
         Cache::get('settings:site');
         Log::info('benchmark');
 
+        for ($i = 0; $i < 5; $i++) {
+            DB::select('select ? as id', [$i]);
+        }
+
         return 'ok';
     })->name('benchmark');
     $allTypes = ['enabled' => true];
@@ -81,14 +89,19 @@ it('adds less than 1 ms per request with every type on at the default sample rat
     benchmarkProject($this->app, $allTypes);
     $enabled = meanRequestMilliseconds($this);
 
-    // The collector alone, per request: RequestHandled (request and memory), three cache events, one log entry and one flush.
+    // The collector alone, per request: RequestHandled (request, memory and duplicate queries), three cache events, one log entry, five queries and one flush.
     $collector = $this->app->make(RuntimeCollectorService::class);
     $event = new RequestHandled(Request::create('/benchmark'), new Response('ok'));
     $cacheEvents = [new CacheMissed('array', 'settings:site'), new KeyWritten('array', 'settings:site', 'value'), new CacheHit('array', 'settings:site', 'value')];
     $logEvent = new MessageLogged('info', 'benchmark');
+    $queryEvent = new QueryExecuted('select * from "posts" where "posts"."user_id" = ? and "posts"."user_id" is not null', [1], 0.5, DB::connection());
     $startedAt = hrtime(true);
 
     for ($i = 0; $i < BENCHMARK_REQUESTS; $i++) {
+        for ($query = 0; $query < 5; $query++) {
+            $collector->recordQuery($queryEvent);
+        }
+
         $collector->recordRequest($event);
 
         foreach ($cacheEvents as $cacheEvent) {
@@ -112,8 +125,26 @@ it('adds less than 1 ms per request with every type on at the default sample rat
 
     $perHistogramSample = (hrtime(true) - $startedAt) / 1e6 / $samples;
 
+    // One query for duplicate query detection (#148): a repeated query (normalised once, then counted) and the normalisation itself (a query seen for the first time).
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $samples; $i++) {
+        $collector->recordQuery($queryEvent);
+    }
+
+    $perRepeatedQuery = (hrtime(true) - $startedAt) / 1e6 / $samples;
+    $collector->forgetQueryShapes();
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < BENCHMARK_REQUESTS; $i++) {
+        RuntimeCollectorService::normaliseSql($queryEvent->sql.' and "posts"."id" in (?, ?, ?) limit 10');
+    }
+
+    $perNormalisation = (hrtime(true) - $startedAt) / 1e6 / BENCHMARK_REQUESTS;
+    $collector->flush();
+
     fwrite(STDERR, sprintf(
-        "\nRuntime overhead over %d requests (PHP %s, Laravel %s)\n  disabled:      %.3f ms/request\n  default types: %.3f ms/request (delta %.3f ms)\n  all types:     %.3f ms/request (delta %.3f ms)\n  collector:     %.3f ms/request (all listeners + flush)\n  histogram:     %.5f ms/sample (bucket lookup + increment)\n",
+        "\nRuntime overhead over %d requests (PHP %s, Laravel %s)\n  disabled:      %.3f ms/request\n  default types: %.3f ms/request (delta %.3f ms)\n  all types:     %.3f ms/request (delta %.3f ms)\n  collector:     %.3f ms/request (all listeners + flush)\n  histogram:     %.5f ms/sample (bucket lookup + increment)\n  query shape:   %.5f ms/query repeated (memo + count), %.5f ms/new query (normalise)\n",
         BENCHMARK_REQUESTS,
         PHP_VERSION,
         Application::VERSION,
@@ -124,9 +155,12 @@ it('adds less than 1 ms per request with every type on at the default sample rat
         $enabled - $disabled,
         $collectorOnly,
         $perHistogramSample,
+        $perRepeatedQuery,
+        $perNormalisation,
     ));
 
     expect($collectorOnly)->toBeLessThan(1.0)
+        ->and($perRepeatedQuery)->toBeLessThan(0.01)
         ->and(array_sum($histogram))->toBe($samples);
 })->group('benchmark');
 

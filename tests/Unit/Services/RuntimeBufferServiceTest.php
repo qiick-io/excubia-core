@@ -58,6 +58,32 @@ it('merges aggregates with the same dimensions when a batch is read', function (
         ->and($aggregates[1]['route'])->toBe('about');
 });
 
+it('adds up total repeats and keeps the larger max repeats as integers when duplicate queries merge', function () {
+    $duplicate = static fn (int $repeats): array => [
+        'type' => 'duplicateQuery',
+        'bucket' => '2026-11-03T10:15:00Z',
+        'sampleRate' => 1.0,
+        'origin' => 'request',
+        'name' => 'orders.index',
+        'sql' => 'select * from "orders" where "id" in (…)',
+        'connection' => 'mysql',
+        'count' => 1,
+        'errorCount' => 0,
+        'totalRepeats' => $repeats,
+        'maxRepeats' => $repeats,
+    ];
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([$duplicate(10), $duplicate(6)]);
+    $buffer->append([$duplicate(8)]);
+
+    $aggregates = $buffer->read($buffer->claimBatches()[0]['path']);
+
+    expect($aggregates)->toHaveCount(1)
+        ->and($aggregates[0]['count'])->toBe(3)
+        ->and($aggregates[0]['totalRepeats'])->toBe(24)
+        ->and($aggregates[0]['maxRepeats'])->toBe(10);
+});
+
 it('keeps a claimed batch and its id until it is deleted', function () {
     $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
     $buffer->append([bufferedAggregate('home')]);

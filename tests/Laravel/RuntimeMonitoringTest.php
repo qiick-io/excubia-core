@@ -28,6 +28,7 @@ use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Notifications\Events\NotificationFailed;
 use Illuminate\Notifications\Events\NotificationSent;
 use Illuminate\Notifications\Notification;
+use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -1180,4 +1181,332 @@ it('records no deprecation at sample rate 0', function () {
     $this->app->terminate();
 
     expect(bufferedOfType($this->app, 'deprecation'))->toHaveCount(0);
+});
+
+final class RuntimeDuplicateQueryTestJob implements ShouldQueue
+{
+    use Dispatchable;
+    use Queueable;
+
+    public function __construct(public int $queries) {}
+
+    public function handle(): void
+    {
+        for ($i = 0; $i < $this->queries; $i++) {
+            DB::select('select ? as job_column', ['job-binding-secret-'.$i]);
+        }
+    }
+}
+
+/**
+ * Run this query shape `$times` times, each with another binding.
+ */
+function repeatQuery(int $times, string $sql = 'select ? as repeated_column'): void
+{
+    for ($i = 0; $i < $times; $i++) {
+        DB::select($sql, ['binding-secret-'.$i]);
+    }
+}
+
+it('detects a query repeated with different bindings once per request, with its repeat count and never a binding', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    Route::get('/orders', function () {
+        repeatQuery(10);
+        DB::select("select 'literal-secret' as other_column");
+
+        return 'ok';
+    })->name('orders.index');
+
+    $this->get('/orders?email=query-secret@example.test')->assertOk();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery');
+    $raw = rawBuffer($this->app);
+
+    expect($duplicates)->toHaveCount(1)
+        ->and($duplicates[0])->toBe([
+            'type' => 'duplicateQuery',
+            'bucket' => $duplicates[0]['bucket'],
+            'sampleRate' => 1, // JSON writes 1.0 as 1
+            'origin' => 'request',
+            'name' => 'orders.index',
+            'sql' => 'select ? as repeated_column',
+            'connection' => DB::getDefaultConnection(),
+            'count' => 1,
+            'errorCount' => 0,
+            'totalRepeats' => 10,
+            'maxRepeats' => 10,
+        ])
+        ->and($raw)->not->toContain('binding-secret')
+        ->and($raw)->not->toContain('literal-secret')
+        ->and($raw)->not->toContain('query-secret')
+        ->and($raw)->not->toContain($this->app->basePath());
+});
+
+it('records nothing for a shape below the threshold, and honours a custom threshold', function (?int $threshold, int $times, int $expected) {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => array_filter(['enabled' => true, 'threshold' => $threshold])]);
+    Route::get('/few', function () use ($times) {
+        repeatQuery($times);
+
+        return 'ok';
+    })->name('few');
+
+    $this->get('/few')->assertOk();
+
+    expect(bufferedOfType($this->app, 'duplicateQuery'))->toHaveCount($expected);
+})->with([
+    '3 queries, default threshold 5' => [null, 3, 0],
+    '4 queries, default threshold 5' => [null, 4, 0],
+    '5 queries, default threshold 5' => [null, 5, 1],
+    '3 queries, threshold 3' => [3, 3, 1],
+]);
+
+it('counts IN lists of different lengths and different whitespace as one shape', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    Route::get('/lists', function () {
+        for ($length = 1; $length <= 6; $length++) {
+            DB::table('sqlite_master')->whereIn('name', array_map(static fn (int $i): string => 'in-secret-'.$i, range(1, $length)))->get();
+        }
+
+        DB::select("select   ?\n as   spaced", ['a']);
+        DB::select('select ? as spaced', ['b']);
+
+        return 'ok';
+    })->name('lists');
+
+    $this->get('/lists')->assertOk();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery');
+
+    expect($duplicates)->toHaveCount(1)
+        ->and($duplicates[0]['sql'])->toBe('select * from "sqlite_master" where "name" in (…)')
+        ->and($duplicates[0]['maxRepeats'])->toBe(6)
+        ->and(rawBuffer($this->app))->not->toContain('in-secret');
+});
+
+it('normalises IN lists and whitespace for duplicate queries', function (string $sql, string $expected) {
+    expect(RuntimeCollectorService::normaliseSql($sql))->toBe($expected);
+})->with([
+    'placeholders' => ['select * from users where id in (?, ?, ?) and team_id IN(?)', 'select * from users where id in (…) and team_id IN (…)'],
+    'numbered placeholders' => ['select * from users where id not in ($1,$2)', 'select * from users where id not in (…)'],
+    'inline literals' => ["select * from users where id in (1, 2, 3) or email in ('a@example.test')", 'select * from users where id in (…) or email in (…)'],
+    'whitespace' => ["  select *\n\tfrom   users\r\n where id = ?  ", 'select * from users where id = ?'],
+    'subquery stays' => ['select * from users where id in (select user_id from posts)', 'select * from users where id in (select user_id from posts)'],
+    'function names ending in in stay' => ['select join(?) from t', 'select join(?) from t'],
+]);
+
+it('keeps the slow query SQL unchanged and cuts normalised SQL to 2000 characters', function () {
+    expect(RuntimeCollectorService::maskSql("select * from users where id in (1, 2)\n  and a = ?"))->toBe("select * from users where id in (?, ?)\n  and a = ?")
+        ->and(mb_strlen(RuntimeCollectorService::normaliseSql(str_repeat('x ', 5000))))->toBe(RuntimeCollectorService::MAX_SQL_LENGTH);
+});
+
+it('records a repeated long query cut to 2000 characters', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    $longSql = 'select ? as id'.str_repeat(', ? as c', 1000);
+    Route::get('/long', function () use ($longSql) {
+        for ($i = 0; $i < 5; $i++) {
+            DB::select($longSql, array_fill(0, 1001, 'long-binding-secret'));
+        }
+
+        return 'ok';
+    })->name('long');
+
+    $this->get('/long')->assertOk();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery');
+
+    expect($duplicates)->toHaveCount(1)
+        ->and(mb_strlen($duplicates[0]['sql']))->toBe(RuntimeCollectorService::MAX_SQL_LENGTH)
+        ->and($duplicates[0]['maxRepeats'])->toBe(5)
+        ->and(rawBuffer($this->app))->not->toContain('long-binding-secret');
+});
+
+it('merges occurrences across requests: count of requests, total and max repeats', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    Route::get('/loop/{times}', function (string $times) {
+        repeatQuery((int) $times);
+
+        return 'ok';
+    })->name('loop');
+
+    $this->get('/loop/10')->assertOk();
+    $this->get('/loop/6')->assertOk();
+    $this->get('/loop/2')->assertOk();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery');
+
+    expect($duplicates)->toHaveCount(1)
+        ->and($duplicates[0])->toMatchArray(['count' => 2, 'totalRepeats' => 16, 'maxRepeats' => 10]);
+});
+
+it('does not leak counts between requests or between a request and its jobs', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    config(['queue.default' => 'sync']);
+    Route::get('/three', function () {
+        repeatQuery(3);
+
+        return 'ok';
+    })->name('three');
+    Route::get('/with-jobs', function () {
+        DB::select('select ? as job_column', ['request-binding']);
+        DB::select('select ? as job_column', ['request-binding']);
+        RuntimeDuplicateQueryTestJob::dispatch(3);
+        RuntimeDuplicateQueryTestJob::dispatch(3);
+        DB::select('select ? as job_column', ['request-binding']);
+
+        return 'ok';
+    })->name('with-jobs');
+
+    $this->get('/three')->assertOk();
+    $this->get('/three')->assertOk();
+    $this->get('/with-jobs')->assertOk();
+
+    // Outside a request: counted, then dropped when the process terminates.
+    repeatQuery(3);
+    $this->app->terminate();
+    $this->get('/three')->assertOk();
+
+    expect(bufferedOfType($this->app, 'duplicateQuery'))->toHaveCount(0);
+});
+
+it('records a job by its class and keeps the request around a sync job apart', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    config(['queue.default' => 'sync']);
+    Route::get('/dispatch', function () {
+        repeatQuery(2);
+        RuntimeDuplicateQueryTestJob::dispatch(7);
+        repeatQuery(4);
+
+        return 'ok';
+    })->name('dispatch');
+
+    $this->get('/dispatch')->assertOk();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery')->keyBy('origin');
+
+    expect($duplicates)->toHaveCount(2)
+        ->and($duplicates['job'])->toMatchArray(['name' => RuntimeDuplicateQueryTestJob::class, 'sql' => 'select ? as job_column', 'count' => 1, 'maxRepeats' => 7])
+        ->and($duplicates['request'])->toMatchArray(['name' => 'dispatch', 'sql' => 'select ? as repeated_column', 'count' => 1, 'maxRepeats' => 6])
+        ->and(rawBuffer($this->app))->not->toContain('job-binding-secret');
+});
+
+it('evaluates a job once whether it is processed, released after an exception or failed', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    $exception = new RuntimeException('job-exception-secret');
+
+    $released = waitingJob($this->app, []);
+    event(new JobProcessing('redis', $released));
+    repeatQuery(5);
+    event(new JobExceptionOccurred('redis', $released, $exception));
+
+    $failed = waitingJob($this->app, []);
+    event(new JobProcessing('redis', $failed));
+    repeatQuery(5);
+    event(new JobExceptionOccurred('redis', $failed, $exception));
+    event(new JobFailed('redis', $failed, $exception));
+
+    $processed = waitingJob($this->app, []);
+    event(new JobProcessing('redis', $processed));
+    repeatQuery(5);
+    event(new JobProcessed('redis', $processed));
+
+    // A job end without its start is ignored.
+    repeatQuery(5);
+    event(new JobProcessed('redis', waitingJob($this->app, [])));
+    $this->app->terminate();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery');
+
+    expect($duplicates)->toHaveCount(1)
+        ->and($duplicates[0])->toMatchArray(['origin' => 'job', 'name' => RuntimeMonitoringTestJob::class, 'count' => 3, 'totalRepeats' => 15, 'maxRepeats' => 5])
+        ->and(rawBuffer($this->app))->not->toContain('job-exception-secret');
+});
+
+it('counts at most 200 shapes per request and ignores the rest', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true]]);
+    Route::get('/many', function () {
+        for ($shape = 1; $shape <= RuntimeCollectorService::MAX_QUERY_SHAPES; $shape++) {
+            DB::select('select ? as column_'.$shape, [$shape]);
+        }
+
+        repeatQuery(10);
+        repeatQuery(9, 'select ? as column_1');
+
+        return 'ok';
+    })->name('many');
+
+    $this->get('/many')->assertOk();
+
+    $duplicates = bufferedOfType($this->app, 'duplicateQuery');
+
+    expect($duplicates)->toHaveCount(1)
+        ->and($duplicates[0])->toMatchArray(['sql' => 'select ? as column_1', 'maxRepeats' => 10]);
+});
+
+it('registers nothing and records nothing for duplicate queries while the type is off', function (array $runtime) {
+    $before = [
+        'query' => count(Event::getListeners(QueryExecuted::class)),
+        'exception' => count(Event::getListeners(JobExceptionOccurred::class)),
+        'request' => count(Event::getListeners(RequestHandled::class)),
+    ];
+    bootRuntimeProject($this->app, $runtime);
+    Route::get('/off', function () {
+        repeatQuery(10);
+
+        return 'ok';
+    })->name('off');
+
+    expect(count(Event::getListeners(QueryExecuted::class)))->toBe($before['query'])
+        ->and(count(Event::getListeners(JobExceptionOccurred::class)))->toBe($before['exception'])
+        ->and(count(Event::getListeners(RequestHandled::class)))->toBe($before['request']);
+
+    $this->get('/off')->assertOk();
+
+    expect(bufferedOfType($this->app, 'duplicateQuery'))->toHaveCount(0);
+})->with([
+    'not switched on' => [['enabled' => true, 'requests' => ['enabled' => false], 'slowQueries' => ['enabled' => false]]],
+    'switched off' => [['enabled' => true, 'requests' => ['enabled' => false], 'slowQueries' => ['enabled' => false], 'duplicateQueries' => ['enabled' => false, 'threshold' => 2]]],
+    'runtime off' => [['enabled' => false, 'duplicateQueries' => ['enabled' => true]]],
+]);
+
+it('registers the query, request and job listeners for duplicate queries alone and records no slow query', function () {
+    $before = [
+        'query' => count(Event::getListeners(QueryExecuted::class)),
+        'exception' => count(Event::getListeners(JobExceptionOccurred::class)),
+        'request' => count(Event::getListeners(RequestHandled::class)),
+        'processing' => count(Event::getListeners(JobProcessing::class)),
+    ];
+    bootRuntimeProject($this->app, [
+        'enabled' => true,
+        'requests' => ['enabled' => false],
+        'slowQueries' => ['enabled' => false, 'thresholdMs' => 0],
+        'jobs' => ['enabled' => false],
+        'duplicateQueries' => ['enabled' => true],
+    ]);
+    Route::get('/alone', function () {
+        repeatQuery(5);
+
+        return 'ok';
+    })->name('alone');
+
+    expect(count(Event::getListeners(QueryExecuted::class)))->toBe($before['query'] + 1)
+        ->and(count(Event::getListeners(JobExceptionOccurred::class)))->toBe($before['exception'] + 1)
+        ->and(count(Event::getListeners(RequestHandled::class)))->toBe($before['request'] + 1)
+        ->and(count(Event::getListeners(JobProcessing::class)))->toBe($before['processing'] + 1);
+
+    $this->get('/alone')->assertOk();
+
+    expect(collect(bufferedRuntime($this->app))->pluck('type')->unique()->values()->all())->toBe(['duplicateQuery']);
+});
+
+it('records no duplicate query at sample rate 0', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'duplicateQueries' => ['enabled' => true, 'sampleRate' => 0]]);
+    Route::get('/sampled', function () {
+        repeatQuery(10);
+
+        return 'ok';
+    })->name('sampled');
+
+    $this->get('/sampled')->assertOk();
+
+    expect(bufferedOfType($this->app, 'duplicateQuery'))->toHaveCount(0);
 });
