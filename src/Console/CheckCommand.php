@@ -25,6 +25,7 @@ use Qiick\Excubia\Renderers\TableReportRenderer;
 use Qiick\Excubia\Services\HealthCheckRunnerService;
 use Qiick\Excubia\Services\NotifyingHttpClientService;
 use Qiick\Excubia\Services\ProjectSnapshotService;
+use Qiick\Excubia\Services\ReleaseService;
 use Qiick\Excubia\Services\SymfonyHttpClientService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -38,6 +39,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * points share this command. The command does not boot the scanned project.
  * The Artisan alias passes the posture it read from the booted app; the
  * standalone CLI passes none, so the posture checks are skipped.
+ * The report carries the release from `ReleaseService`; the git fallback of
+ * that service runs only for the standalone CLI (no posture passed).
  */
 final class CheckCommand extends Command
 {
@@ -51,12 +54,14 @@ final class CheckCommand extends Command
     /**
      * @param  (Closure(HealthReportData): void)|null  $reportListener  called with every finished report;
      *                                                                  the Laravel aliases store it for the health endpoint
+     * @param  array<string, string>|null  $environment  tests pass variables here; null reads getenv()
      */
     public function __construct(
         private readonly ?HttpClientContract $httpClient = null,
         private readonly ?DateTimeImmutable $today = null,
         private readonly ?Closure $reportListener = null,
         private readonly ?LaravelPostureData $laravelPosture = null,
+        private readonly ?array $environment = null,
     ) {
         parent::__construct();
     }
@@ -205,16 +210,20 @@ final class CheckCommand extends Command
             (bool) ($options['no-cache'] ?? false),
             $this->laravelPosture,
         );
+        $report = $result['report']->withRelease((new ReleaseService($this->environment))->resolve(
+            $configuration->release,
+            $this->laravelPosture === null ? $projectRoot : null,
+        ));
 
         foreach ($result['expiredIgnoreWarnings'] as $warning) {
             self::writeError($output, $warning);
         }
 
         if ($this->reportListener !== null) {
-            ($this->reportListener)($result['report']);
+            ($this->reportListener)($report);
         }
 
-        return ['report' => $result['report'], 'configuration' => $configuration];
+        return ['report' => $report, 'configuration' => $configuration];
     }
 
     /**
@@ -260,7 +269,28 @@ final class CheckCommand extends Command
             isHealthEndpointEnabled: $loaded->isHealthEndpointEnabled,
             healthEndpointPath: $loaded->healthEndpointPath,
             schedulerHeartbeatStaleAfterMinutes: $loaded->schedulerHeartbeatStaleAfterMinutes,
+            schedulerLateAfterMinutes: $loaded->schedulerLateAfterMinutes,
             failedJobHighSeverityAfterHours: $loaded->failedJobHighSeverityAfterHours,
+            runtime: $loaded->runtime,
+            exceptions: $loaded->exceptions,
+            skippedPackagePatterns: $loaded->skippedPackagePatterns,
+            release: $loaded->release,
+            dependencyLicenses: $loaded->dependencyLicenses,
+            databaseConnectionNames: $loaded->databaseConnectionNames,
+            diskSpaceWarnAtPercentUsed: $loaded->diskSpaceWarnAtPercentUsed,
+            diskSpaceFailAtPercentUsed: $loaded->diskSpaceFailAtPercentUsed,
+            queueBacklogMaxOldestAgeMinutes: $loaded->queueBacklogMaxOldestAgeMinutes,
+            queueBacklogMaxPendingJobs: $loaded->queueBacklogMaxPendingJobs,
+            queueBacklogQueueNames: $loaded->queueBacklogQueueNames,
+            envExampleSync: $loaded->envExampleSync,
+            queueWorkersStaleAfterMinutes: $loaded->queueWorkersStaleAfterMinutes,
+            backupsMaxAgeHours: $loaded->backupsMaxAgeHours,
+            databaseConnectionsWarnAt: $loaded->databaseConnectionsWarnAt,
+            databaseConnectionsFailAt: $loaded->databaseConnectionsFailAt,
+            databaseSizeWarnAtMb: $loaded->databaseSizeWarnAtMb,
+            redisMemoryWarnAtPercentUsed: $loaded->redisMemoryWarnAtPercentUsed,
+            redisMemoryFailAtPercentUsed: $loaded->redisMemoryFailAtPercentUsed,
+            redisMemoryConnectionNames: $loaded->redisMemoryConnectionNames,
         );
     }
 

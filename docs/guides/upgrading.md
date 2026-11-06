@@ -59,6 +59,7 @@ All optional, all off or unchanged by default. An existing 0.1.x file stays vali
 | --- | --- |
 | `strict` | Strict mode |
 | `checks.laravel-scheduler-heartbeat.staleAfterMinutes` | Posture check threshold, default `10` |
+| `checks.laravel-scheduler-heartbeat.lateAfterMinutes` | Late-run grace for excubia-app (#146), default `5` |
 | `checks.laravel-failed-jobs.highSeverityAfterHours` | Posture check threshold, default `24` |
 | `app` | [Push to excubia-app](./excubia-app.md) |
 | `healthEndpoint` | [Health endpoint](./health-endpoint.md) |

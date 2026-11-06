@@ -101,7 +101,7 @@ function firstFindingOf(array $report, string $checkId): array
 it('adds generatedAt, excubiaVersion and the project versions at the top level', function () {
     $report = detailedJsonReport();
 
-    expect(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
+    expect(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan', 'licenses'])
         ->and($report['schemaVersion'])->toBe(1)
         ->and($report['generatedAt'])->toBe('2026-10-31T07:30:15Z')
         ->and($report['excubiaVersion'])->toBe(HealthCheckRunnerService::excubiaVersion())
@@ -200,14 +200,71 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-failed-jobs', ['count' => 3, 'oldestAgeHours' => null]),
         $finding('laravel-scheduler-heartbeat', ['minutesSinceLastRun' => 12]),
         $finding('laravel-debug-mode', []),
+        $finding('laravel-database', ['connection' => 'mysql']),
+        $finding('laravel-cache', ['store' => 'redis']),
+        $finding('laravel-storage', ['directory' => 'bootstrap/cache']),
+        $finding('laravel-disk-space', ['usedPercent' => 91]),
+        $finding('laravel-queue-backlog', ['queue' => 'default', 'pendingCount' => 1200, 'oldestAgeMinutes' => null]),
+        $finding('php-platform-requirements', ['requirement' => 'ext-intl', 'requiredBy' => ['laravel/framework'], 'checkedPhpVersion' => '8.4.1', 'isStandaloneCli' => true]),
+        $finding('composer-outdated', $package + ['latestPatch' => '1.0.3', 'latestMinor' => '1.2.0', 'latestMajor' => null, 'isMajorBehind' => false]),
+        $finding('composer-outdated', ['count' => 2]),
+        $finding('laravel-queue-workers', ['connection' => 'redis', 'queue' => 'emails', 'minutesSinceLastSeen' => null]),
+        $finding('laravel-queue-workers', ['status' => 'paused', 'processes' => 4, 'supervisors' => ['supervisor-1']]),
+        $finding('npm-outdated', ['package' => 'lodash', 'lockedVersion' => '4.17.20', 'latestPatch' => '4.17.21', 'latestMinor' => '4.17.21', 'latestMajor' => null, 'isMajorBehind' => false]),
+        $finding('npm-outdated', ['count' => 1]),
+        $finding('laravel-backups', ['disk' => 's3', 'ageHours' => 30, 'sizeMb' => 12.5, 'count' => 7]),
+        $finding('laravel-backups', ['disk' => 's3', 'ageHours' => null, 'sizeMb' => null, 'count' => null]),
+        $finding('laravel-database-connections', ['connection' => 'mysql', 'connectionCount' => 120]),
+        $finding('laravel-database-size', ['connection' => 'mysql', 'sizeMb' => 512.25, 'largestTables' => [['table' => 'activity_log', 'sizeMb' => 300.5], ['table' => 'users', 'sizeMb' => 2]]]),
+        $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 0.02, 'largestTables' => []]),
+        $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => 100.0, 'policy' => 'allkeys-lru']),
+        $finding('laravel-redis-memory', ['connection' => 'default', 'usedMb' => 1.25, 'maxMb' => null, 'policy' => null]),
+        $finding('php-opcache', ['sapi' => 'web', 'ageMinutes' => 12, 'isOpcacheEnabled' => true, 'hitRate' => 82.5, 'memoryUsedPercent' => 40.0, 'cachedScripts' => 1500, 'isValidateTimestampsEnabled' => false]),
+        $finding('php-opcache', ['sapi' => 'web', 'ageMinutes' => 0, 'isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null, 'isValidateTimestampsEnabled' => true]),
+        $finding('php-production-ini', ['directive' => 'display_errors', 'isEnabled' => true, 'sapi' => 'web', 'ageMinutes' => 3]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
         $finding('laravel-failed-jobs', ['count' => 3, 'payload' => 'secret']),
+        $finding('laravel-database', ['connection' => 'mysql', 'host' => 'db.internal']),
+        $finding('laravel-storage', ['directory' => '/srv/app/storage']),
+        $finding('laravel-queue-workers', ['connection' => 'redis', 'queue' => 'emails', 'minutesSinceLastSeen' => 3, 'host' => 'worker-1.internal']),
+        $finding('laravel-queue-workers', ['status' => 'running', 'processes' => 4, 'supervisors' => []]),
+    ]);
+
+    $invalidOutdated = $render([
+        $finding('composer-outdated', $package + ['latestPatch' => null, 'latestMinor' => null, 'latestMajor' => '2.0.0', 'isMajorBehind' => true, 'path' => '/srv/app']),
+    ]);
+    $invalidNpmOutdated = $render([
+        $finding('npm-outdated', ['package' => 'lodash', 'lockedVersion' => '4.17.20', 'latestPatch' => null, 'latestMinor' => null, 'latestMajor' => '5.0.0', 'isMajorBehind' => true, 'lockfile' => '/srv/app/package-lock.json']),
+    ]);
+
+    $invalidBackups = $render([
+        $finding('laravel-backups', ['disk' => 's3', 'ageHours' => 30, 'sizeMb' => 12.5, 'count' => 7, 'bucket' => 'backups-bucket']),
+    ]);
+    $invalidPhpRuntime = $render([
+        $finding('php-production-ini', ['directive' => 'display_errors', 'isEnabled' => true, 'sapi' => 'web', 'ageMinutes' => 3, 'iniFile' => '/etc/php/8.4/cli/php.ini']),
+        $finding('php-opcache', ['sapi' => 'fpm', 'ageMinutes' => null, 'isOpcacheEnabled' => false, 'hitRate' => null, 'memoryUsedPercent' => null, 'cachedScripts' => null, 'isValidateTimestampsEnabled' => true]),
+        $finding('php-production-ini', ['directive' => 'expose_php', 'isEnabled' => true, 'sapi' => 'cli', 'ageMinutes' => null]),
     ]);
 
     expect(reportSchemaErrors($valid))->toBe([])
-        ->and(reportSchemaErrors($invalid))->not->toBe([]);
+        ->and(reportSchemaErrors($invalid))->not->toBe([])
+        ->and(reportSchemaErrors($invalidOutdated))->not->toBe([])
+        ->and(reportSchemaErrors($invalidNpmOutdated))->not->toBe([])
+        ->and(reportSchemaErrors($invalidBackups))->not->toBe([]);
+
+    foreach ([
+        $finding('laravel-database-connections', ['connection' => 'mysql', 'connectionCount' => 120, 'host' => 'db.internal']),
+        $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 1.5, 'largestTables' => [], 'path' => '/srv/app/database.sqlite']),
+        $finding('laravel-database-size', ['connection' => 'mysql', 'sizeMb' => 1.5, 'largestTables' => [['table' => 'users', 'sizeMb' => 1.5, 'schema' => 'production_db']]]),
+        $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => 100.0, 'policy' => 'allkeys-lru', 'host' => 'redis.internal']),
+        $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => null, 'policy' => 'redis://user:secret@host']),
+    ] as $invalidDatabaseFinding) {
+        expect(reportSchemaErrors($render([$invalidDatabaseFinding])))->not->toBe([]);
+    }
+
+    expect(reportSchemaErrors($invalidPhpRuntime))->not->toBe([]);
 });
 
 /**

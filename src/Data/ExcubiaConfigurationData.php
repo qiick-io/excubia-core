@@ -23,11 +23,34 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * keys read by the Laravel provider (`docs/health-endpoint.md`).
  * The posture thresholds default to a scheduler heartbeat older than 10
  * minutes and failed jobs older than 24 hours (high instead of medium).
+ * The infrastructure thresholds default to a disk warning at 80 % used and
+ * a failure at 90 %, and a queue backlog warning when the oldest pending job
+ * waits 15 minutes or a queue holds 1000 pending jobs.
+ * `databaseConnectionNames` are probed on top of the default connection;
+ * `queueBacklogQueueNames` are read on top of the default queue (Redis only,
+ * the database driver reads every queue in its table).
  * `runtime` is the opt-in runtime monitoring key (`RuntimeConfigurationData`),
  * `exceptions` the separate opt-in exception capture key (`ExceptionConfigurationData`).
  * `skippedPackagePatterns` is `privacy.skipPackages`: globs (`*`, `?`) of
  * package names that are never sent to a public data source, on top of the
  * packages the lockfile already marks private.
+ * `release` is the `release` key as written; `ReleaseService` validates it
+ * and falls back to the environment when it is null.
+ * `dependencyLicenses` holds the `checks.dependency-licenses` keys and
+ * `envExampleSync` the `checks.env-example-sync` keys.
+ * `queueWorkersStaleAfterMinutes` is `checks.laravel-queue-workers.staleAfterMinutes`:
+ * a queue with pending jobs warns when no worker heartbeat is newer (default 5).
+ * `backupsMaxAgeHours` is `checks.laravel-backups.maxAgeHours`: a monitored
+ * backup destination fails when its newest backup is older (default 26).
+ * `databaseConnectionsWarnAt` and `databaseConnectionsFailAt` are
+ * `checks.laravel-database-connections.warnAt` / `failAt` (open connections
+ * above which the check warns or fails, default 50 and 100);
+ * `databaseSizeWarnAtMb` is `checks.laravel-database-size.warnAtMb` (null,
+ * the default, only reports the size).
+ * `redisMemoryWarnAtPercentUsed` and `redisMemoryFailAtPercentUsed` are the
+ * `checks.laravel-redis-memory` thresholds on the share of `maxmemory` used
+ * (default 80 and 90); `redisMemoryConnectionNames`, when not empty, replaces
+ * the Redis connections found through the cache, queue and session config.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -44,6 +67,9 @@ final readonly class ExcubiaConfigurationData
      *     until: string|null
      * }>  $ignoreRules
      * @param  list<string>  $skippedPackagePatterns
+     * @param  list<string>  $databaseConnectionNames
+     * @param  list<string>  $queueBacklogQueueNames
+     * @param  list<string>  $redisMemoryConnectionNames
      */
     public function __construct(
         public ?SeverityEnum $failOnSeverity,
@@ -66,6 +92,24 @@ final readonly class ExcubiaConfigurationData
         public RuntimeConfigurationData $runtime = new RuntimeConfigurationData,
         public ExceptionConfigurationData $exceptions = new ExceptionConfigurationData,
         public array $skippedPackagePatterns = [],
+        public ?string $release = null,
+        public DependencyLicensesConfigurationData $dependencyLicenses = new DependencyLicensesConfigurationData,
+        public array $databaseConnectionNames = [],
+        public int $diskSpaceWarnAtPercentUsed = 80,
+        public int $diskSpaceFailAtPercentUsed = 90,
+        public int $queueBacklogMaxOldestAgeMinutes = 15,
+        public int $queueBacklogMaxPendingJobs = 1000,
+        public array $queueBacklogQueueNames = [],
+        public EnvExampleSyncConfigurationData $envExampleSync = new EnvExampleSyncConfigurationData,
+        public int $queueWorkersStaleAfterMinutes = 5,
+        public int $schedulerLateAfterMinutes = 5,
+        public int $backupsMaxAgeHours = 26,
+        public int $databaseConnectionsWarnAt = 50,
+        public int $databaseConnectionsFailAt = 100,
+        public ?int $databaseSizeWarnAtMb = null,
+        public int $redisMemoryWarnAtPercentUsed = 80,
+        public int $redisMemoryFailAtPercentUsed = 90,
+        public array $redisMemoryConnectionNames = [],
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -79,8 +123,52 @@ final readonly class ExcubiaConfigurationData
             throw new InvalidConfigurationException('staleAfterMinutes must be at least 1.');
         }
 
+        if ($this->queueWorkersStaleAfterMinutes < 1) {
+            throw new InvalidConfigurationException('checks.laravel-queue-workers.staleAfterMinutes must be at least 1.');
+        }
+
+        if ($this->backupsMaxAgeHours < 1) {
+            throw new InvalidConfigurationException('checks.laravel-backups.maxAgeHours must be at least 1.');
+        }
+
+        if ($this->schedulerLateAfterMinutes < 1) {
+            throw new InvalidConfigurationException('lateAfterMinutes must be at least 1.');
+        }
+
         if ($this->failedJobHighSeverityAfterHours < 1) {
             throw new InvalidConfigurationException('highSeverityAfterHours must be at least 1.');
+        }
+
+        if ($this->diskSpaceWarnAtPercentUsed < 1 || $this->diskSpaceFailAtPercentUsed > 100 || $this->diskSpaceWarnAtPercentUsed > $this->diskSpaceFailAtPercentUsed) {
+            throw new InvalidConfigurationException('laravel-disk-space needs 1 <= warnAtPercentUsed <= failAtPercentUsed <= 100.');
+        }
+
+        if ($this->databaseConnectionsWarnAt < 1 || $this->databaseConnectionsWarnAt > $this->databaseConnectionsFailAt) {
+            throw new InvalidConfigurationException('laravel-database-connections needs 1 <= warnAt <= failAt.');
+        }
+
+        if ($this->databaseSizeWarnAtMb !== null && $this->databaseSizeWarnAtMb < 1) {
+            throw new InvalidConfigurationException('checks.laravel-database-size.warnAtMb must be at least 1.');
+        }
+
+        if ($this->redisMemoryWarnAtPercentUsed < 1 || $this->redisMemoryFailAtPercentUsed > 100 || $this->redisMemoryWarnAtPercentUsed > $this->redisMemoryFailAtPercentUsed) {
+            throw new InvalidConfigurationException('laravel-redis-memory needs 1 <= warnAtPercentUsed <= failAtPercentUsed <= 100.');
+        }
+
+        foreach ($this->redisMemoryConnectionNames as $name) {
+            if ($name === '') {
+                throw new InvalidConfigurationException('checks.laravel-redis-memory.connections entries must be non-empty names.');
+            }
+        }
+
+        if ($this->queueBacklogMaxOldestAgeMinutes < 1 || $this->queueBacklogMaxPendingJobs < 1) {
+            throw new InvalidConfigurationException('maxOldestAgeMinutes and maxPendingJobs must be at least 1.');
+        }
+
+        foreach ([...$this->databaseConnectionNames, ...$this->queueBacklogQueueNames] as $name) {
+            if ($name === '') {
+                throw new InvalidConfigurationException('checks.laravel-database.connections and checks.laravel-queue-backlog.queues entries must be non-empty names.');
+            }
         }
 
         if ($this->cacheTtlHours < 0) {
@@ -129,14 +217,23 @@ final readonly class ExcubiaConfigurationData
         }
 
         foreach ($this->skippedPackagePatterns as $pattern) {
-            $expression = '#^'.strtr(preg_quote($pattern, '#'), ['\*' => '.*', '\?' => '.']).'$#i';
-
-            if (preg_match($expression, $package->name) === 1) {
+            if (self::matchesGlob($pattern, $package->name)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * True when the glob matches the whole value, case-insensitive: `*` is
+     * any characters (also `/`), `?` exactly one, everything else literal.
+     */
+    public static function matchesGlob(string $pattern, string $value): bool
+    {
+        $expression = '#^'.strtr(preg_quote($pattern, '#'), ['\*' => '.*', '\?' => '.']).'$#i';
+
+        return preg_match($expression, $value) === 1;
     }
 
     /**

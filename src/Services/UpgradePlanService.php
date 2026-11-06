@@ -8,17 +8,25 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Data\UpgradeStepData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
+use Qiick\Excubia\Enums\SeverityEnum;
 
 /**
  * Turns findings into numbered upgrade steps.
  *
  * Order is security fixes, PHP end of life, next-major blockers, the Laravel
- * major, then stale and abandoned replacements. Steps are grouped so the plan
- * reads as one list: one step per vulnerable package, one step naming every
- * next-major blocker, one step per abandoned package and one step for all
- * stale packages. Identical steps are dropped. The next Laravel major is the
- * locked major plus one. Steps are informational and are not findings, so
- * they never change the exit code. node-eol is not in this order.
+ * major, stale and abandoned replacements, Composer patch updates, npm patch
+ * updates, then the license review. Steps are grouped so the plan reads as
+ * one list: one step per vulnerable package, one step naming every
+ * next-major blocker, one step per abandoned package, one step for all stale
+ * packages, one step for every Composer direct dependency that is behind on
+ * a patch and has no advisory (`composer-outdated`), the same for npm
+ * (`npm-outdated` without an `npm-advisories` finding, #176), and one step
+ * when `dependency-licenses` has a `fail` row, naming the denied packages
+ * and any strong copyleft ones. New kinds of steps are appended, so the
+ * existing ones keep their order. Identical steps are dropped. The next
+ * Laravel major is the locked major plus one. Steps are informational and
+ * are not findings, so they never change the exit code. node-eol is not in
+ * this order.
  */
 final class UpgradePlanService
 {
@@ -44,6 +52,17 @@ final class UpgradePlanService
                 $this->findingsFor($actionableFindings, ['composer-abandoned']),
                 $this->findingsFor($actionableFindings, ['composer-stale']),
             ),
+            ...$this->patchUpdateMessages(
+                'Update to the latest patch: ',
+                $this->findingsFor($actionableFindings, ['composer-outdated']),
+                $this->findingsFor($actionableFindings, ['composer-advisories']),
+            ),
+            ...$this->patchUpdateMessages(
+                'Update npm packages to the latest patch: ',
+                $this->findingsFor($actionableFindings, ['npm-outdated']),
+                $this->findingsFor($actionableFindings, ['npm-advisories']),
+            ),
+            ...$this->licenseReviewMessages($this->findingsFor($actionableFindings, ['dependency-licenses'])),
         ];
         $steps = [];
 
@@ -168,6 +187,71 @@ final class UpgradePlanService
         }
 
         return $messages;
+    }
+
+    /**
+     * One step naming the newest patch of every outdated package that has
+     * no advisory finding of the same ecosystem; a vulnerable package already
+     * has its own step.
+     *
+     * @param  list<FindingData>  $outdatedFindings
+     * @param  list<FindingData>  $advisoryFindings
+     * @return list<string>
+     */
+    private function patchUpdateMessages(string $prefix, array $outdatedFindings, array $advisoryFindings): array
+    {
+        $vulnerablePackages = array_map(static fn (FindingData $finding): string => $finding->subject, $advisoryFindings);
+        $updates = [];
+
+        foreach ($outdatedFindings as $finding) {
+            $latestPatch = $finding->details['latestPatch'] ?? null;
+
+            if (! is_string($latestPatch) || in_array($finding->subject, $vulnerablePackages, true)) {
+                continue;
+            }
+
+            $updates[] = $finding->subject.' '.$latestPatch;
+        }
+
+        if ($updates === []) {
+            return [];
+        }
+
+        return [$prefix.implode(', ', $updates).'.'];
+    }
+
+    /**
+     * One step when at least one license is denied (a `fail` row). It names
+     * the denied packages and, in the same step, the strong copyleft ones
+     * (the `warn` rows at medium); unknown licenses (low) are left out.
+     * Without a denied license there is no step.
+     *
+     * @param  list<FindingData>  $findings
+     * @return list<string>
+     */
+    private function licenseReviewMessages(array $findings): array
+    {
+        $deniedFindings = array_values(array_filter(
+            $findings,
+            static fn (FindingData $finding): bool => $finding->status === FindingStatusEnum::Fail,
+        ));
+
+        if ($deniedFindings === []) {
+            return [];
+        }
+
+        $copyleftFindings = array_values(array_filter(
+            $findings,
+            static fn (FindingData $finding): bool => $finding->status === FindingStatusEnum::Warn
+                && $finding->severity === SeverityEnum::Medium,
+        ));
+        $message = 'Review dependency licenses: denied for '.$this->packageList($deniedFindings);
+
+        if ($copyleftFindings !== []) {
+            $message .= '; strong copyleft for '.$this->packageList($copyleftFindings);
+        }
+
+        return [$message.'. Replace the packages or clear the licenses after a legal review.'];
     }
 
     /**

@@ -119,6 +119,190 @@
                                 "text": "Maintenance mode"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-app-key",
+                            "name": "Application key",
+                            "shortDescription": {
+                                "text": "Application key"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-session-security",
+                            "name": "Session cookie security",
+                            "shortDescription": {
+                                "text": "Session cookie security"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-cors-wildcard",
+                            "name": "CORS wildcard origin",
+                            "shortDescription": {
+                                "text": "CORS wildcard origin"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-production-drivers",
+                            "name": "Production drivers",
+                            "shortDescription": {
+                                "text": "Production drivers"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-log-level",
+                            "name": "Log level",
+                            "shortDescription": {
+                                "text": "Log level"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-dev-packages",
+                            "name": "Development packages",
+                            "shortDescription": {
+                                "text": "Development packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "dependency-licenses",
+                            "name": "Dependency licenses",
+                            "shortDescription": {
+                                "text": "Dependency licenses"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-database",
+                            "name": "Database",
+                            "shortDescription": {
+                                "text": "Database"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-cache",
+                            "name": "Cache",
+                            "shortDescription": {
+                                "text": "Cache"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-storage",
+                            "name": "Writable storage",
+                            "shortDescription": {
+                                "text": "Writable storage"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-disk-space",
+                            "name": "Disk space",
+                            "shortDescription": {
+                                "text": "Disk space"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-queue-backlog",
+                            "name": "Queue backlog",
+                            "shortDescription": {
+                                "text": "Queue backlog"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "php-platform-requirements",
+                            "name": "Platform requirements",
+                            "shortDescription": {
+                                "text": "Platform requirements"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "env-example-sync",
+                            "name": ".env.example sync",
+                            "shortDescription": {
+                                "text": ".env.example sync"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-outdated",
+                            "name": "Outdated packages",
+                            "shortDescription": {
+                                "text": "Outdated packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-queue-workers",
+                            "name": "Queue workers",
+                            "shortDescription": {
+                                "text": "Queue workers"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "npm-outdated",
+                            "name": "Outdated packages (npm)",
+                            "shortDescription": {
+                                "text": "Outdated packages (npm)"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-backups",
+                            "name": "Backups",
+                            "shortDescription": {
+                                "text": "Backups"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-database-connections",
+                            "name": "Database connections",
+                            "shortDescription": {
+                                "text": "Database connections"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-database-size",
+                            "name": "Database size",
+                            "shortDescription": {
+                                "text": "Database size"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-redis-memory",
+                            "name": "Redis memory",
+                            "shortDescription": {
+                                "text": "Redis memory"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "php-opcache",
+                            "name": "OPcache",
+                            "shortDescription": {
+                                "text": "OPcache"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "php-production-ini",
+                            "name": "Production php.ini",
+                            "shortDescription": {
+                                "text": "Production php.ini"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

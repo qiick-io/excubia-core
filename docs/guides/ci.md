@@ -54,13 +54,29 @@ How it works:
 - `excubia.json` in `path` is read as usual, so ignore rules and thresholds apply.
 - Pin the action to a commit SHA if your policy requires it.
 
+## Deploy markers
+
+Run `excubia push --deploy` as the step after the deploy. It sends the report like `excubia push`, plus `deployedAt`, so `excubia-app` draws a deploy marker and can show what changed with that release ("this exception started with release X", "slow requests doubled after the deploy").
+
+```yaml
+# GitHub Actions, after the deploy step
+- run: vendor/bin/excubia push --deploy
+  env:
+    EXCUBIA_APP_URL: ${{ vars.EXCUBIA_APP_URL }}
+    EXCUBIA_APP_TOKEN: ${{ secrets.EXCUBIA_APP_TOKEN }}
+```
+
+On the server, `php artisan excubia:push --deploy` as the last line of the deploy script does the same and includes the posture checks.
+
+The release comes from `release` in `excubia.json`, `EXCUBIA_RELEASE`, or the variable the platform already sets (`GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`); `vendor/bin/excubia` falls back to the commit in the project's `.git`, read from the files without running `git`. Order and rules: [release identifier](./configuration.md#release-identifier). Without any of them the marker has no release and a warning goes to stderr. Set `EXCUBIA_RELEASE` in the environment of the app as well, so runtime and exception batches carry the same release.
+
 ## SARIF
 
 `--format=sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log:
 
 - Each check id is a rule; each `fail` or `warn` finding is a result. `pass` and `skipped` rows and the upgrade plan are left out.
 - Levels: `critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`. The Excubia severity stays in `properties.severity`.
-- The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `.nvmrc`, `.node-version` or `package.json`; for the posture checks `config/app.php`, `config/queue.php`, `database/migrations` or `routes/console.php`), relative to the project. Never an absolute path.
+- The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `.nvmrc`, `.node-version` or `package.json`; for the posture checks `config/app.php`, `config/queue.php`, `database/migrations` or `routes/console.php`), relative to the project. Never an absolute path.
 - `partialFingerprints` come from the check id, subject and advisory id, so an alert keeps its identity across runs.
 
 ## Any other CI
@@ -113,4 +129,4 @@ To send the report to your own `excubia-app` after a deploy, see [Push to excubi
 
 ## Posture checks in CI
 
-The six `laravel-*` posture checks read the booted app, so they only run through `php artisan excubia:check`. In CI they would describe the CI environment, not production, so use `vendor/bin/excubia` there (the posture checks are `skipped`), and run the posture checks on the server or through the scheduled push.
+The `laravel-*` posture checks after `laravel-next-blocker` read the booted app, so they only run through `php artisan excubia:check`. In CI they would describe the CI environment, not production, so use `vendor/bin/excubia` there (the posture checks are `skipped`), and run the posture checks on the server or through the scheduled push.

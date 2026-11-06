@@ -6,12 +6,19 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\ServiceProvider;
+use Qiick\Excubia\Checks\LaravelAppKeyCheck;
+use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
 use Qiick\Excubia\Checks\LaravelDebugModeCheck;
+use Qiick\Excubia\Checks\LaravelDevPackagesCheck;
 use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
+use Qiick\Excubia\Checks\LaravelLogLevelCheck;
 use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
 use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
+use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
 use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
+use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
 use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Data\CheckResultData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
@@ -73,9 +80,12 @@ return new class extends Migration
 PHP;
 }
 
-function postureResult(HealthCheckContract $check, ?ExcubiaConfigurationData $configuration = null, bool $isBooted = true): CheckResultData
+/**
+ * @param  list<string>  $requiredPackageNames  composer.json `require` names of the snapshot
+ */
+function postureResult(HealthCheckContract $check, ?ExcubiaConfigurationData $configuration = null, bool $isBooted = true, array $requiredPackageNames = []): CheckResultData
 {
-    $snapshot = new ProjectSnapshotData(null, null, [], [], null);
+    $snapshot = new ProjectSnapshotData(null, null, [], [], null, requiredPackageNames: $requiredPackageNames);
 
     if ($isBooted) {
         $snapshot = $snapshot->withLaravelPosture((new LaravelPostureService)->collect(app()));
@@ -121,6 +131,12 @@ it('reports every posture check as skipped when the snapshot has no posture', fu
     'failed jobs' => fn () => new LaravelFailedJobsCheck,
     'scheduler heartbeat' => fn () => new LaravelSchedulerHeartbeatCheck,
     'maintenance mode' => fn () => new LaravelMaintenanceModeCheck,
+    'app key' => fn () => new LaravelAppKeyCheck,
+    'session security' => fn () => new LaravelSessionSecurityCheck,
+    'cors wildcard' => fn () => new LaravelCorsWildcardCheck,
+    'production drivers' => fn () => new LaravelProductionDriversCheck,
+    'log level' => fn () => new LaravelLogLevelCheck,
+    'dev packages' => fn () => new LaravelDevPackagesCheck,
 ]);
 
 describe('laravel-debug-mode', function () {
@@ -305,6 +321,222 @@ describe('laravel-maintenance-mode', function () {
     });
 });
 
+/**
+ * Production configuration that passes every #130 check, so a test only
+ * changes the key it is about.
+ */
+function productionPostureApp(): void
+{
+    postureApp();
+    app()['env'] = 'production';
+    config([
+        'app.key' => 'base64:'.base64_encode(str_repeat('k', 32)),
+        'app.url' => 'https://example.test',
+        'session.secure' => true,
+        'session.http_only' => true,
+        'session.driver' => 'database',
+        'cors.allowed_origins' => ['https://example.test'],
+        'cors.supports_credentials' => true,
+        'queue.default' => 'redis',
+        'queue.connections.redis' => ['driver' => 'redis'],
+        'cache.default' => 'redis',
+        'cache.stores.redis' => ['driver' => 'redis'],
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp' => ['transport' => 'smtp'],
+        'logging.default' => 'stack',
+        'logging.channels.stack' => ['driver' => 'stack', 'channels' => ['daily']],
+        'logging.channels.daily' => ['driver' => 'daily', 'level' => 'warning'],
+    ]);
+}
+
+/**
+ * Stand-ins for the development tools, registered under their real provider
+ * names: none of them is a dependency of this package.
+ */
+final class PostureFakeTelescopeServiceProvider extends ServiceProvider {}
+
+final class PostureFakeDebugbarServiceProvider extends ServiceProvider {}
+
+final class PostureFakeClockworkServiceProvider extends ServiceProvider {}
+
+class_alias(PostureFakeTelescopeServiceProvider::class, 'Laravel\Telescope\TelescopeServiceProvider');
+class_alias(PostureFakeDebugbarServiceProvider::class, 'Barryvdh\Debugbar\ServiceProvider');
+class_alias(PostureFakeClockworkServiceProvider::class, 'Clockwork\Support\Laravel\ClockworkServiceProvider');
+
+it('passes every #130 check on a production app configured for production', function (HealthCheckContract $check) {
+    productionPostureApp();
+
+    expect(postureResult($check, requiredPackageNames: ['laravel/framework'])->status->value)->toBe('pass');
+})->with([
+    'app key' => fn () => new LaravelAppKeyCheck,
+    'session security' => fn () => new LaravelSessionSecurityCheck,
+    'cors wildcard' => fn () => new LaravelCorsWildcardCheck,
+    'production drivers' => fn () => new LaravelProductionDriversCheck,
+    'log level' => fn () => new LaravelLogLevelCheck,
+    'dev packages' => fn () => new LaravelDevPackagesCheck,
+]);
+
+it('skips the production-only #130 checks outside production', function (HealthCheckContract $check) {
+    productionPostureApp();
+    app()['env'] = 'staging';
+    $result = postureResult($check);
+
+    expect($result->status->value)->toBe('skipped')
+        ->and($result->findings[0]->message)->toContain('production environment only');
+})->with([
+    'session security' => fn () => new LaravelSessionSecurityCheck,
+    'cors wildcard' => fn () => new LaravelCorsWildcardCheck,
+    'production drivers' => fn () => new LaravelProductionDriversCheck,
+    'log level' => fn () => new LaravelLogLevelCheck,
+    'dev packages' => fn () => new LaravelDevPackagesCheck,
+]);
+
+describe('laravel-app-key', function () {
+    it('fails at critical when app.key is empty, in any environment', function (string $environment, ?string $key) {
+        productionPostureApp();
+        app()['env'] = $environment;
+        config(['app.key' => $key]);
+        $finding = postureResult(new LaravelAppKeyCheck)->findings[0];
+
+        expect($finding->status->value)->toBe('fail')
+            ->and($finding->severity->value)->toBe('critical')
+            ->and($finding->subject)->toBe('app.key')
+            ->and($finding->message)->toBe('app.key is empty.');
+    })->with([
+        'production, empty' => ['production', ''],
+        'local, null' => ['local', null],
+    ]);
+});
+
+describe('laravel-session-security', function () {
+    it('warns at medium for each insecure session cookie key', function () {
+        productionPostureApp();
+        config(['session.secure' => null, 'session.http_only' => false]);
+        $result = postureResult(new LaravelSessionSecurityCheck);
+
+        expect($result->status->value)->toBe('warn')
+            ->and(array_map(fn ($finding) => $finding->subject, $result->findings))->toBe(['session.secure', 'session.http_only'])
+            ->and($result->findings[0]->severity->value)->toBe('medium')
+            ->and($result->findings[0]->message)->toBe('session.secure is false while app.url is https.');
+    });
+
+    it('accepts an insecure cookie while app.url is plain http', function () {
+        productionPostureApp();
+        config(['session.secure' => false, 'app.url' => 'http://example.test']);
+
+        expect(postureResult(new LaravelSessionSecurityCheck)->status->value)->toBe('pass');
+    });
+});
+
+describe('laravel-cors-wildcard', function () {
+    it('fails at high for * with credentials and passes for * alone', function () {
+        productionPostureApp();
+        config(['cors.allowed_origins' => ['https://example.test', '*']]);
+        $withCredentials = postureResult(new LaravelCorsWildcardCheck)->findings[0];
+        config(['cors.supports_credentials' => false]);
+        $alone = postureResult(new LaravelCorsWildcardCheck);
+
+        expect($withCredentials->status->value)->toBe('fail')
+            ->and($withCredentials->severity->value)->toBe('high')
+            ->and($withCredentials->subject)->toBe('cors.allowed_origins')
+            ->and($withCredentials->details)->toBe(['hasCredentials' => true])
+            ->and($alone->findings)->toBe([]);
+    });
+});
+
+describe('laravel-production-drivers', function () {
+    it('warns at medium once per development driver', function () {
+        productionPostureApp();
+        config([
+            'queue.default' => 'sync',
+            'queue.connections.sync' => ['driver' => 'sync'],
+            'cache.default' => 'array',
+            'cache.stores.array' => ['driver' => 'array'],
+            'session.driver' => 'array',
+            'mail.default' => 'log',
+            'mail.mailers.log' => ['transport' => 'log'],
+        ]);
+        $result = postureResult(new LaravelProductionDriversCheck);
+
+        expect($result->status->value)->toBe('warn')
+            ->and(array_map(fn ($finding) => $finding->subject, $result->findings))->toBe(['queue-driver', 'cache-driver', 'session-driver', 'mail-driver'])
+            ->and($result->findings[0]->severity->value)->toBe('medium')
+            ->and($result->findings[0]->message)->toBe('The queue driver is sync in production.')
+            ->and($result->findings[1]->details)->toBe(['component' => 'cache', 'driver' => 'array']);
+    });
+
+    it('flags the null cache and the array mailer', function () {
+        productionPostureApp();
+        config([
+            'cache.stores.redis' => ['driver' => 'null'],
+            'mail.mailers.smtp' => ['transport' => 'array'],
+        ]);
+
+        expect(array_map(fn ($finding) => $finding->subject, postureResult(new LaravelProductionDriversCheck)->findings))->toBe(['cache-driver', 'mail-driver']);
+    });
+});
+
+describe('laravel-log-level', function () {
+    it('warns at low when the default channel or a stacked channel logs at debug', function (array $channels) {
+        productionPostureApp();
+        config($channels);
+        $finding = postureResult(new LaravelLogLevelCheck)->findings[0];
+
+        expect($finding->status->value)->toBe('warn')
+            ->and($finding->severity->value)->toBe('low')
+            ->and($finding->subject)->toBe('logging.default');
+    })->with([
+        'stacked debug channel' => [['logging.channels.stack.channels' => ['daily', 'single'], 'logging.channels.single' => ['driver' => 'single', 'level' => 'DEBUG']]],
+        'single channel without level' => [['logging.default' => 'single', 'logging.channels.single' => ['driver' => 'single']]],
+    ]);
+});
+
+describe('laravel-dev-packages', function () {
+    it('warns at medium for each tool in require that the app has enabled', function () {
+        productionPostureApp();
+        app()->register(PostureFakeTelescopeServiceProvider::class);
+        app()->register(PostureFakeClockworkServiceProvider::class);
+        config(['clockwork.enable' => true]);
+        $result = postureResult(new LaravelDevPackagesCheck, requiredPackageNames: ['laravel/framework', 'laravel/telescope', 'itsgoingd/clockwork']);
+
+        expect($result->status->value)->toBe('warn')
+            ->and(array_map(fn ($finding) => $finding->subject, $result->findings))->toBe(['laravel/telescope', 'itsgoingd/clockwork'])
+            ->and($result->findings[0]->severity->value)->toBe('medium')
+            ->and($result->findings[0]->message)->toBe('laravel/telescope is in require and enabled in production.')
+            ->and($result->findings[0]->details)->toBe(['package' => 'laravel/telescope']);
+    });
+
+    it('passes when the tool is only in require-dev or turned off, and follows app.debug when unset', function () {
+        productionPostureApp();
+        app()->register(PostureFakeTelescopeServiceProvider::class);
+        app()->register(PostureFakeDebugbarServiceProvider::class);
+        $requireDevOnly = postureResult(new LaravelDevPackagesCheck, requiredPackageNames: ['laravel/framework']);
+        config(['telescope.enabled' => false, 'debugbar.enabled' => null, 'app.debug' => false]);
+        $turnedOff = postureResult(new LaravelDevPackagesCheck, requiredPackageNames: ['laravel/telescope', 'barryvdh/laravel-debugbar']);
+        config(['app.debug' => true]);
+        $followsDebug = postureResult(new LaravelDevPackagesCheck, requiredPackageNames: ['laravel/telescope', 'barryvdh/laravel-debugbar']);
+
+        expect($requireDevOnly->status->value)->toBe('pass')
+            ->and($turnedOff->status->value)->toBe('pass')
+            ->and(array_map(fn ($finding) => $finding->subject, $followsDebug->findings))->toBe(['barryvdh/laravel-debugbar']);
+    });
+
+    it('reads require from composer.json through excubia:check', function () {
+        postureApp([
+            'composer.json' => '{"require": {"laravel/telescope": "^5.0"}, "require-dev": {"barryvdh/laravel-debugbar": "^3.0"}}',
+        ]);
+        app()['env'] = 'production';
+        config(['app.debug' => true]);
+        app()->register(PostureFakeTelescopeServiceProvider::class);
+        app()->register(PostureFakeDebugbarServiceProvider::class);
+
+        Artisan::call('excubia:check', ['--format' => 'json', '--no-banner' => true, '--fail-on' => 'none', '--only' => 'laravel-dev-packages']);
+        $report = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+
+        expect(array_column($report['checks'][0]['findings'], 'subject'))->toBe(['laravel/telescope']);
+    });
+});
+
 it('reports posture through excubia:check and drops ignored rows', function () {
     postureApp([
         'excubia.json' => '{"ignore": [{"checkId": "laravel-maintenance-mode", "subject": "maintenance-mode", "reason": "Planned"}]}',
@@ -350,9 +582,51 @@ it('keeps .env values, DSNs, hostnames and paths out of every posture finding', 
     Artisan::call('excubia:check', ['--format' => 'json', '--no-banner' => true, '--fail-on' => 'none', '--only' => 'laravel-pending-migrations,laravel-failed-jobs']);
     $output .= Artisan::output();
 
+    $output .= productionPostureOutput();
+
     expect($output)->toContain('Debug mode is on in the production environment.', '1 failed job.', 'The migration status could not be read')
+        ->toContain('app.key is empty.', 'session.secure is false while app.url is https.', 'cors.allowed_origins contains * while', 'The queue driver is sync in production.', 'logs at debug level', 'laravel/telescope is in require')
         ->not->toContain('sentinel')
         ->not->toContain($project)
         ->not->toContain(sys_get_temp_dir())
         ->not->toContain(base_path());
 });
+
+/**
+ * JSON output of the #130 checks with every one of them firing, and
+ * sentinel values in the keys they read: none may reach a finding.
+ */
+function productionPostureOutput(): string
+{
+    postureApp(['composer.json' => '{"require": {"laravel/telescope": "^5.0"}}']);
+    app()['env'] = 'production';
+    config([
+        'app.key' => '',
+        'app.url' => 'https://app-host-sentinel.example/path-sentinel',
+        'session.secure' => false,
+        'session.http_only' => false,
+        'session.domain' => 'cookie-domain-sentinel.example',
+        'session.driver' => 'array',
+        'cors.allowed_origins' => ['https://cors-origin-sentinel.example', '*'],
+        'cors.supports_credentials' => true,
+        'queue.default' => 'sentinel-connection',
+        'queue.connections.sentinel-connection' => ['driver' => 'sync', 'host' => 'queue-host-sentinel'],
+        'cache.default' => 'array',
+        'mail.default' => 'log',
+        'mail.mailers.log' => ['transport' => 'log', 'channel' => 'mail-channel-sentinel'],
+        'logging.default' => 'single',
+        'logging.channels.single' => ['driver' => 'single', 'path' => '/log-path-sentinel/laravel.log', 'level' => 'debug'],
+        'telescope.enabled' => true,
+        'telescope.domain' => 'telescope-host-sentinel.example',
+    ]);
+    app()->register(PostureFakeTelescopeServiceProvider::class);
+
+    Artisan::call('excubia:check', [
+        '--format' => 'json',
+        '--no-banner' => true,
+        '--fail-on' => 'none',
+        '--only' => 'laravel-app-key,laravel-session-security,laravel-cors-wildcard,laravel-production-drivers,laravel-log-level,laravel-dev-packages',
+    ]);
+
+    return Artisan::output();
+}

@@ -1,0 +1,41 @@
+{
+    "name": "@types/node",
+    "modified": "2026-10-28T09:12:44.512Z",
+    "dist-tags": {
+        "latest": "22.10.2"
+    },
+    "versions": {
+        "20.11.0": {
+            "name": "@types/node",
+            "version": "20.11.0",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/@types/node/-/node-20.11.0.tgz"
+            }
+        },
+        "20.17.10": {
+            "name": "@types/node",
+            "version": "20.17.10",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/@types/node/-/node-20.17.10.tgz"
+            }
+        },
+        "22.9.0": {
+            "name": "@types/node",
+            "version": "22.9.0",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/@types/node/-/node-22.9.0.tgz"
+            }
+        },
+        "22.10.2": {
+            "name": "@types/node",
+            "version": "22.10.2",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/@types/node/-/node-22.10.2.tgz"
+            }
+        }
+    }
+}

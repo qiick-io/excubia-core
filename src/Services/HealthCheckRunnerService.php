@@ -8,18 +8,41 @@ use Composer\InstalledVersions;
 use DateTimeImmutable;
 use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
+use Qiick\Excubia\Checks\ComposerOutdatedCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
+use Qiick\Excubia\Checks\DependencyLicensesCheck;
+use Qiick\Excubia\Checks\EnvExampleSyncCheck;
+use Qiick\Excubia\Checks\LaravelAppKeyCheck;
+use Qiick\Excubia\Checks\LaravelBackupsCheck;
+use Qiick\Excubia\Checks\LaravelCacheCheck;
+use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseConnectionsCheck;
+use Qiick\Excubia\Checks\LaravelDatabaseSizeCheck;
 use Qiick\Excubia\Checks\LaravelDebugModeCheck;
+use Qiick\Excubia\Checks\LaravelDevPackagesCheck;
+use Qiick\Excubia\Checks\LaravelDiskSpaceCheck;
 use Qiick\Excubia\Checks\LaravelEndOfLifeCheck;
 use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
+use Qiick\Excubia\Checks\LaravelLogLevelCheck;
 use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelNextMajorBlockerCheck;
 use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
 use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
+use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
+use Qiick\Excubia\Checks\LaravelQueueBacklogCheck;
+use Qiick\Excubia\Checks\LaravelQueueWorkersCheck;
+use Qiick\Excubia\Checks\LaravelRedisMemoryCheck;
 use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
+use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
+use Qiick\Excubia\Checks\LaravelStorageCheck;
 use Qiick\Excubia\Checks\NodeEndOfLifeCheck;
 use Qiick\Excubia\Checks\NpmAdvisoriesCheck;
+use Qiick\Excubia\Checks\NpmOutdatedCheck;
 use Qiick\Excubia\Checks\PhpEndOfLifeCheck;
+use Qiick\Excubia\Checks\PhpOpcacheCheck;
+use Qiick\Excubia\Checks\PhpPlatformRequirementsCheck;
+use Qiick\Excubia\Checks\PhpProductionIniCheck;
 use Qiick\Excubia\Contracts\HealthCheckContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Data\CheckResultData;
@@ -127,7 +150,7 @@ final class HealthCheckRunnerService
             $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
-        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults));
+        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults), javascriptLockfile: $snapshot->javascriptLockfileName(), schedule: $snapshot->laravelPosture?->scheduledTasks);
         $report = $raw->withoutIgnoredFindings($configuration, $this->today);
 
         return [
@@ -137,6 +160,8 @@ final class HealthCheckRunnerService
                 $report->generatedAt,
                 $report->excubiaVersion,
                 $report->project,
+                javascriptLockfile: $report->javascriptLockfile,
+                schedule: $report->schedule,
             ),
             'expiredIgnoreWarnings' => $configuration->expiredIgnoreWarnings($raw->findings(), $this->today),
         ];
@@ -185,7 +210,7 @@ final class HealthCheckRunnerService
             );
         }
 
-        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings, $checkResult->endOfLifeCycle);
+        return CheckResultData::fromFindings($checkResult->checkId, $checkResult->name, $findings, $checkResult->endOfLifeCycle, $checkResult->licenseInventory);
     }
 
     /**
@@ -212,6 +237,29 @@ final class HealthCheckRunnerService
             new LaravelFailedJobsCheck,
             new LaravelSchedulerHeartbeatCheck,
             new LaravelMaintenanceModeCheck,
+            new LaravelAppKeyCheck,
+            new LaravelSessionSecurityCheck,
+            new LaravelCorsWildcardCheck,
+            new LaravelProductionDriversCheck,
+            new LaravelLogLevelCheck,
+            new LaravelDevPackagesCheck,
+            new DependencyLicensesCheck(new SpdxExpressionService),
+            new LaravelDatabaseCheck,
+            new LaravelCacheCheck,
+            new LaravelStorageCheck,
+            new LaravelDiskSpaceCheck,
+            new LaravelQueueBacklogCheck,
+            new PhpPlatformRequirementsCheck($constraints),
+            new EnvExampleSyncCheck,
+            new ComposerOutdatedCheck($packagist, $constraints),
+            new LaravelQueueWorkersCheck,
+            new NpmOutdatedCheck(new NpmRegistryService($this->httpClient, $cache), $constraints),
+            new LaravelBackupsCheck,
+            new LaravelDatabaseConnectionsCheck,
+            new LaravelDatabaseSizeCheck,
+            new LaravelRedisMemoryCheck,
+            new PhpOpcacheCheck,
+            new PhpProductionIniCheck,
         ];
     }
 }

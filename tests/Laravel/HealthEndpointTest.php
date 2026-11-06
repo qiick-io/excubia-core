@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\HealthEndpointService;
+use Qiick\Excubia\Laravel\PhpWebRuntimeSnapshotService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -150,12 +151,25 @@ it('answers 404 to a wrong or missing secret', function (?string $secret) {
     $headers = $secret === null ? [] : [HealthEndpointService::SECRET_HEADER => $secret];
 
     $this->get('/excubia/health', $headers)->assertNotFound();
+
+    expect(PhpWebRuntimeSnapshotService::read($this->app))->toBeNull();
 })->with([
     'missing' => [null],
     'wrong' => ['wrong-secret'],
     'empty' => [''],
     'prefix' => ['test-health'],
 ]);
+
+it('stores the web-SAPI PHP runtime snapshot on an authenticated request, booleans and percentages only', function () {
+    bootHealthProject($this->app, ['enabled' => true]);
+
+    $this->get('/excubia/health', [HealthEndpointService::SECRET_HEADER => HEALTH_SECRET])->assertOk();
+    $snapshot = PhpWebRuntimeSnapshotService::read($this->app);
+
+    expect($snapshot)->toBeArray()
+        ->and(array_keys((array) $snapshot))->toBe(['collectedAt', 'isOpcacheEnabled', 'hitRate', 'memoryUsedPercent', 'cachedScripts', 'isValidateTimestampsEnabled', 'isDisplayErrorsEnabled', 'isExposePhpEnabled', 'isLogErrorsEnabled'])
+        ->and(abs(($snapshot['collectedAt'] ?? 0) - time()))->toBeLessThan(60);
+});
 
 it('answers a single skipped entry before the first run', function () {
     bootHealthProject($this->app, ['enabled' => true]);

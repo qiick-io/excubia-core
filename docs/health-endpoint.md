@@ -56,7 +56,7 @@ The header is compared with `hash_equals`. A missing, empty or wrong secret gets
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `finishedAt` | integer | Unix timestamp (UTC) when the stored run finished. For the "not run yet" answer, the time of the request. |
-| `checkResults[]` | list | One entry per check of the stored run, in report order (at most 14, one per check id, or the single `excubia-run` entry). |
+| `checkResults[]` | list | One entry per check of the stored run, in report order (one per check id, or the single `excubia-run` entry). |
 | `name` | string | Check id (`php-eol`, …), or `excubia-run`. |
 | `label` | string | Check name as in the report. |
 | `status` | string | `ok`, `warning`, `failed`, `crashed` or `skipped` (mapping below). |
@@ -124,4 +124,6 @@ Before the first stored run, the answer is `200` with one `skipped` entry:
 
 The result is one file, `storage/excubia/health.json` (`storage_path('excubia/health.json')`), written atomically after each Artisan run while the endpoint is enabled. It is the app's own runtime storage, not a file of the scanned project: SPEC §7 ("never writes to the scanned project except `--output`") is about `bin/excubia` scanning a project, and `bin/excubia` never writes it. The response cache directory is not used because it defaults to the shared system temp directory, which is not durable and is shared across projects.
 
-The payload holds check ids, check names, statuses, severities, counts and package or runtime names. Finding messages, fix hints and evidence URLs are not copied, so no absolute path, hostname, token or `.env` value reaches the response.
+The payload holds check ids, check names, statuses, severities, counts and finding subjects: package or runtime names, and for the infrastructure checks the connection, store or queue name, `storage`, `bootstrap/cache`, `disk`, `php` or an `ext-*` name. Finding messages, fix hints and evidence URLs are not copied, so no absolute path, hostname, token or `.env` value reaches the response.
+
+An authenticated request also refreshes, at most once an hour, a snapshot of the web SAPI's OPcache status and production `php.ini` directives for `php-opcache` and `php-production-ini` (#172). `excubia:check` runs on the CLI SAPI, whose ini settings differ, so those checks read only this snapshot and are `skipped` until it exists. It is stored under the cache key `excubia:php-runtime:web` in the default cache store for 24 hours: booleans, the hit rate and memory percentages, the cached script count and the Unix time, never a path or an ini value. A request with a wrong or missing secret writes nothing. When the cache store fails, the request is still answered and the checks stay skipped.

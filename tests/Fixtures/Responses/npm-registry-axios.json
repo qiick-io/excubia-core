@@ -1,0 +1,82 @@
+{
+    "name": "axios",
+    "modified": "2026-10-28T09:12:44.512Z",
+    "dist-tags": {
+        "latest": "1.7.9",
+        "next": "1.0.0-alpha.1"
+    },
+    "versions": {
+        "0.27.2": {
+            "name": "axios",
+            "version": "0.27.2",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-0.27.2.tgz"
+            }
+        },
+        "0.28.0": {
+            "name": "axios",
+            "version": "0.28.0",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-0.28.0.tgz"
+            }
+        },
+        "0.28.1": {
+            "name": "axios",
+            "version": "0.28.1",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-0.28.1.tgz"
+            }
+        },
+        "1.0.0-alpha.1": {
+            "name": "axios",
+            "version": "1.0.0-alpha.1",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-1.0.0-alpha.1.tgz"
+            }
+        },
+        "1.0.0": {
+            "name": "axios",
+            "version": "1.0.0",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-1.0.0.tgz"
+            }
+        },
+        "1.6.8": {
+            "name": "axios",
+            "version": "1.6.8",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-1.6.8.tgz"
+            }
+        },
+        "1.7.0": {
+            "name": "axios",
+            "version": "1.7.0",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-1.7.0.tgz"
+            }
+        },
+        "1.7.8": {
+            "name": "axios",
+            "version": "1.7.8",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-1.7.8.tgz"
+            }
+        },
+        "1.7.9": {
+            "name": "axios",
+            "version": "1.7.9",
+            "dist": {
+                "shasum": "0000000000000000000000000000000000000000",
+                "tarball": "https://registry.npmjs.org/axios/-/axios-1.7.9.tgz"
+            }
+        }
+    }
+}

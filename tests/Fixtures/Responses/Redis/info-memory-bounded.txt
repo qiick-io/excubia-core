@@ -1,0 +1,14 @@
+# Memory
+used_memory:96468992
+used_memory_human:92.00M
+used_memory_rss:104857600
+used_memory_rss_human:100.00M
+used_memory_peak:99614720
+used_memory_peak_human:95.00M
+used_memory_lua:31744
+used_memory_scripts:0
+maxmemory:104857600
+maxmemory_human:100.00M
+maxmemory_policy:allkeys-lru
+mem_fragmentation_ratio:1.09
+mem_allocator:jemalloc-5.3.0

@@ -40,10 +40,56 @@ final class RuntimeBufferService
     private const BATCH_PATTERN = '/^batch-(\d{20})-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.ndjson$/';
 
     /**
-     * Metric fields of an aggregate. Every other field is a dimension and
-     * part of the merge key.
+     * Metric fields that add up when two aggregates merge: integer counters
+     * and decimal totals. A type carries only the ones it needs (#132, and
+     * `totalRepeats` for `duplicateQuery`, #148).
      */
-    private const METRIC_FIELDS = ['count', 'errorCount', 'totalMs', 'maxMs'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats'];
+
+    private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
+
+    /**
+     * Metric fields that keep the larger value when two aggregates merge.
+     */
+    private const MAXIMUM_FIELDS = ['maxMs', 'maxMb'];
+
+    /**
+     * Integer metric fields that keep the larger value when two aggregates
+     * merge, and stay integers (`maxRepeats` of `duplicateQuery`, #148).
+     */
+    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats'];
+
+    /**
+     * Gauges of the `server` type (#149): a reading, not a count, and null
+     * when the platform does not expose it. Two samples of one server in one
+     * minute keep the larger reading of each gauge (null only when both are
+     * null), so the merge does not depend on order and an alert never
+     * misses a peak.
+     */
+    public const GAUGE_FIELDS = ['loadAverage1', 'loadAverage5', 'loadAverage15', 'cpuCores', 'cpuLimit', 'memoryUsedMb', 'memoryTotalMb', 'diskUsedGb', 'diskTotalGb'];
+
+    /**
+     * Boolean metric fields: true when either side of a merge is true
+     * (`isContainer` of `server`, #173). A missing value counts as false.
+     */
+    private const FLAG_FIELDS = ['isContainer'];
+
+    /**
+     * Metric fields that hold one number each.
+     */
+    private const NUMBER_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS, ...self::MAXIMUM_COUNTER_FIELDS];
+
+    /**
+     * Latency histogram of the duration types (#147): a list of counts, one
+     * per bucket of `RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS` plus overflow.
+     */
+    private const HISTOGRAM_FIELD = 'histogram';
+
+    /**
+     * Every metric field. Every other field is a dimension and part of the
+     * merge key.
+     */
+    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, ...self::FLAG_FIELDS, self::HISTOGRAM_FIELD];
 
     public function __construct(
         private readonly string $directory,
@@ -168,7 +214,9 @@ final class RuntimeBufferService
 
     /**
      * Merge aggregates that share every dimension (type, bucket, sample rate
-     * and the type's keys): counts and totals add up, maxima take the larger.
+     * and the type's keys): counts and totals add up, maxima take the larger,
+     * histograms add up element by element, gauges keep the larger reading
+     * (see `combine()`).
      *
      * @param  list<array<string, mixed>>  $aggregates
      * @return list<array<string, mixed>>
@@ -207,6 +255,12 @@ final class RuntimeBufferService
 
     /**
      * Add one aggregate's metrics to another with the same dimensions.
+     * Only the metric fields present in either side are written.
+     *
+     * Histograms add up element by element. When only one side has a
+     * histogram, or the two have a different number of buckets (written by
+     * versions with other bounds), the merged aggregate has none: its counts
+     * would no longer add up to `count`, and the histogram is optional.
      *
      * @param  array<string, mixed>  $into
      * @param  array<string, mixed>  $from
@@ -214,25 +268,139 @@ final class RuntimeBufferService
      */
     public static function combine(array $into, array $from): array
     {
-        $into['count'] = self::integerValue($into['count'] ?? 0) + self::integerValue($from['count'] ?? 0);
-        $into['errorCount'] = self::integerValue($into['errorCount'] ?? 0) + self::integerValue($from['errorCount'] ?? 0);
-        $into['totalMs'] = round(self::numberValue($into['totalMs'] ?? 0) + self::numberValue($from['totalMs'] ?? 0), 3);
-        $into['maxMs'] = max(self::numberValue($into['maxMs'] ?? 0), self::numberValue($from['maxMs'] ?? 0));
+        foreach (self::COUNTER_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = self::integerValue($into[$field] ?? 0) + self::integerValue($from[$field] ?? 0);
+            }
+        }
+
+        foreach (self::TOTAL_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = round(self::numberValue($into[$field] ?? 0) + self::numberValue($from[$field] ?? 0), 3);
+            }
+        }
+
+        foreach (self::MAXIMUM_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = max(self::numberValue($into[$field] ?? 0), self::numberValue($from[$field] ?? 0));
+            }
+        }
+
+        foreach (self::MAXIMUM_COUNTER_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = max(self::integerValue($into[$field] ?? 0), self::integerValue($from[$field] ?? 0));
+            }
+        }
+
+        foreach (self::GAUGE_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = self::largerGauge($into[$field] ?? null, $from[$field] ?? null);
+            }
+        }
+
+        foreach (self::FLAG_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = ($into[$field] ?? false) === true || ($from[$field] ?? false) === true;
+            }
+        }
+
+        if (array_key_exists(self::HISTOGRAM_FIELD, $into) || array_key_exists(self::HISTOGRAM_FIELD, $from)) {
+            $histogram = self::sumHistograms($into[self::HISTOGRAM_FIELD] ?? null, $from[self::HISTOGRAM_FIELD] ?? null);
+
+            if ($histogram === null) {
+                unset($into[self::HISTOGRAM_FIELD]);
+            } else {
+                $into[self::HISTOGRAM_FIELD] = $histogram;
+            }
+        }
 
         return $into;
     }
 
     /**
+     * The larger of two gauge readings; a null reading loses to a number.
+     */
+    private static function largerGauge(mixed $first, mixed $second): int|float|null
+    {
+        $readings = array_filter([$first, $second], static fn (mixed $reading): bool => is_int($reading) || is_float($reading));
+
+        return $readings === [] ? null : max($readings);
+    }
+
+    /**
+     * Element-by-element sum of two histograms, or null when either is
+     * missing or they differ in length.
+     *
+     * @return list<int>|null
+     */
+    private static function sumHistograms(mixed $first, mixed $second): ?array
+    {
+        if (! self::isHistogram($first) || ! self::isHistogram($second) || count($first) !== count($second)) {
+            return null;
+        }
+
+        $sum = [];
+
+        foreach ($first as $index => $bucketCount) {
+            $sum[] = $bucketCount + $second[$index];
+        }
+
+        return $sum;
+    }
+
+    /**
+     * @phpstan-assert-if-true list<int> $value
+     */
+    private static function isHistogram(mixed $value): bool
+    {
+        if (! is_array($value) || $value === [] || ! array_is_list($value)) {
+            return false;
+        }
+
+        foreach ($value as $bucketCount) {
+            if (! is_int($bucketCount) || $bucketCount < 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Every aggregate has a type, a bucket, `count` and `errorCount`; any
+     * other metric field it carries is a number, a gauge is a number or
+     * null, a flag is a boolean, and a histogram is a list of non-negative counts.
+     *
      * @param  array<mixed>  $aggregate
      */
     private static function isAggregate(array $aggregate): bool
     {
-        return is_string($aggregate['type'] ?? null)
-            && is_string($aggregate['bucket'] ?? null)
-            && is_int($aggregate['count'] ?? null)
-            && is_int($aggregate['errorCount'] ?? null)
-            && is_numeric($aggregate['totalMs'] ?? null)
-            && is_numeric($aggregate['maxMs'] ?? null);
+        if (! is_string($aggregate['type'] ?? null)
+            || ! is_string($aggregate['bucket'] ?? null)
+            || ! is_int($aggregate['count'] ?? null)
+            || ! is_int($aggregate['errorCount'] ?? null)) {
+            return false;
+        }
+
+        foreach (self::NUMBER_FIELDS as $field) {
+            if (array_key_exists($field, $aggregate) && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
+                return false;
+            }
+        }
+
+        foreach (self::GAUGE_FIELDS as $field) {
+            if (array_key_exists($field, $aggregate) && $aggregate[$field] !== null && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
+                return false;
+            }
+        }
+
+        foreach (self::FLAG_FIELDS as $field) {
+            if (array_key_exists($field, $aggregate) && ! is_bool($aggregate[$field])) {
+                return false;
+            }
+        }
+
+        return ! array_key_exists(self::HISTOGRAM_FIELD, $aggregate) || self::isHistogram($aggregate[self::HISTOGRAM_FIELD]);
     }
 
     private static function integerValue(mixed $value): int

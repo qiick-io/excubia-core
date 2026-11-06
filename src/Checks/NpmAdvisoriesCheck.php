@@ -17,6 +17,9 @@ use Qiick\Excubia\Services\OsvApiService;
 /**
  * Fails when OSV reports a vulnerability for a locked npm version.
  * Severity comes from a numeric CVSS score when one is present, otherwise medium.
+ * The packages come from `package-lock.json`, `yarn.lock` or
+ * `pnpm-lock.yaml` (#21); each finding names the lockfile in its message
+ * and in `details.lockfile`.
  */
 final class NpmAdvisoriesCheck implements HealthCheckContract
 {
@@ -34,8 +37,10 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
 
     public function run(ProjectSnapshotData $projectSnapshot, ExcubiaConfigurationData $configuration): CheckResultData
     {
-        if (! $projectSnapshot->hasNpmLockfile) {
-            return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'package-lock.json is not present.');
+        $lockfile = $projectSnapshot->javascriptLockfileName();
+
+        if ($lockfile === null) {
+            return CheckResultData::skipped($this->id(), $this->name(), 'npm', 'No JavaScript lockfile is present (pnpm-lock.yaml, yarn.lock or package-lock.json).');
         }
 
         $packages = [];
@@ -58,7 +63,7 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
                 severity: $this->severity($vulnerability->severity),
                 status: FindingStatusEnum::Fail,
                 subject: $vulnerability->packageName,
-                message: 'Known vulnerability '.$vulnerability->id.'.',
+                message: 'Known vulnerability '.$vulnerability->id.' (locked in '.$lockfile.').',
                 fixHint: 'Update '.$vulnerability->packageName.' to ≥ fixed version.',
                 evidenceUrl: 'https://osv.dev/vulnerability/'.$vulnerability->id,
                 advisoryId: $vulnerability->id,
@@ -68,6 +73,7 @@ final class NpmAdvisoriesCheck implements HealthCheckContract
                     'package' => $vulnerability->packageName,
                     'lockedVersion' => $vulnerability->version,
                     'fixedVersions' => [],
+                    'lockfile' => $lockfile,
                 ],
             );
         }

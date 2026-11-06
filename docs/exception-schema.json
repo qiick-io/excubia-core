@@ -9,6 +9,12 @@
     "additionalProperties": false,
     "required": ["groups"],
     "properties": {
+        "release": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9._+/@-]+$",
+            "description": "Optional (#129): the release when the batch was sent, one value for every entry of the batch. Release identifier of the deployed code: the release key of excubia.json, EXCUBIA_RELEASE, then GITHUB_SHA, CI_COMMIT_SHA, VERCEL_GIT_COMMIT_SHA, FORGE_DEPLOY_COMMIT or LARAVEL_CLOUD_COMMIT (no git fallback). Omitted when unknown. It is an extra dimension the app can group by, not part of the fingerprint."
+        },
         "groups": {
             "type": "array",
             "items": { "$ref": "#/$defs/group" }

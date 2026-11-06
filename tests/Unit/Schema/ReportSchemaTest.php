@@ -61,7 +61,13 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'project', 'checks', 'upgradePlan'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile', 'schedule'])
+        ->and($schema['properties']['schedule']['items']['$ref'])->toBe('#/$defs/scheduledTask')
+        ->and($schema['$defs']['scheduledTask']['required'])->toBe(['taskId', 'task', 'expression', 'timezone', 'withoutOverlapping', 'onOneServer', 'runsInMaintenanceMode', 'environments'])
+        ->and($schema['$defs']['scheduledTask']['properties']['taskId']['pattern'])->toBe('^[0-9a-f]{64}$')
+        ->and($schema['properties']['javascriptLockfile']['enum'])->toBe(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'])
+        ->and($schema['$defs']['licenseInventory']['required'])->toBe(['packageCount', 'byLicense', 'byEcosystem'])
+        ->and($schema['$defs']['licenseInventory']['properties']['byEcosystem']['required'])->toBe(['composer', 'npm'])
         ->and($schema['$defs']['project']['required'])->toBe(['php', 'laravel', 'node'])
         ->and(array_keys($schema['$defs']['project']['properties']))->not->toContain('name')
         ->and($schema['$defs']['projectRuntime']['required'])->toBe(['version', 'cycle', 'securitySupportEndsOn', 'activeSupportEndsOn'])
@@ -87,7 +93,8 @@ it('documents the details keys per check id', function () {
     }
 
     expect($keys('composerAdvisoryDetails'))->toBe(['package', 'lockedVersion', 'affectedVersions', 'fixedVersions'])
-        ->and($keys('npmAdvisoryDetails'))->toBe(['package', 'lockedVersion', 'fixedVersions'])
+        ->and($keys('npmAdvisoryDetails'))->toBe(['package', 'lockedVersion', 'fixedVersions', 'lockfile'])
+        ->and($schema['$defs']['npmAdvisoryDetails']['required'])->toBe(['package', 'lockedVersion', 'fixedVersions'])
         ->and($keys('endOfLifeDetails'))->toBe(['cycle', 'securitySupportEndsOn', 'activeSupportEndsOn'])
         ->and($keys('abandonedDetails'))->toBe(['package', 'lockedVersion', 'replacement'])
         ->and($keys('staleDetails'))->toBe(['package', 'lockedVersion'])
@@ -96,6 +103,15 @@ it('documents the details keys per check id', function () {
         ->and($keys('pendingMigrationsDetails'))->toBe(['count'])
         ->and($keys('failedJobsDetails'))->toBe(['count', 'oldestAgeHours'])
         ->and($keys('schedulerHeartbeatDetails'))->toBe(['minutesSinceLastRun'])
+        ->and($keys('corsWildcardDetails'))->toBe(['hasCredentials'])
+        ->and($keys('productionDriversDetails'))->toBe(['component', 'driver'])
+        ->and($keys('devPackagesDetails'))->toBe(['package'])
+        ->and($keys('databaseDetails'))->toBe(['connection'])
+        ->and($keys('cacheDetails'))->toBe(['store'])
+        ->and($keys('storageDetails'))->toBe(['directory'])
+        ->and($keys('diskSpaceDetails'))->toBe(['usedPercent'])
+        ->and($keys('queueBacklogDetails'))->toBe(['queue', 'pendingCount', 'oldestAgeMinutes'])
+        ->and($keys('platformRequirementsDetails'))->toBe(['requirement', 'requiredBy', 'checkedPhpVersion', 'isStandaloneCli'])
         ->and($ruledCheckIds)->toBe([
             'composer-advisories',
             'npm-advisories',
@@ -108,5 +124,42 @@ it('documents the details keys per check id', function () {
             'laravel-pending-migrations',
             'laravel-failed-jobs',
             'laravel-scheduler-heartbeat',
-        ]);
+            'laravel-cors-wildcard',
+            'laravel-production-drivers',
+            'laravel-dev-packages',
+            'dependency-licenses',
+            'laravel-database',
+            'laravel-cache',
+            'laravel-storage',
+            'laravel-disk-space',
+            'laravel-queue-backlog',
+            'php-platform-requirements',
+            'env-example-sync',
+            'composer-outdated',
+            'laravel-queue-workers',
+            'npm-outdated',
+            'laravel-backups',
+            'laravel-database-connections',
+            'laravel-database-size',
+            'laravel-redis-memory',
+            'php-opcache',
+            'php-production-ini',
+        ])
+        ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($keys('envExampleMissingKeyDetails'))->toBe(['key', 'configFiles'])
+        ->and($keys('envExampleUnusedKeysDetails'))->toBe(['keys'])
+        ->and($keys('outdatedDetails'))->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])
+        ->and($schema['$defs']['outdatedDetails']['required'])->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])
+        ->and($keys('queueWorkerHeartbeatDetails'))->toBe(['connection', 'queue', 'minutesSinceLastSeen'])
+        ->and($keys('horizonStatusDetails'))->toBe(['status', 'processes', 'supervisors'])
+        ->and($keys('backupDestinationDetails'))->toBe(['disk', 'ageHours', 'sizeMb', 'count'])
+        ->and($schema['$defs']['backupDestinationDetails']['required'])->toBe(['disk', 'ageHours', 'sizeMb', 'count'])
+        ->and($keys('databaseConnectionsDetails'))->toBe(['connection', 'connectionCount'])
+        ->and($keys('databaseSizeDetails'))->toBe(['connection', 'sizeMb', 'largestTables'])
+        ->and(array_keys($schema['$defs']['databaseSizeDetails']['properties']['largestTables']['items']['properties']))->toBe(['table', 'sizeMb'])
+        ->and($keys('redisMemoryDetails'))->toBe(['connection', 'usedMb', 'maxMb', 'policy'])
+        ->and($schema['$defs']['redisMemoryDetails']['required'])->toBe(['connection', 'usedMb', 'maxMb', 'policy'])
+        ->and($keys('phpOpcacheDetails'))->toBe(['sapi', 'ageMinutes', 'isOpcacheEnabled', 'hitRate', 'memoryUsedPercent', 'cachedScripts', 'isValidateTimestampsEnabled'])
+        ->and($keys('phpProductionIniDetails'))->toBe(['directive', 'isEnabled', 'sapi', 'ageMinutes']);
 });

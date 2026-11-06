@@ -24,11 +24,37 @@ qiick-io/excubia-core
 │   │   ├── LaravelPendingMigrationsCheck.php (laravel-pending-migrations) # skipped "requires Artisan"
 │   │   ├── LaravelFailedJobsCheck.php      (laravel-failed-jobs)          # when it is null
 │   │   ├── LaravelSchedulerHeartbeatCheck.php (laravel-scheduler-heartbeat)
-│   │   └── LaravelMaintenanceModeCheck.php (laravel-maintenance-mode)
+│   │   ├── LaravelMaintenanceModeCheck.php (laravel-maintenance-mode)
+│   │   ├── LaravelAppKeyCheck.php          (laravel-app-key)
+│   │   ├── LaravelSessionSecurityCheck.php (laravel-session-security)
+│   │   ├── LaravelCorsWildcardCheck.php    (laravel-cors-wildcard)
+│   │   ├── LaravelProductionDriversCheck.php (laravel-production-drivers)
+│   │   ├── LaravelLogLevelCheck.php        (laravel-log-level)
+│   │   ├── LaravelDevPackagesCheck.php     (laravel-dev-packages)
+│   │   ├── DependencyLicensesCheck.php     (dependency-licenses)          # lockfile licenses, no request
+│   │   ├── LaravelDatabaseCheck.php        (laravel-database)             # infrastructure checks: probes
+│   │   ├── LaravelCacheCheck.php           (laravel-cache)                # run by LaravelPostureService
+│   │   ├── LaravelStorageCheck.php         (laravel-storage)
+│   │   ├── LaravelDiskSpaceCheck.php       (laravel-disk-space)           # DiskSpaceContract, faked in tests
+│   │   ├── LaravelQueueBacklogCheck.php    (laravel-queue-backlog)
+│   │   ├── PhpPlatformRequirementsCheck.php (php-platform-requirements)   # composer.lock vs running PHP, also standalone
+│   │   ├── EnvExampleSyncCheck.php         (env-example-sync)             # .env.example vs config/*.php env() keys, names only
+│   │   ├── ComposerOutdatedCheck.php       (composer-outdated)            # direct deps vs newest stable, same p2 metadata
+│   │   ├── LaravelQueueWorkersCheck.php    (laravel-queue-workers)        # Horizon status, or worker heartbeat per queue with pending jobs
+│   │   ├── NpmOutdatedCheck.php            (npm-outdated)                 # package.json direct deps vs npm registry, names only
+│   │   ├── LaravelBackupsCheck.php         (laravel-backups)              # spatie/laravel-backup destinations: age, size drop, count
+│   │   ├── LaravelDatabaseConnectionsCheck.php (laravel-database-connections) # open connections of the default connection
+│   │   ├── LaravelDatabaseSizeCheck.php    (laravel-database-size)        # size and five largest tables, DatabaseStatisticsService
+│   │   ├── LaravelRedisMemoryCheck.php     (laravel-redis-memory)         # INFO memory of the Redis connections in use: used / max, policy
+│   │   ├── PhpOpcacheCheck.php             (php-opcache)                  # OPcache on, validate_timestamps, hit rate and memory (web snapshot)
+│   │   └── PhpProductionIniCheck.php       (php-production-ini)           # display_errors, expose_php, log_errors in production
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
-│   │   └── HttpClientContract.php           # getJson(), postJson() — faked in tests
+│   │   ├── HttpClientContract.php           # getJson(), postJson() — faked in tests
+│   │   ├── DiskSpaceContract.php            # usedPercent(directory) — DiskSpaceService, faked in tests
+│   │   ├── DatabaseQueryContract.php        # select(query) on one connection — LaravelDatabaseQueryService, faked in tests
+│   │   └── PhpRuntimeContract.php           # read(): OPcache status + production ini booleans — PhpRuntimeService, faked in tests
 │   ├── Registries/
 │   │   └── HealthCheckRegistry.php          # ordered list of checks, --only/--skip filtering
 │   ├── Services/
@@ -39,6 +65,7 @@ qiick-io/excubia-core
 │   │   ├── PackagistApiService.php          # metadata + security advisories
 │   │   ├── GitHubRepositoryApiService.php   # archived flag, last push
 │   │   ├── OsvApiService.php                # OSV.dev batch query
+│   │   ├── NpmRegistryService.php           # npm registry abbreviated metadata, one name per request (#153)
 │   │   ├── ReportPushService.php            # push envelopes to excubia-app: report, runtime batch, exception batch (SPEC §13)
 │   │   ├── RuntimeBufferService.php         # size-capped NDJSON buffer + claimed batch files (storage/excubia/runtime/ and storage/excubia/exceptions/)
 │   │   ├── HealthResultStoreService.php     # last Oh Dear health payload (storage/excubia/health.json)
@@ -46,7 +73,10 @@ qiick-io/excubia-core
 │   ├── Parsers/
 │   │   ├── ComposerLockParser.php
 │   │   ├── ComposerJsonParser.php
-│   │   ├── PackageLockParser.php
+│   │   ├── PackageLockParser.php            # package-lock.json + npm registry rules shared with Yarn and pnpm
+│   │   ├── YarnLockParser.php               # yarn.lock, classic v1 and Berry (#21)
+│   │   ├── PnpmLockParser.php               # pnpm-lock.yaml 6 and 9 (#21)
+│   │   ├── YamlSubsetParser.php             # the YAML subset Berry and pnpm write, no dependency
 │   │   └── NodeVersionParser.php            # .nvmrc / .node-version / engines
 │   ├── Renderers/
 │   │   ├── TableReportRenderer.php
@@ -79,16 +109,20 @@ qiick-io/excubia-core
 │   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, queue worker heartbeat, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
 │   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
+│   │   ├── PhpWebRuntimeSnapshotService.php # web-SAPI OPcache / php.ini snapshot from the health endpoint → cache key excubia:php-runtime:web, once an hour
 │   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
 │   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
 │   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat
+│   │   ├── QueueWorkerHeartbeatService.php  # worker Looping listener → cache key excubia:worker-heartbeat:<connection>:<queue>, once a minute
 │   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → both buffers + ReportPushService
 │   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
+│   │   ├── LogChannelTapService.php         # logging tap → Monolog processor that names the channel of the next MessageLogged (#174)
 │   │   ├── ExceptionCollectorService.php    # reportable() callback, context (job/route/command), in-memory groups, flush
 │   │   ├── ExceptionPayloadService.php      # masking, relative frames, fingerprint, group merge (pure)
-│   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache)
+│   │   ├── ScheduledTaskIdentityService.php # scheduled task name + taskId, shared by the runtime aggregates and the schedule inventory (#146)
+│   │   └── LaravelPostureService.php        # reads the booted app into LaravelPostureData (container, migrator, failer, cache, schedule inventory)
 │   └── Exceptions/
 │       ├── InvalidConfigurationException.php
 │       ├── LockfileNotFoundException.php

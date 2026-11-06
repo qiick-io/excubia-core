@@ -117,10 +117,19 @@ final class ExceptionCollectorService
      * Record one reported exception. Returns nothing on purpose: a
      * `reportable()` callback that returns false would stop the app's own
      * reporting.
+     *
+     * With runtime `mail` on, a mail transport failure is also counted as a
+     * failed mail, before `exceptions.ignore` applies (#132).
      */
     public function capture(Throwable $exception): void
     {
         $this->guard(function () use ($exception): void {
+            $runtimeCollector = $this->application->bound(RuntimeCollectorService::class) ? $this->application->make(RuntimeCollectorService::class) : null;
+
+            if ($runtimeCollector instanceof RuntimeCollectorService) {
+                $runtimeCollector->recordMailFailure($exception);
+            }
+
             foreach ($this->configuration->ignoredClasses as $ignoredClass) {
                 if ($exception instanceof $ignoredClass) {
                     return;

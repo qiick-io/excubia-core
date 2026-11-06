@@ -50,6 +50,38 @@ it('checks the application base path and exits by --fail-on', function (string $
     'none passes' => ['none', 0],
 ]);
 
+it('runs dependency-licenses from the lockfiles in Artisan', function () {
+    $this->app->setBasePath(dirname(__DIR__).'/Fixtures/Projects/licenses');
+
+    $this->artisan('excubia:check', [
+        '--only' => 'dependency-licenses',
+        '--offline' => true,
+        '--fail-on' => 'high',
+        '--no-banner' => true,
+    ])
+        ->expectsOutputToContain('License denied by checks.dependency-licenses.denied: SSPL-1.0.')
+        ->assertExitCode(1);
+});
+
+it('runs env-example-sync on the application base path in Artisan, without reading .env', function () {
+    $this->app->setBasePath(temporaryProject([
+        'composer.lock' => '{"packages": [], "packages-dev": []}',
+        'config/services.php' => "<?php\nreturn ['stripe' => env('STRIPE_SECRET')];\n",
+        '.env.example' => "APP_NAME=Laravel\n",
+        '.env' => "STRIPE_SECRET=artisan-sentinel-value\n",
+    ]));
+
+    $this->artisan('excubia:check', [
+        '--only' => 'env-example-sync',
+        '--offline' => true,
+        '--fail-on' => 'low',
+        '--no-banner' => true,
+    ])
+        ->expectsOutputToContain('STRIPE_SECRET is read by config/services.php but missing from .env.example.')
+        ->doesntExpectOutputToContain('artisan-sentinel-value')
+        ->assertExitCode(1);
+});
+
 it('exits 2 when the application has no composer.lock', function () {
     $this->app->setBasePath(temporaryProject([]));
 
@@ -70,4 +102,29 @@ it('exits 2 from excubia:push when no excubia-app is configured', function () {
     $this->artisan('excubia:push')
         ->expectsOutputToContain('No excubia-app URL')
         ->assertExitCode(2);
+
+    $this->artisan('excubia:push', ['--deploy' => true])
+        ->expectsOutputToContain('No excubia-app URL')
+        ->assertExitCode(2);
+});
+
+it('puts the release from the environment in the excubia:check report, without the git fallback', function () {
+    $project = cachedOutdatedProject();
+    file_put_contents($project.'/.git', 'gitdir: '.temporaryProject(['HEAD' => "0123456789abcdef0123456789abcdef01234567\n"])."\n");
+    $this->app->setBasePath($project);
+    $report = static function (): array {
+        Artisan::call('excubia:check', ['--only' => 'php-eol', '--offline' => true, '--fail-on' => 'none', '--no-banner' => true, '--format' => 'json']);
+
+        return json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+    };
+
+    expect($report())->not->toHaveKey('release');
+
+    putenv('EXCUBIA_RELEASE=v5.1.0');
+
+    try {
+        expect($report()['release'])->toBe('v5.1.0');
+    } finally {
+        putenv('EXCUBIA_RELEASE');
+    }
 });

@@ -1,0 +1,7 @@
+{
+    "private": true,
+    "dependencies": {
+        "@acme/ui": "file:./packages/ui",
+        "lodash": "^4.17.20"
+    }
+}

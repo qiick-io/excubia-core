@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Configuration;
 
+use Qiick\Excubia\Data\DependencyLicensesConfigurationData;
+use Qiick\Excubia\Data\EnvExampleSyncConfigurationData;
 use Qiick\Excubia\Data\ExceptionConfigurationData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -18,9 +20,18 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * does not exist is an error, because the caller asked for that file.
  * `advisoryId` is copied onto the ignore rule so the existing matcher can
  * target one advisory.
+ *
+ * The one environment variable read here is `EXCUBIA_SERVER_NAME` (#162),
+ * which wins over `runtime.server.name`. An invalid value is not an error:
+ * the server falls back to its hashed id and the push command warns.
  */
 final class ExcubiaConfigurationLoader
 {
+    /**
+     * @param  array<string, string>|null  $environment  tests pass variables here; null reads getenv()
+     */
+    public function __construct(private readonly ?array $environment = null) {}
+
     /**
      * @throws InvalidConfigurationException
      */
@@ -44,7 +55,7 @@ final class ExcubiaConfigurationLoader
      */
     private function fromDocument(array $document): ExcubiaConfigurationData
     {
-        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy'], 'excubia.json');
+        $this->rejectUnknownKeys($document, ['$schema', 'failOn', 'includeDev', 'checks', 'ignore', 'cache', 'app', 'strict', 'healthEndpoint', 'runtime', 'exceptions', 'privacy', 'release'], 'excubia.json');
         $defaults = ExcubiaConfigurationData::defaults();
 
         if (array_key_exists('$schema', $document) && ! is_string($document['$schema'])) {
@@ -72,11 +83,100 @@ final class ExcubiaConfigurationLoader
             isHealthEndpointEnabled: $healthEndpoint['enabled'],
             healthEndpointPath: $healthEndpoint['path'],
             schedulerHeartbeatStaleAfterMinutes: $checks['schedulerHeartbeatStaleAfterMinutes'],
+            schedulerLateAfterMinutes: $checks['schedulerLateAfterMinutes'],
             failedJobHighSeverityAfterHours: $checks['failedJobHighSeverityAfterHours'],
             runtime: $this->runtime($document['runtime'] ?? []),
             exceptions: $this->exceptions($document['exceptions'] ?? []),
             skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
+            release: $this->release($document),
+            dependencyLicenses: $this->dependencyLicenses($document['checks'] ?? []),
+            databaseConnectionNames: $checks['databaseConnectionNames'],
+            diskSpaceWarnAtPercentUsed: $checks['diskSpaceWarnAtPercentUsed'],
+            diskSpaceFailAtPercentUsed: $checks['diskSpaceFailAtPercentUsed'],
+            queueBacklogMaxOldestAgeMinutes: $checks['queueBacklogMaxOldestAgeMinutes'],
+            queueBacklogMaxPendingJobs: $checks['queueBacklogMaxPendingJobs'],
+            queueBacklogQueueNames: $checks['queueBacklogQueueNames'],
+            envExampleSync: $this->envExampleSync($document['checks'] ?? []),
+            queueWorkersStaleAfterMinutes: $checks['queueWorkersStaleAfterMinutes'],
+            backupsMaxAgeHours: $checks['backupsMaxAgeHours'],
+            databaseConnectionsWarnAt: $checks['databaseConnectionsWarnAt'],
+            databaseConnectionsFailAt: $checks['databaseConnectionsFailAt'],
+            databaseSizeWarnAtMb: $checks['databaseSizeWarnAtMb'],
+            redisMemoryWarnAtPercentUsed: $checks['redisMemoryWarnAtPercentUsed'],
+            redisMemoryFailAtPercentUsed: $checks['redisMemoryFailAtPercentUsed'],
+            redisMemoryConnectionNames: $checks['redisMemoryConnectionNames'],
         );
+    }
+
+    /**
+     * `checks.env-example-sync`: `ignoreKeys` (key names or globs, added to
+     * the default list) and `useDefaultIgnoreKeys` (default true; false
+     * makes `ignoreKeys` replace the defaults). The glob syntax is checked
+     * by the data object.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function envExampleSync(mixed $checks): EnvExampleSyncConfigurationData
+    {
+        $settings = is_array($checks) ? ($checks['env-example-sync'] ?? []) : [];
+
+        if (! is_array($settings)) {
+            throw new InvalidConfigurationException('checks.env-example-sync must be an object.');
+        }
+
+        $this->rejectUnknownKeys($settings, ['ignoreKeys', 'useDefaultIgnoreKeys'], 'checks.env-example-sync');
+
+        return new EnvExampleSyncConfigurationData(
+            ignoreKeys: $this->stringList($settings['ignoreKeys'] ?? [], 'checks.env-example-sync.ignoreKeys'),
+            shouldUseDefaultIgnoreKeys: array_key_exists('useDefaultIgnoreKeys', $settings) ? $this->boolean($settings['useDefaultIgnoreKeys'], 'checks.env-example-sync.useDefaultIgnoreKeys') : true,
+        );
+    }
+
+    /**
+     * `checks.dependency-licenses`: `allowed` and `denied` license globs
+     * and `includeDev` (default false; `--no-dev` and the top-level
+     * `includeDev` still drop Composer dev packages from the snapshot).
+     * The glob syntax is checked by the data object.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function dependencyLicenses(mixed $checks): DependencyLicensesConfigurationData
+    {
+        $settings = is_array($checks) ? ($checks['dependency-licenses'] ?? []) : [];
+
+        if (! is_array($settings)) {
+            throw new InvalidConfigurationException('checks.dependency-licenses must be an object.');
+        }
+
+        $this->rejectUnknownKeys($settings, ['allowed', 'denied', 'includeDev'], 'checks.dependency-licenses');
+
+        return new DependencyLicensesConfigurationData(
+            allowedLicenses: $this->stringList($settings['allowed'] ?? [], 'checks.dependency-licenses.allowed'),
+            deniedLicenses: $this->stringList($settings['denied'] ?? [], 'checks.dependency-licenses.denied'),
+            isDevelopmentDependencyIncluded: array_key_exists('includeDev', $settings) ? $this->boolean($settings['includeDev'], 'checks.dependency-licenses.includeDev') : false,
+        );
+    }
+
+    /**
+     * The `release` key as written. Only its type is checked here: a string
+     * outside the release syntax is reported as a null release by
+     * `ReleaseService`, as for the environment variables.
+     *
+     * @param  array<string, mixed>  $document
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function release(array $document): ?string
+    {
+        if (! array_key_exists('release', $document)) {
+            return null;
+        }
+
+        if (! is_string($document['release'])) {
+            throw new InvalidConfigurationException('release must be a string.');
+        }
+
+        return $document['release'];
     }
 
     /**
@@ -154,6 +254,15 @@ final class ExcubiaConfigurationLoader
         $enabledTypes = [];
         $sampleRates = [];
         $slowQueryThresholdMs = RuntimeConfigurationData::DEFAULT_SLOW_QUERY_THRESHOLD_MS;
+        $duplicateQueryThreshold = RuntimeConfigurationData::DEFAULT_DUPLICATE_QUERY_THRESHOLD;
+        $ignoredCommands = RuntimeConfigurationData::DEFAULT_IGNORED_COMMANDS;
+        $serverName = null;
+        $extraKeys = [
+            RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'],
+            RuntimeTypeEnum::DuplicateQuery->value => ['threshold'],
+            RuntimeTypeEnum::Server->value => ['name'],
+            RuntimeTypeEnum::Command->value => ['ignore'],
+        ];
 
         foreach (RuntimeTypeEnum::cases() as $type) {
             $label = 'runtime.'.$type->configurationKey();
@@ -163,7 +272,7 @@ final class ExcubiaConfigurationLoader
                 throw new InvalidConfigurationException($label.' must be an object.');
             }
 
-            $this->rejectUnknownKeys($settings, $type === RuntimeTypeEnum::SlowQuery ? ['enabled', 'sampleRate', 'thresholdMs'] : ['enabled', 'sampleRate'], $label);
+            $this->rejectUnknownKeys($settings, ['enabled', 'sampleRate', ...$extraKeys[$type->value] ?? []], $label);
 
             if (array_key_exists('enabled', $settings)) {
                 $enabledTypes[$type->value] = $this->boolean($settings['enabled'], $label.'.enabled');
@@ -180,6 +289,29 @@ final class ExcubiaConfigurationLoader
             if (array_key_exists('thresholdMs', $settings)) {
                 $slowQueryThresholdMs = $this->integer($settings['thresholdMs'], $label.'.thresholdMs');
             }
+
+            if (array_key_exists('threshold', $settings)) {
+                $duplicateQueryThreshold = $this->integer($settings['threshold'], $label.'.threshold');
+            }
+
+            if (array_key_exists('ignore', $settings)) {
+                $ignoredCommands = $this->stringList($settings['ignore'], $label.'.ignore');
+            }
+
+            if (array_key_exists('name', $settings)) {
+                if (! is_string($settings['name'])) {
+                    throw new InvalidConfigurationException($label.'.name must be a string.');
+                }
+
+                $serverName = $settings['name'];
+            }
+        }
+
+        $serverNameVariable = $this->environmentValue(RuntimeConfigurationData::SERVER_NAME_VARIABLE);
+        $isServerNameVariableInvalid = $serverNameVariable !== null && preg_match(RuntimeConfigurationData::SERVER_NAME_PATTERN, $serverNameVariable) !== 1;
+
+        if ($serverNameVariable !== null) {
+            $serverName = $isServerNameVariableInvalid ? null : $serverNameVariable;
         }
 
         return new RuntimeConfigurationData(
@@ -188,7 +320,21 @@ final class ExcubiaConfigurationLoader
             sampleRates: $sampleRates,
             slowQueryThresholdMs: $slowQueryThresholdMs,
             bufferMaxBytes: array_key_exists('bufferMaxBytes', $runtime) ? $this->integer($runtime['bufferMaxBytes'], 'runtime.bufferMaxBytes') : RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
+            duplicateQueryThreshold: $duplicateQueryThreshold,
+            ignoredCommands: $ignoredCommands,
+            serverName: $serverName,
+            isServerNameVariableInvalid: $isServerNameVariableInvalid,
         );
+    }
+
+    /**
+     * A non-empty environment variable, else null.
+     */
+    private function environmentValue(string $name): ?string
+    {
+        $value = $this->environment !== null ? ($this->environment[$name] ?? null) : getenv($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
@@ -241,7 +387,22 @@ final class ExcubiaConfigurationLoader
      *     laravelWarnDaysBeforeEndOfLife: int,
      *     isNodeEndOfLifeCheckEnabled: bool,
      *     schedulerHeartbeatStaleAfterMinutes: int,
-     *     failedJobHighSeverityAfterHours: int
+     *     schedulerLateAfterMinutes: int,
+     *     failedJobHighSeverityAfterHours: int,
+     *     databaseConnectionNames: list<string>,
+     *     diskSpaceWarnAtPercentUsed: int,
+     *     diskSpaceFailAtPercentUsed: int,
+     *     queueBacklogMaxOldestAgeMinutes: int,
+     *     queueBacklogMaxPendingJobs: int,
+     *     queueBacklogQueueNames: list<string>,
+     *     queueWorkersStaleAfterMinutes: int,
+     *     backupsMaxAgeHours: int,
+     *     databaseConnectionsWarnAt: int,
+     *     databaseConnectionsFailAt: int,
+     *     databaseSizeWarnAtMb: int|null,
+     *     redisMemoryWarnAtPercentUsed: int,
+     *     redisMemoryFailAtPercentUsed: int,
+     *     redisMemoryConnectionNames: list<string>
      * }
      */
     private function checks(mixed $checks, ExcubiaConfigurationData $defaults): array
@@ -250,16 +411,61 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync', 'laravel-queue-workers', 'laravel-backups', 'laravel-database-connections', 'laravel-database-size', 'laravel-redis-memory'], 'checks');
+        $schedulerHeartbeat = $this->checkObject($checks, 'laravel-scheduler-heartbeat', ['staleAfterMinutes', 'lateAfterMinutes']);
+        $database = $this->checkObject($checks, 'laravel-database', ['connections']);
+        $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
+        $queueBacklog = $this->checkObject($checks, 'laravel-queue-backlog', ['maxOldestAgeMinutes', 'maxPendingJobs', 'queues']);
+        $databaseConnections = $this->checkObject($checks, 'laravel-database-connections', ['warnAt', 'failAt']);
+        $databaseSize = $this->checkObject($checks, 'laravel-database-size', ['warnAtMb']);
+        $redisMemory = $this->checkObject($checks, 'laravel-redis-memory', ['warnAtPercentUsed', 'failAtPercentUsed', 'connections']);
 
         return [
             'staleAfterMonths' => $this->integerSetting($checks, 'composer-stale', 'staleAfterMonths', $defaults->staleAfterMonths),
             'phpWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'php-eol', 'warnDaysBeforeEol', $defaults->phpWarnDaysBeforeEndOfLife),
             'laravelWarnDaysBeforeEndOfLife' => $this->integerSetting($checks, 'laravel-eol', 'warnDaysBeforeEol', $defaults->laravelWarnDaysBeforeEndOfLife),
             'isNodeEndOfLifeCheckEnabled' => $this->booleanSetting($checks, 'node-eol', 'enabled', $defaults->isNodeEndOfLifeCheckEnabled),
-            'schedulerHeartbeatStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-scheduler-heartbeat', 'staleAfterMinutes', $defaults->schedulerHeartbeatStaleAfterMinutes),
+            'schedulerHeartbeatStaleAfterMinutes' => array_key_exists('staleAfterMinutes', $schedulerHeartbeat) ? $this->integer($schedulerHeartbeat['staleAfterMinutes'], 'checks.laravel-scheduler-heartbeat.staleAfterMinutes') : $defaults->schedulerHeartbeatStaleAfterMinutes,
+            'schedulerLateAfterMinutes' => array_key_exists('lateAfterMinutes', $schedulerHeartbeat) ? $this->integer($schedulerHeartbeat['lateAfterMinutes'], 'checks.laravel-scheduler-heartbeat.lateAfterMinutes') : $defaults->schedulerLateAfterMinutes,
             'failedJobHighSeverityAfterHours' => $this->integerSetting($checks, 'laravel-failed-jobs', 'highSeverityAfterHours', $defaults->failedJobHighSeverityAfterHours),
+            'databaseConnectionNames' => $this->stringList($database['connections'] ?? [], 'checks.laravel-database.connections'),
+            'diskSpaceWarnAtPercentUsed' => array_key_exists('warnAtPercentUsed', $diskSpace) ? $this->integer($diskSpace['warnAtPercentUsed'], 'checks.laravel-disk-space.warnAtPercentUsed') : $defaults->diskSpaceWarnAtPercentUsed,
+            'diskSpaceFailAtPercentUsed' => array_key_exists('failAtPercentUsed', $diskSpace) ? $this->integer($diskSpace['failAtPercentUsed'], 'checks.laravel-disk-space.failAtPercentUsed') : $defaults->diskSpaceFailAtPercentUsed,
+            'queueBacklogMaxOldestAgeMinutes' => array_key_exists('maxOldestAgeMinutes', $queueBacklog) ? $this->integer($queueBacklog['maxOldestAgeMinutes'], 'checks.laravel-queue-backlog.maxOldestAgeMinutes') : $defaults->queueBacklogMaxOldestAgeMinutes,
+            'queueBacklogMaxPendingJobs' => array_key_exists('maxPendingJobs', $queueBacklog) ? $this->integer($queueBacklog['maxPendingJobs'], 'checks.laravel-queue-backlog.maxPendingJobs') : $defaults->queueBacklogMaxPendingJobs,
+            'queueBacklogQueueNames' => $this->stringList($queueBacklog['queues'] ?? [], 'checks.laravel-queue-backlog.queues'),
+            'queueWorkersStaleAfterMinutes' => $this->integerSetting($checks, 'laravel-queue-workers', 'staleAfterMinutes', $defaults->queueWorkersStaleAfterMinutes),
+            'backupsMaxAgeHours' => $this->integerSetting($checks, 'laravel-backups', 'maxAgeHours', $defaults->backupsMaxAgeHours),
+            'databaseConnectionsWarnAt' => array_key_exists('warnAt', $databaseConnections) ? $this->integer($databaseConnections['warnAt'], 'checks.laravel-database-connections.warnAt') : $defaults->databaseConnectionsWarnAt,
+            'databaseConnectionsFailAt' => array_key_exists('failAt', $databaseConnections) ? $this->integer($databaseConnections['failAt'], 'checks.laravel-database-connections.failAt') : $defaults->databaseConnectionsFailAt,
+            'databaseSizeWarnAtMb' => array_key_exists('warnAtMb', $databaseSize) ? $this->integer($databaseSize['warnAtMb'], 'checks.laravel-database-size.warnAtMb') : $defaults->databaseSizeWarnAtMb,
+            'redisMemoryWarnAtPercentUsed' => array_key_exists('warnAtPercentUsed', $redisMemory) ? $this->integer($redisMemory['warnAtPercentUsed'], 'checks.laravel-redis-memory.warnAtPercentUsed') : $defaults->redisMemoryWarnAtPercentUsed,
+            'redisMemoryFailAtPercentUsed' => array_key_exists('failAtPercentUsed', $redisMemory) ? $this->integer($redisMemory['failAtPercentUsed'], 'checks.laravel-redis-memory.failAtPercentUsed') : $defaults->redisMemoryFailAtPercentUsed,
+            'redisMemoryConnectionNames' => $this->stringList($redisMemory['connections'] ?? [], 'checks.laravel-redis-memory.connections'),
         ];
+    }
+
+    /**
+     * The settings object of one check, empty when absent; keys outside
+     * `$allowedKeys` are a configuration error.
+     *
+     * @param  array<mixed>  $checks
+     * @param  list<string>  $allowedKeys
+     * @return array<mixed>
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function checkObject(array $checks, string $checkId, array $allowedKeys): array
+    {
+        $check = $checks[$checkId] ?? [];
+
+        if (! is_array($check)) {
+            throw new InvalidConfigurationException('checks.'.$checkId.' must be an object.');
+        }
+
+        $this->rejectUnknownKeys($check, $allowedKeys, 'checks.'.$checkId);
+
+        return $check;
     }
 
     /**

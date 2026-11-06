@@ -6,15 +6,21 @@ namespace Qiick\Excubia\Services;
 
 use Composer\Semver\Intervals;
 use Composer\Semver\VersionParser;
+use Qiick\Excubia\Data\EnvironmentKeysData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LockedPackageData;
+use Qiick\Excubia\Data\PlatformRequirementData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Exceptions\LockfileNotFoundException;
 use Qiick\Excubia\Parsers\ComposerJsonParser;
 use Qiick\Excubia\Parsers\ComposerLockParser;
+use Qiick\Excubia\Parsers\ConfigEnvironmentCallParser;
+use Qiick\Excubia\Parsers\EnvironmentExampleParser;
 use Qiick\Excubia\Parsers\NodeVersionParser;
 use Qiick\Excubia\Parsers\PackageLockParser;
+use Qiick\Excubia\Parsers\PnpmLockParser;
+use Qiick\Excubia\Parsers\YarnLockParser;
 use UnexpectedValueException;
 
 /**
@@ -25,17 +31,34 @@ use UnexpectedValueException;
  * `require.php`, then `platform.php` in the lockfile. Composer dev packages
  * are omitted when the configuration says so. npm packages are kept either
  * way, because `--no-dev` is specified for Composer only.
+ *
+ * One JavaScript lockfile is read (#21): the one of the `packageManager`
+ * named in `package.json` when it exists, else the first present of
+ * `pnpm-lock.yaml`, `yarn.lock` and `package-lock.json`.
  */
 final class ProjectSnapshotService
 {
     private const LARAVEL_FRAMEWORK_PACKAGE = 'laravel/framework';
 
+    /**
+     * JavaScript lockfile per package manager, in fallback order.
+     */
+    private const JAVASCRIPT_LOCKFILES = [
+        'pnpm' => 'pnpm-lock.yaml',
+        'yarn' => 'yarn.lock',
+        'npm' => 'package-lock.json',
+    ];
+
     public function __construct(
         private readonly ComposerJsonParser $composerJsonParser = new ComposerJsonParser,
         private readonly ComposerLockParser $composerLockParser = new ComposerLockParser,
         private readonly PackageLockParser $packageLockParser = new PackageLockParser,
+        private readonly YarnLockParser $yarnLockParser = new YarnLockParser,
+        private readonly PnpmLockParser $pnpmLockParser = new PnpmLockParser,
         private readonly NodeVersionParser $nodeVersionParser = new NodeVersionParser,
         private readonly VersionParser $versionParser = new VersionParser,
+        private readonly EnvironmentExampleParser $environmentExampleParser = new EnvironmentExampleParser,
+        private readonly ConfigEnvironmentCallParser $configEnvironmentCallParser = new ConfigEnvironmentCallParser,
     ) {}
 
     /**
@@ -80,13 +103,10 @@ final class ProjectSnapshotService
         );
 
         $packageJson = $this->optionalJsonObject($projectRoot.DIRECTORY_SEPARATOR.'package.json');
-        $packageLockPath = $projectRoot.DIRECTORY_SEPARATOR.'package-lock.json';
-        $npmPackages = is_file($packageLockPath)
-            ? $this->packageLockParser->parse(
-                $this->requiredJsonObject($packageLockPath),
-                $this->npmDirectPackageNames($packageJson),
-            )
-            : [];
+        $javascriptLockfile = $this->javascriptLockfile($projectRoot, $packageJson);
+        $npmPackages = $javascriptLockfile === null
+            ? []
+            : $this->javascriptPackages($projectRoot, $javascriptLockfile, $this->npmDirectPackageNames($packageJson));
 
         return new ProjectSnapshotData(
             phpVersion: $this->resolvePhpVersion(
@@ -102,8 +122,102 @@ final class ProjectSnapshotService
                 $this->optionalText($projectRoot.DIRECTORY_SEPARATOR.'.node-version'),
                 $this->enginesNode($packageJson),
             ),
-            hasNpmLockfile: is_file($packageLockPath),
+            hasNpmLockfile: $javascriptLockfile !== null,
+            requiredPackageNames: $parsedComposerJson['directPackageNames'],
+            platformRequirements: array_values(array_filter(
+                $parsedLock['platformRequirements'],
+                static fn (PlatformRequirementData $requirement): bool => $configuration->isDevelopmentDependencyIncluded || ! $requirement->isDevelopmentDependency,
+            )),
+            providedPlatformNames: $parsedLock['providedPlatformNames'],
+            platformOverrideNames: $parsedLock['platformOverrideNames'],
+            javascriptLockfile: $javascriptLockfile,
+            environmentKeys: $this->environmentKeys($projectRoot),
+            npmDevelopmentPackageNames: $javascriptLockfile === null ? [] : $this->npmDevelopmentPackageNames($packageJson),
         );
+    }
+
+    /**
+     * Key names of `.env.example` and the `env()` keys of `config/*.php`.
+     * The path of `.env` is never built, so it cannot be opened by mistake.
+     *
+     * ponytail: only top-level `config/*.php`, as Laravel publishes them;
+     * nested config directories are not scanned. Recurse when asked.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function environmentKeys(string $projectRoot): EnvironmentKeysData
+    {
+        $examplePath = $projectRoot.DIRECTORY_SEPARATOR.'.env.example';
+        $configDirectory = $projectRoot.DIRECTORY_SEPARATOR.'config';
+        $configKeys = null;
+
+        if (is_dir($configDirectory)) {
+            $configKeys = [];
+            $configFiles = array_filter(glob($configDirectory.DIRECTORY_SEPARATOR.'*.php') ?: [], is_file(...));
+            sort($configFiles, SORT_STRING);
+
+            foreach ($configFiles as $configFile) {
+                foreach ($this->configEnvironmentCallParser->keyNames($this->read($configFile)) as $key) {
+                    $configKeys[$key][] = 'config/'.basename($configFile);
+                }
+            }
+
+            ksort($configKeys, SORT_STRING);
+        }
+
+        return new EnvironmentKeysData(
+            exampleKeys: is_file($examplePath) ? $this->environmentExampleParser->keyNames($this->read($examplePath)) : null,
+            configKeys: $configKeys,
+        );
+    }
+
+    /**
+     * Name of the JavaScript lockfile to read, or null when there is none.
+     * A `packageManager` (`pnpm@9.1.0`) whose lockfile is missing, or one
+     * Excubia does not read, falls back to the fixed order.
+     *
+     * @param  array<string, mixed>|null  $packageJson
+     */
+    public function javascriptLockfile(string $projectRoot, ?array $packageJson): ?string
+    {
+        $packageManager = $packageJson['packageManager'] ?? null;
+        $managerName = is_string($packageManager) ? strtolower(explode('@', $packageManager, 2)[0]) : '';
+        $candidates = array_values(self::JAVASCRIPT_LOCKFILES);
+
+        if (isset(self::JAVASCRIPT_LOCKFILES[$managerName])) {
+            array_unshift($candidates, self::JAVASCRIPT_LOCKFILES[$managerName]);
+        }
+
+        foreach ($candidates as $fileName) {
+            if (is_file($projectRoot.DIRECTORY_SEPARATOR.$fileName)) {
+                return $fileName;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $directPackageNames
+     * @return list<LockedPackageData>
+     */
+    private function javascriptPackages(string $projectRoot, string $javascriptLockfile, array $directPackageNames): array
+    {
+        $path = $projectRoot.DIRECTORY_SEPARATOR.$javascriptLockfile;
+
+        return match ($javascriptLockfile) {
+            'pnpm-lock.yaml' => $this->pnpmLockParser->parse(
+                $this->read($path),
+                $this->optionalText($projectRoot.DIRECTORY_SEPARATOR.'.npmrc'),
+                $directPackageNames,
+            ),
+            'yarn.lock' => $this->yarnLockParser->parse(
+                $this->read($path),
+                $this->optionalText($projectRoot.DIRECTORY_SEPARATOR.'.yarnrc.yml'),
+                $directPackageNames,
+            ),
+            default => $this->packageLockParser->parse($this->requiredJsonObject($path), $directPackageNames),
+        };
     }
 
     /**
@@ -278,6 +392,28 @@ final class ProjectSnapshotService
         }
 
         return $names;
+    }
+
+    /**
+     * Names in `devDependencies` that `dependencies` and
+     * `optionalDependencies` do not list, so `--no-dev` can leave them out
+     * of `npm-outdated`. `npmDirectPackageNames` has already validated the
+     * shape of these objects.
+     *
+     * @param  array<string, mixed>|null  $packageJson
+     * @return list<string>
+     */
+    private function npmDevelopmentPackageNames(?array $packageJson): array
+    {
+        $runtimeNames = [];
+
+        foreach (['dependencies', 'optionalDependencies'] as $key) {
+            $runtimeNames += is_array($packageJson[$key] ?? null) ? $packageJson[$key] : [];
+        }
+
+        $developmentNames = is_array($packageJson['devDependencies'] ?? null) ? $packageJson['devDependencies'] : [];
+
+        return array_map('strval', array_keys(array_diff_key($developmentNames, $runtimeNames)));
     }
 
     /**

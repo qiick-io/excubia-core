@@ -4,11 +4,17 @@
     "x-excubia-version": 1,
     "$comment": "Contract version of this payload. It travels in an envelope with protocolVersion 1 and changes only with it. Stable from 1.0.0-beta (docs/CONTRACTS.md).",
     "title": "Excubia runtime batch",
-    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs and keeps the larger maxMs for entries with the same type, bucket, sampleRate and dimensions, also across batches. Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages or absolute paths.",
+    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes, and totalRepeats for duplicateQuery) and keeps the larger maxMs (and maxMb, maxRepeats and the server gauges) for entries with the same type, bucket, sampleRate and dimensions, also across batches. The optional histogram (#147) adds up element by element ($defs.histogram). Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, the file, line or stack of a deprecation, Artisan command arguments or options, or absolute paths.",
     "type": "object",
     "additionalProperties": false,
     "required": ["bucketSeconds", "aggregates"],
     "properties": {
+        "release": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9._+/@-]+$",
+            "description": "Optional (#129): the release when the batch was sent, one value for every entry of the batch. Release identifier of the deployed code: the release key of excubia.json, EXCUBIA_RELEASE, then GITHUB_SHA, CI_COMMIT_SHA, VERCEL_GIT_COMMIT_SHA, FORGE_DEPLOY_COMMIT or LARAVEL_CLOUD_COMMIT (no git fallback). Omitted when unknown. It is an extra dimension the app can group by."
+        },
         "bucketSeconds": {
             "const": 60,
             "description": "Width of a time bucket. Every bucket starts on a whole UTC minute."
@@ -21,12 +27,29 @@
                     { "$ref": "#/$defs/slowQuery" },
                     { "$ref": "#/$defs/job" },
                     { "$ref": "#/$defs/scheduledTask" },
-                    { "$ref": "#/$defs/outgoingHttp" }
+                    { "$ref": "#/$defs/outgoingHttp" },
+                    { "$ref": "#/$defs/requestMemory" },
+                    { "$ref": "#/$defs/jobMemory" },
+                    { "$ref": "#/$defs/queueWait" },
+                    { "$ref": "#/$defs/cache" },
+                    { "$ref": "#/$defs/mail" },
+                    { "$ref": "#/$defs/notification" },
+                    { "$ref": "#/$defs/logLevel" },
+                    { "$ref": "#/$defs/deprecation" },
+                    { "$ref": "#/$defs/duplicateQuery" },
+                    { "$ref": "#/$defs/server" },
+                    { "$ref": "#/$defs/command" }
                 ]
-            }
+            },
+            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation; additive), duplicateQuery in 1.0.0-beta.3 (#148, additive), server (#149, additive) and command (#152, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); histograms add up element by element. isContainer is a metric field, not a dimension."
         }
     },
     "$defs": {
+        "gauge": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "description": "A reading of the server at sample time (#149), not a count: it does not add up. Entries of one server and bucket keep the larger reading; null when the platform does not expose it."
+        },
         "bucket": {
             "type": "string",
             "description": "UTC start of the minute, Y-m-d\\TH:i:00\\Z.",
@@ -46,7 +69,7 @@
         "errorCount": {
             "type": "integer",
             "minimum": 0,
-            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks. Always 0 for slow queries."
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types."
         },
         "milliseconds": {
             "type": "number",
@@ -54,6 +77,14 @@
         },
         "statusClass": {
             "enum": ["1xx", "2xx", "3xx", "4xx", "5xx"]
+        },
+        "histogram": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 12,
+            "maxItems": 12,
+            "x-excubia-bucket-bounds-ms": [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000],
+            "description": "Optional (#147, additive): latency histogram of the entry's durations, for percentiles. One count per bucket, 12 in all; the counts add up to count. Bucket i holds the durations d with lower_i < d <= upper_i, where upper_i is x-excubia-bucket-bounds-ms[i] (5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000 ms) and lower_i is the previous bound (0 for bucket 0, so a 0 ms duration is in bucket 0); bucket 11 is the overflow, every duration above 10000 ms, and its upper bound is the entry's maxMs. The bounds are fixed and the same for every type, so histograms of entries with the same type, bucket, sampleRate and dimensions add up element by element, also across batches and buckets. Percentile p (0 < p <= 1) of one or more entries, by linear interpolation inside a bucket: sum their histograms element by element into h and keep the largest maxMs as max (when the entries have different sampleRates, divide each entry's counts by its sampleRate first); n = sum(h); rank = p * n; find the first bucket i whose cumulative count c_i = h_0 + ... + h_i is >= rank; then value = lower_i + (upper_i - lower_i) * (rank - c_(i-1)) / h_i, with c_(-1) = 0 and upper_11 = max(max, 10000); the result is never above max. An entry without a histogram (written before 1.0.0-beta.3, or merged with one that had none) has no percentiles; the app must not reject it."
         },
         "request": {
             "type": "object",
@@ -70,7 +101,8 @@
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
-                "maxMs": { "$ref": "#/$defs/milliseconds" }
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
             }
         },
         "slowQuery": {
@@ -87,7 +119,8 @@
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
-                "maxMs": { "$ref": "#/$defs/milliseconds" }
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
             }
         },
         "job": {
@@ -106,7 +139,8 @@
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
-                "maxMs": { "$ref": "#/$defs/milliseconds" }
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
             }
         },
         "scheduledTask": {
@@ -119,11 +153,13 @@
                 "bucket": { "$ref": "#/$defs/bucket" },
                 "sampleRate": { "$ref": "#/$defs/sampleRate" },
                 "task": { "type": "string", "minLength": 1, "description": "Task description as set by the developer, with paths relative to the project (a file name outside it) and secrets masked as in exception messages; else artisan <command name> for an Artisan command or the executable's file name for an exec() task, without any argument; else Closure." },
+                "taskId": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Optional, additive (#146): sha256 of task, a NUL byte and the cron expression, lowercase hex. The same in the report schedule inventory and in the runtime scheduledTask aggregates, so a run matches its schedule entry. Older versions do not send it; it is a dimension, so runs of the same name with another expression are separate aggregates." },
                 "outcome": { "enum": ["finished", "failed", "skipped"] },
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
-                "maxMs": { "$ref": "#/$defs/milliseconds" }
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
             }
         },
         "outgoingHttp": {
@@ -140,7 +176,214 @@
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "totalMs": { "$ref": "#/$defs/milliseconds" },
-                "maxMs": { "$ref": "#/$defs/milliseconds" }
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
+            }
+        },
+        "megabytes": {
+            "type": "number",
+            "minimum": 0,
+            "description": "PHP peak memory (memory_get_peak_usage) in MiB, 3 decimals. The average is totalMb / count."
+        },
+        "counter": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "requestMemory": {
+            "type": "object",
+            "description": "Peak memory of incoming HTTP requests at RequestHandled (#132). errorCount is always 0.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "route", "method", "count", "errorCount", "totalMb", "maxMb"],
+            "properties": {
+                "type": { "const": "requestMemory" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "route": { "type": "string", "minLength": 1, "description": "Route name, or unnamed. Never the URL." },
+                "method": { "type": "string", "minLength": 1 },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMb": { "$ref": "#/$defs/megabytes" },
+                "maxMb": { "$ref": "#/$defs/megabytes" }
+            }
+        },
+        "jobMemory": {
+            "type": "object",
+            "description": "Peak memory of each queued job; the PHP peak is reset at JobProcessing and read at JobProcessed or JobFailed (#132). errorCount is always 0.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "job", "queue", "count", "errorCount", "totalMb", "maxMb"],
+            "properties": {
+                "type": { "const": "jobMemory" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "job": { "type": "string", "minLength": 1, "description": "Job class name (Laravel's resolveName)." },
+                "queue": { "type": "string" },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMb": { "$ref": "#/$defs/megabytes" },
+                "maxMb": { "$ref": "#/$defs/megabytes" }
+            }
+        },
+        "queueWait": {
+            "type": "object",
+            "description": "Time between the push of a job and its first attempt (JobProcessing), without the job's delay (#132). The push time is the excubiaQueuedAt key Excubia adds to job payloads, else Horizon's pushedAt; retries are not counted. Clock skew between the pushing host and the worker shows up in the value. errorCount is always 0.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "job", "queue", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "queueWait" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "job": { "type": "string", "minLength": 1, "description": "Job class name (Laravel's resolveName)." },
+                "queue": { "type": "string" },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
+            }
+        },
+        "cache": {
+            "type": "object",
+            "description": "Cache events (CacheHit, CacheMissed, KeyWritten, KeyForgotten) per store and key prefix (#132). count is hits + misses + writes + deletes; errorCount is always 0. Never the whole key or the value.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "store", "keyPrefix", "count", "errorCount", "hits", "misses", "writes", "deletes"],
+            "properties": {
+                "type": { "const": "cache" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "store": { "type": "string", "minLength": 1, "description": "Cache store name, or default." },
+                "keyPrefix": { "type": "string", "minLength": 1, "maxLength": 64, "description": "The key up to its first : or ., through the exception message masks. A prefix that still holds a digit, an @, a space or other punctuation, hex-only text, more than 64 characters, or that is nothing but a mask placeholder ([uuid], [number]), is [masked]. Only letters, _, -, / and mask placeholders inside a word (framework/schedule-[token]) remain." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "hits": { "$ref": "#/$defs/counter" },
+                "misses": { "$ref": "#/$defs/counter" },
+                "writes": { "$ref": "#/$defs/counter" },
+                "deletes": { "$ref": "#/$defs/counter" }
+            }
+        },
+        "mail": {
+            "type": "object",
+            "description": "Mail per mailable and mailer (#132). count is sent + failed mails, errorCount the failed ones. Sent mails come from MessageSent. Failures are counted only when exception capture (exceptions.enabled) sees a reported Symfony Mailer transport exception; Laravel has no mail failure event, so without exception capture errorCount is always 0. Never recipients, subjects or bodies.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "mailable", "mailer", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "mail" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "mailable": { "type": "string", "minLength": 1, "description": "Mailable class, else the notification class of a mail notification, else unknown." },
+                "mailer": { "type": "string", "minLength": 1, "description": "Laravel mailer name, or unknown." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "notification": {
+            "type": "object",
+            "description": "Notifications per class and channel (NotificationSent, NotificationFailed) (#132). count is sent + failed, errorCount the failed ones. Never the notifiable or the content.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "notification", "channel", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "notification" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "notification": { "type": "string", "minLength": 1, "description": "Notification class." },
+                "channel": { "type": "string", "minLength": 1, "description": "Channel name (mail, database, broadcast…) or channel class, or unknown." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "logLevel": {
+            "type": "object",
+            "description": "Log entries per level (MessageLogged) (#132) and, when known, per log channel (#174). errorCount is always 0. Never the message or the context.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "level", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "logLevel" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "level": { "enum": ["emergency", "alert", "critical", "error", "warning", "notice", "info", "debug", "unknown"] },
+                "channel": { "type": "string", "minLength": 1, "description": "Name of the configured logging channel the entry was written to (#174); a stack reports the stack's name, not the channels inside it. Omitted when unknown: an on-demand channel (Log::build, Log::stack), a MessageLogged event fired by hand, or an older excubia-core. Additive, optional." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "deprecation": {
+            "type": "object",
+            "description": "PHP deprecations (E_DEPRECATED, E_USER_DEPRECATED) seen by an error handler chained in front of Laravel's (#133), for upgrade readiness. errorCount is always 0. A deprecation PHP raises while compiling a file is seen only when the file is compiled, so with OPcache it is counted once per cache fill, not per request. Never the file path, the line or the stack.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "source", "message", "phpVersion", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "deprecation" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "source": {
+                    "type": "string",
+                    "pattern": "^(app|unknown|vendor/[^/]+(/[^/]+)?)$",
+                    "description": "Where PHP raised the deprecation: app for a file inside the project and not under vendor/, vendor/<vendor>/<package> for a dependency (vendor/<directory> for Composer's own files), unknown for a file outside the project. For E_USER_DEPRECATED this is the library that calls trigger_error, not its caller."
+                },
+                "message": { "type": "string", "minLength": 1, "maxLength": 300, "description": "The deprecation message through the exception message masks (paths relative or reduced to the file name, secrets, emails, ids and long numbers masked), at most 300 characters." },
+                "phpVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$", "description": "PHP major and minor version that raised it, such as 8.4." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "duplicateQuery": {
+            "type": "object",
+            "description": "N+1 detection (#148): within one HTTP request (evaluated at RequestHandled) or one queued job (evaluated at JobProcessed, JobFailed or JobExceptionOccurred), every QueryExecuted is grouped by normalised sql and connection. A shape that ran at least runtime.duplicateQueries.threshold times (default 5) in that request or job is one occurrence: count is the number of requests or jobs where it happened, totalRepeats the executions summed over those occurrences, maxRepeats the most executions in a single one. The average per occurrence is totalRepeats / count. At most 200 distinct shapes are counted per request or job; later ones are ignored. Queries outside a request or job (Artisan commands, scheduled tasks) are not evaluated. sampleRate is the share of requests and jobs evaluated. errorCount is always 0. Never bindings.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "origin", "name", "sql", "connection", "count", "errorCount", "totalRepeats", "maxRepeats"],
+            "properties": {
+                "type": { "const": "duplicateQuery" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "origin": { "enum": ["request", "job"], "description": "Whether the shape repeated within an HTTP request or a queued job." },
+                "name": { "type": "string", "minLength": 1, "description": "For request: the route name, or unnamed; never the URL. For job: the job class name (Laravel's resolveName)." },
+                "sql": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "Normalised SQL without bindings: the inline literals of slowQuery.sql replaced by ?, runs of whitespace as one space, and a list of placeholders after IN (IN (?, ?, ?), also $1, $2) as IN (…), so lists of any length are one shape. At most 2000 characters." },
+                "connection": { "type": "string", "description": "Laravel database connection name." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalRepeats": { "type": "integer", "minimum": 2, "description": "Executions of the shape, summed over the count occurrences. Adds up across entries." },
+                "maxRepeats": { "type": "integer", "minimum": 2, "description": "Most executions of the shape within one request or job. The larger value wins across entries." }
+            }
+        },
+        "server": {
+            "type": "object",
+            "description": "One sample of a server's resources (#149), taken by every php artisan excubia:push-runtime run, so about one per minute on each server that runs the scheduler. Each server pushes its own entries; group and chart them by server. count is the number of samples merged into the entry (usually 1); errorCount is always 0. The gauges are readings, not counts: two entries with the same server, bucket and sampleRate keep the larger value of each gauge, also across batches, and they are not scaled by sampleRate (it is the share of runs that took a sample). Read with PHP only: on Linux from /proc (loadavg, cpuinfo, meminfo), elsewhere the load average from sys_getloadavg() and null for cpuCores and memory (macOS exposes them only through sysctl and vm_stat). Inside a container (#173, additive) /proc shows the host, so on Linux the cgroup at /sys/fs/cgroup is read too, v2 (memory.max, memory.current, memory.stat, cpu.max) before v1 (memory/memory.limit_in_bytes, memory/memory.usage_in_bytes, memory/memory.stat, cpu/cpu.cfs_quota_us, cpu/cpu.cfs_period_us): with a memory limit, memoryUsedMb and memoryTotalMb are the container's; with a CPU quota, cpuLimit holds it in cores; isContainer is true when either limit applies. Entries written before #173 have neither cpuLimit nor isContainer. Never the hostname, an IP address or a path.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "server", "count", "errorCount", "loadAverage1", "loadAverage5", "loadAverage15", "cpuCores", "memoryUsedMb", "memoryTotalMb", "diskUsedGb", "diskTotalGb"],
+            "properties": {
+                "type": { "const": "server" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "server": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$", "description": "The EXCUBIA_SERVER_NAME environment variable (#162), else runtime.server.name of excubia.json, else the first 12 lowercase hex characters of sha256(hostname + sha256(app key)): stable per machine and app, not reversible. Never the hostname." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "loadAverage1": { "$ref": "#/$defs/gauge", "description": "System load average over 1 minute, 2 decimals. Compare it with cpuCores." },
+                "loadAverage5": { "$ref": "#/$defs/gauge", "description": "System load average over 5 minutes, 2 decimals." },
+                "loadAverage15": { "$ref": "#/$defs/gauge", "description": "System load average over 15 minutes, 2 decimals." },
+                "cpuCores": { "type": ["integer", "null"], "minimum": 1, "description": "Logical CPU cores (processor entries of /proc/cpuinfo). Null outside Linux. Inside a container this is usually the host's count; compare loadAverage1 with cpuLimit when it is set." },
+                "cpuLimit": { "$ref": "#/$defs/gauge", "description": "Optional (#173, additive). The container's CPU quota in cores, 2 decimals, and possibly fractional (1.5 for cpu.max 150000 100000): quota / period of the cgroup (cpu.max in v2, cpu.cfs_quota_us / cpu.cfs_period_us in v1). Null without a quota (max, -1) or outside Linux; absent from entries written before #173. When set, it is the effective core count, lower than cpuCores." },
+                "memoryUsedMb": { "type": ["integer", "null"], "minimum": 0, "description": "Memory in use in MiB: MemTotal - MemAvailable (MemFree + Buffers + Cached on kernels without MemAvailable). In a container with a memory limit below the machine's memory (#173): the cgroup's usage minus its inactive page cache (memory.current - inactive_file in v2, memory.usage_in_bytes - total_inactive_file in v1), as docker stats shows it. Null outside Linux." },
+                "memoryTotalMb": { "type": ["integer", "null"], "minimum": 0, "description": "Total memory in MiB. In a container with a memory limit below the machine's memory (#173): the limit. Null outside Linux." },
+                "diskUsedGb": { "$ref": "#/$defs/gauge", "description": "Used size, in GiB with 2 decimals, of the disk that holds the app's storage directory." },
+                "diskTotalGb": { "$ref": "#/$defs/gauge", "description": "Total size, in GiB with 2 decimals, of the disk that holds the app's storage directory." },
+                "isContainer": { "type": "boolean", "description": "Optional (#173, additive). True when a container (cgroup) memory limit or CPU quota applies: with the memory limit, memoryUsedMb and memoryTotalMb are the container's; with the quota, cpuLimit is set. False on a host and in a container without limits; absent from entries written before #173 (read as false). On merge, true when any entry is true." }
+            }
+        },
+        "command": {
+            "type": "object",
+            "description": "Artisan command runs (#152, additive), timed from CommandStarting to CommandFinished: manual and deploy-time commands such as migrate or optimize. Only the top-level command of a process is counted; commands it runs through Artisan::call() are part of its duration. Not counted: Excubia's own excubia:* commands; the names and * patterns of runtime.commands.ignore (default schedule:run, schedule:work, queue:work, queue:listen, horizon*, tinker); and commands run by the scheduler, in its process or as task processes it starts (they are scheduledTask). errorCount counts runs with a non-zero exit code. The buffer is flushed when the command finishes. Never arguments or options.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "command", "exitCodeClass", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "command" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "command": { "type": "string", "minLength": 1, "description": "The command name as registered (an alias resolves to it), else unknown. Never its arguments or options." },
+                "exitCodeClass": { "enum": ["0", "1", "other"], "description": "Exit code 0 (success), 1 (Laravel's generic failure), or any other code." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
             }
         }
     }

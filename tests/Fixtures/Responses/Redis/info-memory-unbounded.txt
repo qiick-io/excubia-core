@@ -1,0 +1,10 @@
+# Memory
+used_memory:1310720
+used_memory_human:1.25M
+used_memory_rss:9437184
+used_memory_peak:2097152
+maxmemory:0
+maxmemory_human:0B
+maxmemory_policy:noeviction
+mem_fragmentation_ratio:7.20
+mem_allocator:jemalloc-5.3.0

@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "abb3864d4f3f1d36ff8a37766d63fe61a833f893e06a087a52cb946c4deba496"
+            "sha256": "1b517aa88b9cbc68ba0a0bf75e565646ec0a1d0ec48d1d1e6cb6f3dd781252e8"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -13,17 +13,17 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "ce7a8f76ae7acd6a4e5b07fecf40b3a00d833970456e71d9724c945b2757fee9"
+            "sha256": "75a9b27d51cd79bd2fb800198ddabe98c41fe9c5ab19f5847f229702d5923910"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
             "x-excubia-version": 1,
-            "sha256": "94e1926d20e2df0c5c9ea9975c2291c1839cf60b80bb60db24efaad87a330214"
+            "sha256": "86e8f05171004c32a16a9c895d9061e16e5faf3f93c5b90f86e6d9ce7a3f9d50"
         },
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "d2223f524fda128d947d3a625357b8cf3d7907636fed0c03188ccf9341f849e9"
+            "sha256": "ebe9ffc23b7b5823d2b40bdea99c5b4e019cba34704aa4f71f616b4957ffcccd"
         }
     },
     "checkIds": [
@@ -40,7 +40,30 @@
         "laravel-pending-migrations",
         "laravel-failed-jobs",
         "laravel-scheduler-heartbeat",
-        "laravel-maintenance-mode"
+        "laravel-maintenance-mode",
+        "laravel-app-key",
+        "laravel-session-security",
+        "laravel-cors-wildcard",
+        "laravel-production-drivers",
+        "laravel-log-level",
+        "laravel-dev-packages",
+        "dependency-licenses",
+        "laravel-database",
+        "laravel-cache",
+        "laravel-storage",
+        "laravel-disk-space",
+        "laravel-queue-backlog",
+        "php-platform-requirements",
+        "env-example-sync",
+        "composer-outdated",
+        "laravel-queue-workers",
+        "npm-outdated",
+        "laravel-backups",
+        "laravel-database-connections",
+        "laravel-database-size",
+        "laravel-redis-memory",
+        "php-opcache",
+        "php-production-ini"
     ],
     "sarif": {
         "fingerprintKeys": [
@@ -86,7 +109,8 @@
             },
             "options": {
                 "--config": "value required",
-                "--strict": "flag"
+                "--strict": "flag",
+                "--deploy": "flag"
             }
         },
         "cache:clear": {
@@ -120,7 +144,8 @@
                 "arguments": [],
                 "options": {
                     "--config": "value optional",
-                    "--strict": "flag"
+                    "--strict": "flag",
+                    "--deploy": "flag"
                 }
             },
             "excubia:push-runtime": {
@@ -134,12 +159,17 @@
                 "options": []
             }
         },
-        "heartbeatCacheKey": "excubia:scheduler-heartbeat"
+        "heartbeatCacheKey": "excubia:scheduler-heartbeat",
+        "workerHeartbeatCacheKeyPrefix": "excubia:worker-heartbeat:",
+        "phpWebRuntimeCacheKey": "excubia:php-runtime:web"
     },
     "environmentVariables": [
         "EXCUBIA_APP_TOKEN",
         "EXCUBIA_APP_URL",
         "EXCUBIA_HEALTH_SECRET",
+        "EXCUBIA_INSIDE_SCHEDULER",
+        "EXCUBIA_RELEASE",
+        "EXCUBIA_SERVER_NAME",
         "GITHUB_TOKEN"
     ],
     "push": {
@@ -153,7 +183,20 @@
             "runtime",
             "exceptions"
         ],
-        "runtimeBucketSeconds": 60
+        "runtimeBucketSeconds": 60,
+        "runtimeHistogramBoundsMs": [
+            5,
+            10,
+            25,
+            50,
+            100,
+            250,
+            500,
+            1000,
+            2500,
+            5000,
+            10000
+        ]
     },
     "healthEndpoint": {
         "secretHeader": "oh-dear-health-check-secret",

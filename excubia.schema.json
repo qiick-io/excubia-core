@@ -71,6 +71,11 @@
                             "type": "integer",
                             "minimum": 1,
                             "description": "Warn when the scheduler heartbeat written by excubia:heartbeat is older than this many minutes. Default 10."
+                        },
+                        "lateAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Grace for missed-run detection (#146): excubia-app treats a scheduled task as late when no run of it started within this many minutes of a due time in the report schedule inventory. Core does not use it itself. Default 5."
                         }
                     }
                 },
@@ -82,6 +87,181 @@
                             "type": "integer",
                             "minimum": 1,
                             "description": "Failed jobs warn at medium; at high once the oldest is older than this many hours. Default 24."
+                        }
+                    }
+                },
+                "dependency-licenses": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "allowed": {
+                            "type": "array",
+                            "description": "SPDX license ids or globs (* any characters, ? exactly one, case-insensitive) that never warn. An expression such as MIT OR GPL-3.0-only passes when any option is allowed. Default [].",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9.+:*?-]+$"
+                            }
+                        },
+                        "denied": {
+                            "type": "array",
+                            "description": "SPDX license ids or globs that make the finding a fail at high. Denied wins over allowed. Default [].",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9.+:*?-]+$"
+                            }
+                        },
+                        "includeDev": {
+                            "type": "boolean",
+                            "description": "Also inspect development dependencies (Composer packages-dev, npm dev and devOptional). Default false. --no-dev and a top-level includeDev of false still leave Composer packages-dev out of every check."
+                        }
+                    }
+                },
+                "laravel-database": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "connections": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Database connection names (config/database.php) probed with select 1 on top of the default connection. Default none."
+                        }
+                    }
+                },
+                "laravel-disk-space": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Warn (medium) when the disk holding storage/ is at least this many percent used. Default 80; not above failAtPercentUsed."
+                        },
+                        "failAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Fail (high) when the disk holding storage/ is at least this many percent used. Default 90."
+                        }
+                    }
+                },
+                "laravel-queue-backlog": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "maxOldestAgeMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn when the oldest pending job of a queue has waited longer than this many minutes. Default 15."
+                        },
+                        "maxPendingJobs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn when a queue holds more than this many pending jobs. Default 1000."
+                        },
+                        "queues": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Redis only: queue names read on top of the default queue of the default connection. The database driver reads every queue in its table. Default none."
+                        }
+                    }
+                },
+                "env-example-sync": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "ignoreKeys": {
+                            "type": "array",
+                            "description": "Environment key names or globs (* any characters, ? exactly one, case-insensitive) that env-example-sync never reports, neither as missing from .env.example nor as unused. Added to the default list of optional Laravel keys (AWS_*, PUSHER_*, VITE_*, MEMCACHED_*, REDIS_CLIENT, ...) unless useDefaultIgnoreKeys is false. Default [].",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_*?]+$"
+                            }
+                        },
+                        "useDefaultIgnoreKeys": {
+                            "type": "boolean",
+                            "description": "Keep the default list of optional Laravel keys. false makes ignoreKeys replace it. Default true."
+                        }
+                    }
+                },
+                "laravel-database-connections": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAt": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn (medium) when the default database connection has more open connections than this (MySQL, MariaDB: Threads_connected on the server; PostgreSQL: pg_stat_activity for the database). At most failAt. Default 50."
+                        },
+                        "failAt": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Fail (high) when the default database connection has more open connections than this. Default 100."
+                        }
+                    }
+                },
+                "laravel-database-size": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAtMb": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Warn (medium) when the default database is larger than this many MB. Unset by default: the size is only reported (pass, info)."
+                        }
+                    }
+                },
+                "laravel-queue-workers": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "staleAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Without Laravel Horizon: warn (medium) for a queue that has pending jobs when no worker heartbeat is newer than this many minutes. Default 5."
+                        }
+                    }
+                },
+                "laravel-backups": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "maxAgeHours": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Fail (high) for a spatie/laravel-backup destination whose newest backup is older than this many hours. Default 26."
+                        }
+                    }
+                },
+                "laravel-redis-memory": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "warnAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Warn (medium) when a Redis connection uses this share of its maxmemory or more. Default 80."
+                        },
+                        "failAtPercentUsed": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Fail (high) when a Redis connection uses this share of its maxmemory or more. Default 90."
+                        },
+                        "connections": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Redis connection names (config/database.php redis.*) to read instead of the ones the default cache store, queue connection and session use. Default []."
                         }
                     }
                 }
@@ -128,6 +308,12 @@
                     "minimum": 0
                 }
             }
+        },
+        "release": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9._+/@-]+$",
+            "description": "Release identifier sent with reports, runtime and exception batches. Wins over EXCUBIA_RELEASE and the CI and platform variables. Up to 100 characters of A-Z a-z 0-9 . _ + / @ -; any other value is reported as no release."
         },
         "app": {
             "type": "object",
@@ -225,6 +411,97 @@
                 "outgoingHttp": {
                     "$ref": "#/$defs/runtimeType",
                     "description": "Calls made with Laravel's HTTP client: host, status class, duration."
+                },
+                "requestMemory": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Peak PHP memory of incoming HTTP requests at RequestHandled: route name (or unnamed), method, total and maximum MB. Off by default (#132)."
+                },
+                "jobMemory": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Peak PHP memory of each queued job (the peak is reset when the job starts): class, queue, total and maximum MB. Off by default (#132)."
+                },
+                "queueWait": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Time queued jobs wait between the push and their first attempt, without their delay: class, queue, wait in ms. Adds an excubiaQueuedAt timestamp to every job payload. Off by default (#132)."
+                },
+                "cache": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Cache hits, misses, writes and deletes per store name and key prefix (cut at the first : or ., masked; never the whole key or the value). Off by default (#132)."
+                },
+                "mail": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Sent mail (MessageSent) per mailable class and mailer name; failures only through exception capture (exceptions.enabled) when it sees a mail transport exception. Never recipients, subjects or bodies. Off by default (#132)."
+                },
+                "notifications": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Sent and failed notifications (NotificationSent, NotificationFailed) per notification class and channel. Never the notifiable or the content. Off by default (#132)."
+                },
+                "logLevels": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Log entries (MessageLogged) counted per level. Never the message or the context. Off by default (#132)."
+                },
+                "deprecations": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "PHP deprecations (E_DEPRECATED, E_USER_DEPRECATED) counted per source (app, vendor/<vendor>/<package> or unknown), masked message (at most 300 characters) and PHP minor version, through an error handler chained in front of Laravel's, which still runs. Never the file path, line or stack. Off by default (#133)."
+                },
+                "duplicateQueries": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "N+1 detection: within one HTTP request or queued job, database queries are grouped by normalised SQL (literals as ?, IN lists as IN (…), whitespace collapsed; bindings are never read) and connection. A shape that runs at least threshold times is recorded once for that request or job, with the route name or job class and how many times it ran. At most 200 shapes per request or job. Off by default (#148).",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "description": "Share of requests and jobs evaluated, 0 to 1. Default 1.",
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "threshold": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "description": "Executions of one query shape within one request or job from which it is recorded. Default 5."
+                        }
+                    }
+                },
+                "server": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Server CPU, memory and disk: every php artisan excubia:push-runtime run (each minute, on every server that runs the scheduler) takes one sample of this machine: load average over 1, 5 and 15 minutes, CPU cores, memory used and total, and used and total size of the disk that holds storage/. Read with PHP only, without a shell; on macOS CPU cores and memory are null. Never the hostname or a path. Off by default (#149).",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "description": "Share of runs that take a sample, 0 to 1. Default 1.",
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "name": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                            "description": "Readable name of this server in the dashboard, such as web-1. The EXCUBIA_SERVER_NAME environment variable wins (#162); since excubia.json is shared by every server, set that variable per server instead. Default: the first 12 hex characters of sha256(hostname + sha256(app key)), stable and not reversible; the hostname is never sent."
+                        }
+                    }
+                },
+                "commands": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Artisan command runs counted per command name and exit code class (0, 1, other), with their duration; never arguments or options. Only the top-level command of a process; commands run by the scheduler are scheduledTask and Excubia's own excubia:* commands are never counted. Off by default (#152).",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "ignore": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Command names, * wildcards allowed, that are never counted. Replaces the default [\"schedule:run\", \"schedule:work\", \"queue:work\", \"queue:listen\", \"horizon*\", \"tinker\"]; excubia:* is always excluded."
+                        }
+                    }
                 }
             }
         },
@@ -275,6 +552,19 @@
                     "minimum": 0,
                     "maximum": 1,
                     "description": "Share of events recorded, 0 to 1. Default 1."
+                }
+            }
+        },
+        "optInRuntimeType": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Collect this type when runtime.enabled is true. Default false: the types added in 1.0.0-beta.2 are opt-in, so an excubia-app that does not know them yet never receives them."
+                },
+                "sampleRate": {
+                    "$ref": "#/$defs/runtimeType/properties/sampleRate"
                 }
             }
         }

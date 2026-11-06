@@ -21,7 +21,7 @@ use Qiick\Excubia\Enums\SkipReasonEnum;
 final readonly class FindingData
 {
     /**
-     * @param  array<string, string|int|bool|list<string>|null>  $details
+     * @param  array<string, string|int|float|bool|list<string>|list<array<string, string|int|float>>|null>  $details  a float or a list of objects only where `docs/report-schema.json` says so (`laravel-database-size`)
      */
     public function __construct(
         public string $checkId,
@@ -66,6 +66,49 @@ final readonly class FindingData
             skipReason: SkipReasonEnum::NotApplicable,
             details: ['count' => $count],
         )];
+    }
+
+    /**
+     * One warn row for a direct dependency with newer releases, shared by
+     * `composer-outdated` and `npm-outdated`: behind on a major or a minor
+     * is low, behind only on a patch is info. `$newer` comes from
+     * `ComposerConstraintService::newerReleases()` with at least
+     * `latestMinor` or `latestMajor` set.
+     *
+     * @param  array{latestPatch: string|null, latestMinor: string|null, latestMajor: string|null}  $newer
+     */
+    public static function outdatedPackage(string $checkId, string $packageName, string $lockedVersion, array $newer, string $evidenceUrl): self
+    {
+        $isMajorBehind = $newer['latestMajor'] !== null;
+        $isMinorBehind = $newer['latestMinor'] !== null && $newer['latestMinor'] !== $newer['latestPatch'];
+
+        if ($isMajorBehind) {
+            $message = 'A new major is available: '.$newer['latestMajor'].'.';
+            $fixHint = $newer['latestMinor'] === null
+                ? 'Plan the upgrade to '.$newer['latestMajor'].'.'
+                : 'Update to '.$newer['latestMinor'].', then plan the upgrade to '.$newer['latestMajor'].'.';
+        } else {
+            $message = ($isMinorBehind ? 'Behind on a minor' : 'Behind on a patch').': '.$newer['latestMinor'].' is available.';
+            $fixHint = 'Update to '.$newer['latestMinor'].'.';
+        }
+
+        return new self(
+            checkId: $checkId,
+            severity: $isMajorBehind || $isMinorBehind ? SeverityEnum::Low : SeverityEnum::Info,
+            status: FindingStatusEnum::Warn,
+            subject: $packageName,
+            message: $message,
+            fixHint: $fixHint,
+            evidenceUrl: $evidenceUrl,
+            details: [
+                'package' => $packageName,
+                'lockedVersion' => $lockedVersion,
+                'latestPatch' => $newer['latestPatch'],
+                'latestMinor' => $newer['latestMinor'],
+                'latestMajor' => $newer['latestMajor'],
+                'isMajorBehind' => $isMajorBehind,
+            ],
+        );
     }
 
     /**

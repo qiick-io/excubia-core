@@ -73,6 +73,18 @@ it('loads the posture thresholds and defaults them to 10 minutes and 24 hours', 
         ->and(ExcubiaConfigurationData::defaults()->failedJobHighSeverityAfterHours)->toBe(24);
 });
 
+it('loads the late-run grace for excubia-app and defaults it to 5 minutes', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 30, "lateAfterMinutes": 15}}}',
+    ]);
+
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+
+    expect($configuration->schedulerLateAfterMinutes)->toBe(15)
+        ->and($configuration->schedulerHeartbeatStaleAfterMinutes)->toBe(30)
+        ->and(ExcubiaConfigurationData::defaults()->schedulerLateAfterMinutes)->toBe(5);
+});
+
 it('rejects posture thresholds below one and unknown posture keys', function (string $document, string $message) {
     $root = temporaryProject(['excubia.json' => $document]);
 
@@ -80,6 +92,9 @@ it('rejects posture thresholds below one and unknown posture keys', function (st
         ->toThrow(InvalidConfigurationException::class, $message);
 })->with([
     'heartbeat zero' => ['{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 0}}}', 'staleAfterMinutes must be at least 1.'],
+    'late grace zero' => ['{"checks": {"laravel-scheduler-heartbeat": {"lateAfterMinutes": 0}}}', 'lateAfterMinutes must be at least 1.'],
+    'late grace not an integer' => ['{"checks": {"laravel-scheduler-heartbeat": {"lateAfterMinutes": "5"}}}', 'checks.laravel-scheduler-heartbeat.lateAfterMinutes'],
+    'unknown heartbeat key' => ['{"checks": {"laravel-scheduler-heartbeat": {"missedAfterMinutes": 3}}}', 'Unknown checks.laravel-scheduler-heartbeat key [missedAfterMinutes].'],
     'failed jobs zero' => ['{"checks": {"laravel-failed-jobs": {"highSeverityAfterHours": 0}}}', 'highSeverityAfterHours must be at least 1.'],
     'unknown key' => ['{"checks": {"laravel-failed-jobs": {"maxCount": 3}}}', 'Unknown checks.laravel-failed-jobs key [maxCount].'],
 ]);
@@ -178,4 +193,59 @@ it('loads the excubia-app url and token and rejects unknown app keys', function 
 
     expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $invalid))
         ->toThrow(InvalidConfigurationException::class, 'Unknown app key [secret]');
+});
+
+it('loads the infrastructure check settings and defaults them to 80 / 90 %, 15 minutes and 1000 jobs', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"checks": {"laravel-database": {"connections": ["replica"]}, "laravel-disk-space": {"warnAtPercentUsed": 70, "failAtPercentUsed": 95}, "laravel-queue-backlog": {"maxOldestAgeMinutes": 5, "maxPendingJobs": 50, "queues": ["emails"]}}}',
+    ]);
+
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+    $defaults = ExcubiaConfigurationData::defaults();
+    $partial = (new ExcubiaConfigurationLoader)->load(null, temporaryProject(['excubia.json' => '{"checks": {"laravel-disk-space": {"failAtPercentUsed": 99}, "laravel-queue-backlog": {}}}']));
+
+    expect($configuration->databaseConnectionNames)->toBe(['replica'])
+        ->and($configuration->diskSpaceWarnAtPercentUsed)->toBe(70)
+        ->and($configuration->diskSpaceFailAtPercentUsed)->toBe(95)
+        ->and($configuration->queueBacklogMaxOldestAgeMinutes)->toBe(5)
+        ->and($configuration->queueBacklogMaxPendingJobs)->toBe(50)
+        ->and($configuration->queueBacklogQueueNames)->toBe(['emails'])
+        ->and([$defaults->databaseConnectionNames, $defaults->diskSpaceWarnAtPercentUsed, $defaults->diskSpaceFailAtPercentUsed, $defaults->queueBacklogMaxOldestAgeMinutes, $defaults->queueBacklogMaxPendingJobs, $defaults->queueBacklogQueueNames])
+        ->toBe([[], 80, 90, 15, 1000, []])
+        ->and([$partial->diskSpaceWarnAtPercentUsed, $partial->diskSpaceFailAtPercentUsed, $partial->queueBacklogMaxPendingJobs])->toBe([80, 99, 1000]);
+});
+
+it('rejects invalid infrastructure check settings', function (string $document, string $message) {
+    $root = temporaryProject(['excubia.json' => $document]);
+
+    expect(fn () => (new ExcubiaConfigurationLoader)->load(null, $root))
+        ->toThrow(InvalidConfigurationException::class, $message);
+})->with([
+    'warn above fail' => ['{"checks": {"laravel-disk-space": {"warnAtPercentUsed": 95, "failAtPercentUsed": 90}}}', 'laravel-disk-space needs 1 <= warnAtPercentUsed <= failAtPercentUsed <= 100.'],
+    'fail above 100' => ['{"checks": {"laravel-disk-space": {"failAtPercentUsed": 101}}}', 'laravel-disk-space needs'],
+    'warn zero' => ['{"checks": {"laravel-disk-space": {"warnAtPercentUsed": 0}}}', 'laravel-disk-space needs'],
+    'percent not an integer' => ['{"checks": {"laravel-disk-space": {"warnAtPercentUsed": "80"}}}', 'checks.laravel-disk-space.warnAtPercentUsed must be an integer.'],
+    'age zero' => ['{"checks": {"laravel-queue-backlog": {"maxOldestAgeMinutes": 0}}}', 'maxOldestAgeMinutes and maxPendingJobs must be at least 1.'],
+    'pending zero' => ['{"checks": {"laravel-queue-backlog": {"maxPendingJobs": 0}}}', 'maxOldestAgeMinutes and maxPendingJobs must be at least 1.'],
+    'queues not a list' => ['{"checks": {"laravel-queue-backlog": {"queues": "emails"}}}', 'checks.laravel-queue-backlog.queues must be a list of strings.'],
+    'empty connection' => ['{"checks": {"laravel-database": {"connections": [""]}}}', 'checks.laravel-database.connections[0] must be a non-empty string.'],
+    'unknown key' => ['{"checks": {"laravel-database": {"timeout": 3}}}', 'Unknown checks.laravel-database key [timeout].'],
+    'not an object' => ['{"checks": {"laravel-disk-space": 80}}', 'checks.laravel-disk-space must be an object.'],
+]);
+
+it('rejects an empty probe name in a hand-built configuration', function () {
+    $defaults = ExcubiaConfigurationData::defaults();
+
+    expect(fn () => new ExcubiaConfigurationData(
+        failOnSeverity: $defaults->failOnSeverity,
+        isDevelopmentDependencyIncluded: true,
+        staleAfterMonths: 24,
+        phpWarnDaysBeforeEndOfLife: 180,
+        laravelWarnDaysBeforeEndOfLife: 180,
+        isNodeEndOfLifeCheckEnabled: true,
+        ignoreRules: [],
+        cacheDirectory: null,
+        cacheTtlHours: 24,
+        queueBacklogQueueNames: [''],
+    ))->toThrow(InvalidConfigurationException::class, 'must be non-empty names.');
 });
