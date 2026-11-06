@@ -10,14 +10,22 @@ use DateTimeZone;
 use Illuminate\Console\Command;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Console\CheckCommand;
+use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
+use Qiick\Excubia\Contracts\ServerResourcesContract;
+use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
+use Qiick\Excubia\Services\DiskSpaceService;
 use Qiick\Excubia\Services\ReleaseService;
 use Qiick\Excubia\Services\ReportPushService;
 use Qiick\Excubia\Services\RuntimeBufferService;
+use Qiick\Excubia\Services\ServerMetricsService;
+use Qiick\Excubia\Services\ServerResourcesService;
 use Qiick\Excubia\Services\SymfonyHttpClientService;
+use Throwable;
 
 /**
  * `php artisan excubia:push-runtime`: send the buffered runtime aggregates
@@ -39,6 +47,11 @@ use Qiick\Excubia\Services\SymfonyHttpClientService;
  * 2 configuration error, 3 the app rejected the token, answered an error or
  * could not be reached. `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` win over the
  * `app` keys of `excubia.json`, as for `excubia:push`.
+ *
+ * When `runtime.server` is on (#149), each run first appends one `server`
+ * sample of this machine to the runtime buffer, so it goes out in the same
+ * run. The scheduler runs the command on every server, so each server
+ * pushes its own sample.
  *
  * Each batch carries the release resolved when it is sent (`release` key,
  * `EXCUBIA_RELEASE` or a platform variable; no git fallback here).
@@ -88,8 +101,10 @@ final class ExcubiaPushRuntimeCommand extends Command
 
         try {
             if ($configuration->runtime->isEnabled) {
+                $runtimeBuffer = new RuntimeBufferService($this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'), $configuration->runtime->bufferMaxBytes);
+                $this->sampleServer($configuration->runtime, $runtimeBuffer, $sentAt->getTimestamp());
                 $hasFailed = ! $this->sendBuffer(
-                    new RuntimeBufferService($this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'), $configuration->runtime->bufferMaxBytes),
+                    $runtimeBuffer,
                     static fn (RuntimeBufferService $buffer, string $path): array => $buffer->read($path),
                     static fn (array $entries, string $batchId) => $pushService->pushRuntime($entries, $batchId, $appUrl, $appToken, $sentAt, $release),
                     ['runtime batch', 'runtime batches', 'runtime data'],
@@ -153,20 +168,62 @@ final class ExcubiaPushRuntimeCommand extends Command
     }
 
     /**
+     * Append one `server` sample when the type is on and sampled. The disk
+     * is the one that holds `storage/`. A failure here never stops the push:
+     * monitoring must not break the command.
+     */
+    private function sampleServer(RuntimeConfigurationData $runtime, RuntimeBufferService $buffer, int $timestamp): void
+    {
+        $sampleRate = $runtime->sampleRate(RuntimeTypeEnum::Server);
+
+        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Server) || ($sampleRate < 1.0 && mt_rand() / mt_getrandmax() >= $sampleRate)) {
+            return;
+        }
+
+        try {
+            $applicationKey = $this->laravel->make('config')->get('app.key');
+            $hostname = gethostname();
+            $sampler = new ServerMetricsService(
+                $this->bound(ServerResourcesContract::class) ?? new ServerResourcesService,
+                $this->bound(DiskSpaceContract::class) ?? new DiskSpaceService,
+            );
+            $buffer->append([$sampler->aggregate(
+                ServerMetricsService::serverIdentity($runtime->serverName, is_string($hostname) ? $hostname : '', is_string($applicationKey) ? $applicationKey : ''),
+                $this->laravel->storagePath(),
+                $sampleRate,
+                $timestamp,
+            )]);
+        } catch (Throwable) {
+            // The server sample is best effort; the buffered data is still sent.
+        }
+    }
+
+    /**
      * The container binding when there is one (tests bind a fake), else the
      * Symfony client with the push timeouts and retries.
      */
     private function httpClient(): HttpClientContract
     {
-        if ($this->laravel->bound(HttpClientContract::class)) {
-            $httpClient = $this->laravel->make(HttpClientContract::class);
+        return $this->bound(HttpClientContract::class) ?? new SymfonyHttpClientService;
+    }
 
-            if ($httpClient instanceof HttpClientContract) {
-                return $httpClient;
-            }
+    /**
+     * The container binding of an interface, when there is one of that type.
+     *
+     * @template TContract of object
+     *
+     * @param  class-string<TContract>  $contract
+     * @return TContract|null
+     */
+    private function bound(string $contract): ?object
+    {
+        if (! $this->laravel->bound($contract)) {
+            return null;
         }
 
-        return new SymfonyHttpClientService;
+        $instance = $this->laravel->make($contract);
+
+        return $instance instanceof $contract ? $instance : null;
     }
 
     private static function environmentValue(string $name): ?string

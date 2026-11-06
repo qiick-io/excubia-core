@@ -60,6 +60,15 @@ final class RuntimeBufferService
     private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats'];
 
     /**
+     * Gauges of the `server` type (#149): a reading, not a count, and null
+     * when the platform does not expose it. Two samples of one server in one
+     * minute keep the larger reading of each gauge (null only when both are
+     * null), so the merge does not depend on order and an alert never
+     * misses a peak.
+     */
+    public const GAUGE_FIELDS = ['loadAverage1', 'loadAverage5', 'loadAverage15', 'cpuCores', 'memoryUsedMb', 'memoryTotalMb', 'diskUsedGb', 'diskTotalGb'];
+
+    /**
      * Metric fields that hold one number each.
      */
     private const NUMBER_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS, ...self::MAXIMUM_COUNTER_FIELDS];
@@ -74,7 +83,7 @@ final class RuntimeBufferService
      * Every metric field. Every other field is a dimension and part of the
      * merge key.
      */
-    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, self::HISTOGRAM_FIELD];
+    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, self::HISTOGRAM_FIELD];
 
     public function __construct(
         private readonly string $directory,
@@ -200,7 +209,8 @@ final class RuntimeBufferService
     /**
      * Merge aggregates that share every dimension (type, bucket, sample rate
      * and the type's keys): counts and totals add up, maxima take the larger,
-     * histograms add up element by element (see `combine()`).
+     * histograms add up element by element, gauges keep the larger reading
+     * (see `combine()`).
      *
      * @param  list<array<string, mixed>>  $aggregates
      * @return list<array<string, mixed>>
@@ -276,6 +286,12 @@ final class RuntimeBufferService
             }
         }
 
+        foreach (self::GAUGE_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = self::largerGauge($into[$field] ?? null, $from[$field] ?? null);
+            }
+        }
+
         if (array_key_exists(self::HISTOGRAM_FIELD, $into) || array_key_exists(self::HISTOGRAM_FIELD, $from)) {
             $histogram = self::sumHistograms($into[self::HISTOGRAM_FIELD] ?? null, $from[self::HISTOGRAM_FIELD] ?? null);
 
@@ -287,6 +303,16 @@ final class RuntimeBufferService
         }
 
         return $into;
+    }
+
+    /**
+     * The larger of two gauge readings; a null reading loses to a number.
+     */
+    private static function largerGauge(mixed $first, mixed $second): int|float|null
+    {
+        $readings = array_filter([$first, $second], static fn (mixed $reading): bool => is_int($reading) || is_float($reading));
+
+        return $readings === [] ? null : max($readings);
     }
 
     /**
@@ -330,8 +356,8 @@ final class RuntimeBufferService
 
     /**
      * Every aggregate has a type, a bucket, `count` and `errorCount`; any
-     * other metric field it carries is a number, and a histogram is a list
-     * of non-negative counts.
+     * other metric field it carries is a number, a gauge is a number or
+     * null, and a histogram is a list of non-negative counts.
      *
      * @param  array<mixed>  $aggregate
      */
@@ -346,6 +372,12 @@ final class RuntimeBufferService
 
         foreach (self::NUMBER_FIELDS as $field) {
             if (array_key_exists($field, $aggregate) && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
+                return false;
+            }
+        }
+
+        foreach (self::GAUGE_FIELDS as $field) {
+            if (array_key_exists($field, $aggregate) && $aggregate[$field] !== null && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
                 return false;
             }
         }

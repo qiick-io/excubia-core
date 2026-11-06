@@ -398,6 +398,25 @@
                             "description": "Executions of one query shape within one request or job from which it is recorded. Default 5."
                         }
                     }
+                },
+                "server": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Server CPU, memory and disk: every php artisan excubia:push-runtime run (each minute, on every server that runs the scheduler) takes one sample of this machine: load average over 1, 5 and 15 minutes, CPU cores, memory used and total, and used and total size of the disk that holds storage/. Read with PHP only, without a shell; on macOS CPU cores and memory are null. Never the hostname or a path. Off by default (#149).",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "description": "Share of runs that take a sample, 0 to 1. Default 1.",
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "name": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                            "description": "Readable name of this server in the dashboard, such as web-1 (excubia.json is shared by every server, so set it per server in your deploy step, or leave it unset on a single server). Default: the first 12 hex characters of sha256(hostname + sha256(app key)), stable and not reversible; the hostname is never sent."
+                        }
+                    }
                 }
             }
         },
