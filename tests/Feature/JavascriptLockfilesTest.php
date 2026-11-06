@@ -5,9 +5,12 @@ declare(strict_types=1);
 use JsonSchema\Constraints\Constraint;
 use JsonSchema\Validator;
 use Qiick\Excubia\Console\CheckCommand;
+use Qiick\Excubia\Console\PushCommand;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\LockedPackageData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
+use Qiick\Excubia\Parsers\PnpmLockParser;
+use Qiick\Excubia\Parsers\YarnLockParser;
 use Qiick\Excubia\Services\ProjectSnapshotService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -316,3 +319,100 @@ it('rejects lockfiles it cannot read with a configuration error', function (arra
     'Yarn v1 garbage' => [['yarn.lock' => "# yarn lockfile v1\nnot a lockfile\n"], 'yarn.lock is not a Yarn lockfile.'],
     'broken YAML' => [['pnpm-lock.yaml' => "lockfileVersion: '9.0\n"], 'pnpm-lock.yaml line 1 has an unclosed quoted string.'],
 ]);
+
+/**
+ * Every file under `$directory`, concatenated.
+ */
+function directoryContents(string $directory): string
+{
+    $contents = '';
+
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)) as $file) {
+        $contents .= (string) file_get_contents($file->getPathname());
+    }
+
+    return $contents;
+}
+
+/**
+ * A pnpm and a Yarn Berry project whose registry files carry credentials
+ * next to the scope registry Excubia needs (`@corp` on a private server).
+ *
+ * @return array<string, array{0: array<string, string>}>
+ */
+function credentialProjects(): array
+{
+    $files = [
+        'composer.json' => '{}',
+        'composer.lock' => '{"packages": [], "packages-dev": []}',
+        'package.json' => '{"dependencies": {"lodash": "^4.17.20", "@corp/internal": "^1.0.0"}}',
+    ];
+
+    return [
+        'pnpm and .npmrc' => [[...$files,
+            'pnpm-lock.yaml' => "lockfileVersion: '9.0'\n\npackages:\n\n  '@corp/internal@1.0.0':\n    resolution: {integrity: sha512-abc}\n\n  lodash@4.17.20:\n    resolution: {integrity: sha512-def}\n",
+            '.npmrc' => "registry=https://registry.npmjs.org/\n@corp:registry=https://npm.corp.test/\n"
+                ."//npm.corp.test/:_authToken=SENTINEL-NPMRC-AUTH-TOKEN\n_auth=SENTINEL-NPMRC-AUTH\n//npm.corp.test/:_password=SENTINEL-NPMRC-PASSWORD\nemail=dev@corp.test\n",
+        ]],
+        'Yarn Berry and .yarnrc.yml' => [[...$files,
+            'yarn.lock' => "__metadata:\n  version: 8\n\n\"@corp/internal@npm:^1.0.0\":\n  version: 1.0.0\n  resolution: \"@corp/internal@npm:1.0.0\"\n\n\"lodash@npm:^4.17.20\":\n  version: 4.17.20\n  resolution: \"lodash@npm:4.17.20\"\n",
+            '.yarnrc.yml' => "npmAuthToken: SENTINEL-YARNRC-AUTH-TOKEN\nnpmAuthIdent: \"SENTINEL-YARNRC-AUTH-IDENT\"\n\nnpmScopes:\n  corp:\n    npmAlwaysAuth: true\n    npmAuthToken: SENTINEL-YARNRC-SCOPE-TOKEN\n    npmRegistryServer: \"https://npm.corp.test\"\n",
+        ]],
+    ];
+}
+
+it('reads only the registry keys of the registry files and leaks no credential', function (array $projectFiles) {
+    $cacheDirectory = temporaryProject(['.keep' => '']);
+    $project = temporaryProject([...$projectFiles, 'excubia.json' => json_encode(['cache' => ['directory' => $cacheDirectory]], JSON_THROW_ON_ERROR)]);
+    $client = new FakeHttpClient([
+        'https://api.osv.dev/v1/querybatch' => ['results' => [['vulns' => [['id' => 'GHSA-29mw-wpgm-hmr9']]]]],
+        'https://excubia.example.test/api/reports' => ['stored' => true],
+    ]);
+    $outputs = [];
+
+    foreach (['json', 'table', 'markdown', 'sarif'] as $format) {
+        $tester = new CommandTester(new CheckCommand($client));
+        $tester->execute(['path' => $project, '--format' => $format, '--no-banner' => true]);
+        $outputs[] = $tester->getDisplay();
+    }
+
+    $push = new CommandTester(new PushCommand($client, new DateTimeImmutable('2026-11-06', new DateTimeZone('UTC')), [
+        'EXCUBIA_APP_URL' => 'https://excubia.example.test',
+        'EXCUBIA_APP_TOKEN' => 'project-token',
+    ]));
+    $pushExitCode = $push->execute(['path' => $project]);
+    $outputs[] = $push->getDisplay();
+    $outputs[] = json_encode($client->postedPayloads, JSON_THROW_ON_ERROR);
+    $outputs[] = implode("\n", $client->requests);
+    $outputs[] = directoryContents($cacheDirectory);
+    $everything = implode("\n", $outputs);
+    $isPrivate = [];
+
+    foreach (javascriptPackagesByName($project) as $name => $package) {
+        $isPrivate[$name] = $package->isPrivate;
+    }
+
+    ksort($isPrivate);
+
+    expect($pushExitCode)->toBe(0)
+        ->and($client->postedPayloads)->not->toBe([])
+        ->and(directoryContents($cacheDirectory))->toContain('GHSA-29mw-wpgm-hmr9')
+        ->and($isPrivate)->toBe(['@corp/internal' => true, 'lodash' => false])
+        ->and($everything)->toContain('@corp/internal')
+        ->and($everything)->not->toContain('npm.corp.test')
+        ->and($everything)->not->toContain('dev@corp.test')
+        ->and($everything)->not->toContain('SENTINEL');
+})->with(credentialProjects());
+
+it('keeps no line of the registry files in the parsers or the snapshot', function (array $projectFiles) {
+    $yarnLockParser = new YarnLockParser;
+    $pnpmLockParser = new PnpmLockParser;
+    $snapshotService = new ProjectSnapshotService(yarnLockParser: $yarnLockParser, pnpmLockParser: $pnpmLockParser);
+    $snapshot = $snapshotService->snapshot(temporaryProject($projectFiles), ExcubiaConfigurationData::defaults());
+    $state = serialize([$snapshot, $snapshotService, $yarnLockParser, $pnpmLockParser]);
+
+    expect($snapshot->npmPackages)->toHaveCount(2)
+        ->and($state)->not->toContain('SENTINEL')
+        ->and($state)->not->toContain('npm.corp.test')
+        ->and($state)->not->toContain('corp:registry');
+})->with(credentialProjects());

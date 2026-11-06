@@ -144,8 +144,12 @@ final class PnpmLockParser
     /**
      * Scopes the project `.npmrc` serves from a registry other than the
      * public one: `@scope:registry=…`, plus the default scope for a
-     * non-public `registry=…`. The URLs are only compared, never stored or
-     * reported.
+     * non-public `registry=…`.
+     *
+     * `.npmrc` often holds credentials (`//host/:_authToken=…`, `_auth`,
+     * `_password`): only lines matching the registry pattern are looked at,
+     * every other line is dropped on the spot and never kept in any object.
+     * The URLs are only compared, never stored or reported.
      *
      * @return list<string>
      */

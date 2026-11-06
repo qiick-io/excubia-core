@@ -37,6 +37,8 @@ Only packages the lockfile shows as served by the public registries are sent (#1
 | `yarn.lock` (Berry v2+) | `npm:` resolution, and `.yarnrc.yml` points neither the package's scope (`npmScopes`) nor the default `npmRegistryServer` at another server | `workspace:`, `file:`, `link:`, `portal:`, `patch:`, git and URL resolutions, scopes on another registry |
 | `pnpm-lock.yaml` (6 and 9) | registry entry with a plain `resolution` (or a tarball on the public registry), and `.npmrc` points neither its `@scope:registry` nor `registry` at another server | `file:`, `link:`, directory, git and tarball dependencies, scopes on another registry |
 
+`.npmrc` and `.yarnrc.yml` are read for registry URLs only; credentials ignored. Only the `registry` / `@scope:registry` lines and `npmRegistryServer` / `npmScopes` scope entries are looked at, every other line (tokens, `_auth`, passwords) is dropped right away, and the URLs are never stored, sent or reported.
+
 The lockfile cannot tell a private package on the public npm registry, or one fetched through Packagist, from a public one. Name those in `privacy.skipPackages` with globs such as `"acme/*"` or `"@acme/*"` ([configuration](./configuration.md#privacy)):
 
 ```json

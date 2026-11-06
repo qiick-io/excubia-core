@@ -156,36 +156,78 @@ final class YarnLockParser
     /**
      * Scopes `.yarnrc.yml` serves from a registry other than the public
      * one: `npmScopes.<scope>.npmRegistryServer`, plus the default scope when
-     * the top-level `npmRegistryServer` is not public. The URLs are only
+     * the top-level `npmRegistryServer` is not public.
+     *
+     * The file often holds credentials (`npmAuthToken`, `npmAuthIdent`), so
+     * it is not parsed as YAML: each line is matched against the
+     * `npmRegistryServer` and scope-key patterns and every other line is
+     * dropped on the spot, never kept in any object. The URLs are only
      * compared, never stored or reported.
+     *
+     * ponytail: flow-style `npmScopes: {…}` is not read (Yarn writes block
+     * style); its scopes then count as the default registry.
      *
      * @return list<string>
      */
     private function privateRegistryScopes(?string $yarnrcContents): array
     {
-        if ($yarnrcContents === null) {
-            return [];
-        }
-
-        $configuration = $this->yamlParser->parse($yarnrcContents, '.yarnrc.yml');
         $scopes = [];
-        $defaultServer = $configuration['npmRegistryServer'] ?? null;
+        $isInNpmScopes = false;
+        $scopeIndent = null;
+        $scope = null;
 
-        if (is_string($defaultServer) && ! PackageLockParser::isPublicRegistryUrl($defaultServer)) {
-            $scopes[] = PackageLockParser::DEFAULT_REGISTRY_SCOPE;
-        }
+        foreach (preg_split('/\R/', $yarnrcContents ?? '') ?: [] as $line) {
+            if (trim($line) === '' || str_starts_with(ltrim($line), '#')) {
+                continue;
+            }
 
-        $npmScopes = $configuration['npmScopes'] ?? null;
+            $indent = strlen($line) - strlen(ltrim($line, ' '));
 
-        foreach (is_array($npmScopes) ? $npmScopes : [] as $scope => $settings) {
-            $server = is_array($settings) ? ($settings['npmRegistryServer'] ?? null) : null;
+            if ($indent === 0) {
+                $isInNpmScopes = preg_match('/^npmScopes\s*:\s*$/', $line) === 1;
+                $scopeIndent = null;
+                $scope = null;
+                $server = $this->registryServer($line);
 
-            if (is_string($server) && ! PackageLockParser::isPublicRegistryUrl($server)) {
-                $scopes[] = '@'.strtolower(ltrim((string) $scope, '@'));
+                if ($server !== null && ! PackageLockParser::isPublicRegistryUrl($server)) {
+                    $scopes[] = PackageLockParser::DEFAULT_REGISTRY_SCOPE;
+                }
+
+                continue;
+            }
+
+            if (! $isInNpmScopes) {
+                continue;
+            }
+
+            if (($scopeIndent === null || $indent <= $scopeIndent) && preg_match('/^\s+["\']?@?([A-Za-z0-9._-]+)["\']?\s*:\s*$/', $line, $matches) === 1) {
+                $scopeIndent = $indent;
+                $scope = '@'.strtolower($matches[1]);
+
+                continue;
+            }
+
+            $server = $scope !== null && $indent > $scopeIndent ? $this->registryServer(ltrim($line, ' ')) : null;
+
+            if ($server !== null && ! PackageLockParser::isPublicRegistryUrl($server)) {
+                $scopes[] = $scope;
             }
         }
 
-        return $scopes;
+        return array_values(array_unique($scopes));
+    }
+
+    /**
+     * The URL of an `npmRegistryServer: …` line, quotes removed, or null for
+     * any other line.
+     */
+    private function registryServer(string $line): ?string
+    {
+        if (preg_match('/^npmRegistryServer\s*:\s*(\S+)\s*$/', $line, $matches) !== 1) {
+            return null;
+        }
+
+        return trim($matches[1], '"\'');
     }
 
     /**

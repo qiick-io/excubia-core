@@ -77,10 +77,15 @@ final class YamlSubsetParser
             return [];
         }
 
-        $value = $this->block($this->lines[0]['indent']);
+        try {
+            $value = $this->block($this->lines[0]['indent']);
 
-        if ($this->hasLinesLeft()) {
-            throw $this->error($this->lines[$this->position]['number'], 'has an unexpected indentation');
+            if ($this->hasLinesLeft()) {
+                throw $this->error($this->lines[$this->position]['number'], 'has an unexpected indentation');
+            }
+        } finally {
+            // The lines are only needed while parsing: the parser keeps no file content.
+            $this->lines = [];
         }
 
         if (array_is_list($value) && $value !== []) {
