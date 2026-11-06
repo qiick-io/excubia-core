@@ -8,6 +8,7 @@ use Composer\InstalledVersions;
 use DateTimeImmutable;
 use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
+use Qiick\Excubia\Checks\ComposerOutdatedCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
 use Qiick\Excubia\Checks\DependencyLicensesCheck;
 use Qiick\Excubia\Checks\EnvExampleSyncCheck;
@@ -241,6 +242,7 @@ final class HealthCheckRunnerService
             new LaravelQueueBacklogCheck,
             new PhpPlatformRequirementsCheck($constraints),
             new EnvExampleSyncCheck,
+            new ComposerOutdatedCheck($packagist, $constraints),
         ];
     }
 }
