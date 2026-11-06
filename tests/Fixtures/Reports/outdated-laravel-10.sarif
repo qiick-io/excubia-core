@@ -281,6 +281,14 @@
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         },
                         {
+                            "id": "laravel-redis-memory",
+                            "name": "Redis memory",
+                            "shortDescription": {
+                                "text": "Redis memory"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
                             "id": "php-opcache",
                             "name": "OPcache",
                             "shortDescription": {

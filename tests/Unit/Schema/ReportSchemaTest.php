@@ -141,6 +141,7 @@ it('documents the details keys per check id', function () {
             'laravel-backups',
             'laravel-database-connections',
             'laravel-database-size',
+            'laravel-redis-memory',
             'php-opcache',
             'php-production-ini',
         ])
@@ -157,6 +158,8 @@ it('documents the details keys per check id', function () {
         ->and($keys('databaseConnectionsDetails'))->toBe(['connection', 'connectionCount'])
         ->and($keys('databaseSizeDetails'))->toBe(['connection', 'sizeMb', 'largestTables'])
         ->and(array_keys($schema['$defs']['databaseSizeDetails']['properties']['largestTables']['items']['properties']))->toBe(['table', 'sizeMb'])
+        ->and($keys('redisMemoryDetails'))->toBe(['connection', 'usedMb', 'maxMb', 'policy'])
+        ->and($schema['$defs']['redisMemoryDetails']['required'])->toBe(['connection', 'usedMb', 'maxMb', 'policy'])
         ->and($keys('phpOpcacheDetails'))->toBe(['sapi', 'ageMinutes', 'isOpcacheEnabled', 'hitRate', 'memoryUsedPercent', 'cachedScripts', 'isValidateTimestampsEnabled'])
         ->and($keys('phpProductionIniDetails'))->toBe(['directive', 'isEnabled', 'sapi', 'ageMinutes']);
 });

@@ -32,6 +32,7 @@ use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
 use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
 use Qiick\Excubia\Checks\LaravelQueueBacklogCheck;
 use Qiick\Excubia\Checks\LaravelQueueWorkersCheck;
+use Qiick\Excubia\Checks\LaravelRedisMemoryCheck;
 use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
 use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
 use Qiick\Excubia\Checks\LaravelStorageCheck;
@@ -256,6 +257,7 @@ final class HealthCheckRunnerService
             new LaravelBackupsCheck,
             new LaravelDatabaseConnectionsCheck,
             new LaravelDatabaseSizeCheck,
+            new LaravelRedisMemoryCheck,
             new PhpOpcacheCheck,
             new PhpProductionIniCheck,
         ];

@@ -102,6 +102,9 @@ final class ExcubiaConfigurationLoader
             databaseConnectionsWarnAt: $checks['databaseConnectionsWarnAt'],
             databaseConnectionsFailAt: $checks['databaseConnectionsFailAt'],
             databaseSizeWarnAtMb: $checks['databaseSizeWarnAtMb'],
+            redisMemoryWarnAtPercentUsed: $checks['redisMemoryWarnAtPercentUsed'],
+            redisMemoryFailAtPercentUsed: $checks['redisMemoryFailAtPercentUsed'],
+            redisMemoryConnectionNames: $checks['redisMemoryConnectionNames'],
         );
     }
 
@@ -396,7 +399,10 @@ final class ExcubiaConfigurationLoader
      *     backupsMaxAgeHours: int,
      *     databaseConnectionsWarnAt: int,
      *     databaseConnectionsFailAt: int,
-     *     databaseSizeWarnAtMb: int|null
+     *     databaseSizeWarnAtMb: int|null,
+     *     redisMemoryWarnAtPercentUsed: int,
+     *     redisMemoryFailAtPercentUsed: int,
+     *     redisMemoryConnectionNames: list<string>
      * }
      */
     private function checks(mixed $checks, ExcubiaConfigurationData $defaults): array
@@ -405,13 +411,14 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync', 'laravel-queue-workers', 'laravel-backups', 'laravel-database-connections', 'laravel-database-size'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync', 'laravel-queue-workers', 'laravel-backups', 'laravel-database-connections', 'laravel-database-size', 'laravel-redis-memory'], 'checks');
         $schedulerHeartbeat = $this->checkObject($checks, 'laravel-scheduler-heartbeat', ['staleAfterMinutes', 'lateAfterMinutes']);
         $database = $this->checkObject($checks, 'laravel-database', ['connections']);
         $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
         $queueBacklog = $this->checkObject($checks, 'laravel-queue-backlog', ['maxOldestAgeMinutes', 'maxPendingJobs', 'queues']);
         $databaseConnections = $this->checkObject($checks, 'laravel-database-connections', ['warnAt', 'failAt']);
         $databaseSize = $this->checkObject($checks, 'laravel-database-size', ['warnAtMb']);
+        $redisMemory = $this->checkObject($checks, 'laravel-redis-memory', ['warnAtPercentUsed', 'failAtPercentUsed', 'connections']);
 
         return [
             'staleAfterMonths' => $this->integerSetting($checks, 'composer-stale', 'staleAfterMonths', $defaults->staleAfterMonths),
@@ -432,6 +439,9 @@ final class ExcubiaConfigurationLoader
             'databaseConnectionsWarnAt' => array_key_exists('warnAt', $databaseConnections) ? $this->integer($databaseConnections['warnAt'], 'checks.laravel-database-connections.warnAt') : $defaults->databaseConnectionsWarnAt,
             'databaseConnectionsFailAt' => array_key_exists('failAt', $databaseConnections) ? $this->integer($databaseConnections['failAt'], 'checks.laravel-database-connections.failAt') : $defaults->databaseConnectionsFailAt,
             'databaseSizeWarnAtMb' => array_key_exists('warnAtMb', $databaseSize) ? $this->integer($databaseSize['warnAtMb'], 'checks.laravel-database-size.warnAtMb') : $defaults->databaseSizeWarnAtMb,
+            'redisMemoryWarnAtPercentUsed' => array_key_exists('warnAtPercentUsed', $redisMemory) ? $this->integer($redisMemory['warnAtPercentUsed'], 'checks.laravel-redis-memory.warnAtPercentUsed') : $defaults->redisMemoryWarnAtPercentUsed,
+            'redisMemoryFailAtPercentUsed' => array_key_exists('failAtPercentUsed', $redisMemory) ? $this->integer($redisMemory['failAtPercentUsed'], 'checks.laravel-redis-memory.failAtPercentUsed') : $defaults->redisMemoryFailAtPercentUsed,
+            'redisMemoryConnectionNames' => $this->stringList($redisMemory['connections'] ?? [], 'checks.laravel-redis-memory.connections'),
         ];
     }
 

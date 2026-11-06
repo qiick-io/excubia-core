@@ -58,6 +58,7 @@ final readonly class LaravelPostureData
      * @param  string|null  $defaultDatabaseDriverName  driver of that connection (`mysql`, `pgsql`, `sqlite`, …); null when unknown
      * @param  int|null  $databaseConnectionCount  open connections on the default connection's server (MySQL, MariaDB) or database (PostgreSQL); null when not measured
      * @param  array{sizeMb: float, largestTables: list<array{table: string, sizeMb: float}>}|null  $databaseSize  size of the default database and its five largest tables, in MB; null when not measured
+     * @param  list<array{connection: string, isCacheConnection: bool, usedBytes: int|null, maxBytes: int|null, policy: string|null}>|null  $redisMemory  `INFO memory` of each Redis connection used by the default cache store, queue connection or session, or of `checks.laravel-redis-memory.connections` (#170): used and max memory in bytes (`maxBytes` 0 when unbounded) and the eviction policy; `usedBytes` null when the connection could not be read; an empty list when no Redis connection is used; null when not measured
      * @param  array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null  $phpRuntime  OPcache status and production php.ini directives (#172): the web-SAPI snapshot the health endpoint stored (`sapi` `web`, `ageMinutes` its age); null when there is none, because the CLI values of this run are never used
      */
     public function __construct(
@@ -98,6 +99,7 @@ final readonly class LaravelPostureData
         public ?string $defaultDatabaseDriverName = null,
         public ?int $databaseConnectionCount = null,
         public ?array $databaseSize = null,
+        public ?array $redisMemory = null,
         public ?array $phpRuntime = null,
     ) {}
 
