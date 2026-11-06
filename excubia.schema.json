@@ -414,7 +414,7 @@
                         "name": {
                             "type": "string",
                             "pattern": "^[A-Za-z0-9._-]{1,64}$",
-                            "description": "Readable name of this server in the dashboard, such as web-1 (excubia.json is shared by every server, so set it per server in your deploy step, or leave it unset on a single server). Default: the first 12 hex characters of sha256(hostname + sha256(app key)), stable and not reversible; the hostname is never sent."
+                            "description": "Readable name of this server in the dashboard, such as web-1. The EXCUBIA_SERVER_NAME environment variable wins (#162); since excubia.json is shared by every server, set that variable per server instead. Default: the first 12 hex characters of sha256(hostname + sha256(app key)), stable and not reversible; the hostname is never sent."
                         }
                     }
                 }

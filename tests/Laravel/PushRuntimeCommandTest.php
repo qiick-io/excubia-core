@@ -82,6 +82,7 @@ beforeEach(function () {
 afterEach(function () {
     putenv('EXCUBIA_APP_URL');
     putenv('EXCUBIA_APP_TOKEN');
+    putenv('EXCUBIA_SERVER_NAME');
 });
 
 it('sends a valid runtime batch with the bearer token and deletes it after 2xx', function () {
@@ -341,6 +342,36 @@ it('sends one server sample per run, named by runtime.server.name, before the bu
         ->and($disk->measuredDirectory)->toBe($this->app->storagePath())
         ->and(collect($client->postedPayloads[1]['runtime']['aggregates'])->pluck('type')->all())->toBe(['server'])
         ->and(runtimeSchemaErrors($first))->toBe([]);
+});
+
+it('names the server from EXCUBIA_SERVER_NAME over runtime.server.name', function () {
+    putenv('EXCUBIA_SERVER_NAME=web-2');
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => ['enabled' => true, 'name' => 'web-1']]]);
+    $this->app->instance(ServerResourcesContract::class, new FakeServerResources);
+
+    $this->artisan('excubia:push-runtime')
+        ->doesntExpectOutputToContain('EXCUBIA_SERVER_NAME')
+        ->assertExitCode(0);
+
+    expect($client->postedPayloads[0]['runtime']['aggregates'][0])->toMatchArray(['type' => 'server', 'server' => 'web-2']);
+});
+
+it('warns and sends the hashed id when EXCUBIA_SERVER_NAME is invalid', function () {
+    putenv('EXCUBIA_SERVER_NAME=web 1/eu');
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => ['enabled' => true, 'name' => 'web-1']]]);
+    $this->app->instance(ServerResourcesContract::class, new FakeServerResources);
+
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain('EXCUBIA_SERVER_NAME must be 1 to 64 letters, digits, dots, underscores or hyphens; the server is sent as its hashed id.')
+        ->assertExitCode(0);
+
+    $server = $client->postedPayloads[0]['runtime']['aggregates'][0];
+
+    expect($server['type'])->toBe('server')
+        ->and($server['server'])->toMatch('/^[0-9a-f]{12}$/')
+        ->and(json_encode($client->postedPayloads[0], JSON_THROW_ON_ERROR))->not->toContain('web 1/eu');
 });
 
 it('never sends the hostname or a path in a server sample, and names an unnamed server by a hash', function () {
