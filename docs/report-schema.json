@@ -663,6 +663,30 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-queue-workers"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/$defs/queueWorkerHeartbeatDetails"
+                                    },
+                                    {
+                                        "$ref": "#/$defs/horizonStatusDetails"
+                                    }
+                                ]
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1091,6 +1115,51 @@
                 "isMajorBehind": {
                     "description": "True when latestMajor is set.",
                     "type": "boolean"
+                }
+            }
+        },
+        "queueWorkerHeartbeatDetails": {
+            "description": "laravel-queue-workers finding without Laravel Horizon, one per queue that has pending jobs and no recent worker heartbeat. Connection and queue names only, never a hostname.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connection", "queue", "minutesSinceLastSeen"],
+            "properties": {
+                "connection": {
+                    "description": "Name of the default queue connection.",
+                    "type": "string"
+                },
+                "queue": {
+                    "description": "Queue name on that connection.",
+                    "type": "string"
+                },
+                "minutesSinceLastSeen": {
+                    "description": "Whole minutes since a worker last reported on this queue (heartbeat cache key excubia:worker-heartbeat:<connection>:<queue>); null when none ever did.",
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                }
+            }
+        },
+        "horizonStatusDetails": {
+            "description": "laravel-queue-workers finding with Laravel Horizon installed (subject horizon), when Horizon is inactive or paused.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "processes", "supervisors"],
+            "properties": {
+                "status": {
+                    "description": "Horizon's status, as php artisan horizon:status reports it.",
+                    "enum": ["inactive", "paused"]
+                },
+                "processes": {
+                    "description": "Worker processes of all Horizon supervisors.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "supervisors": {
+                    "description": "Supervisor names from config/horizon.php, without the master supervisor prefix (which carries the hostname), sorted.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

@@ -38,6 +38,10 @@ use Throwable;
  * pending jobs. Connections opened only for the probe get a short connect
  * timeout and are closed again.
  *
+ * For `laravel-queue-workers` (#151) it reads the worker heartbeat key of
+ * each queue the backlog probe read and, when Laravel Horizon is installed,
+ * Horizon's master supervisor and supervisor repositories.
+ *
  * ponytail: Redis, Memcached and `select 1` on an already open connection
  * use the client's own timeouts; wrap them in a deadline if a hung service
  * ever blocks a run.
@@ -70,6 +74,14 @@ final class LaravelPostureService
         'itsgoingd/clockwork' => ['providers' => ['Clockwork\\Support\\Laravel\\ClockworkServiceProvider'], 'flag' => 'clockwork.enable', 'followsDebugWhenUnset' => true],
     ];
 
+    /**
+     * Horizon contracts, read only when Horizon is installed (it is not a
+     * dependency of this package).
+     */
+    private const HORIZON_MASTER_SUPERVISOR_REPOSITORY = 'Laravel\\Horizon\\Contracts\\MasterSupervisorRepository';
+
+    private const HORIZON_SUPERVISOR_REPOSITORY = 'Laravel\\Horizon\\Contracts\\SupervisorRepository';
+
     public function __construct(private readonly DiskSpaceContract $diskSpace = new DiskSpaceService) {}
 
     /**
@@ -98,6 +110,8 @@ final class LaravelPostureService
         $config = $application->make('config');
         $applicationKey = $config->get('app.key');
         $cacheProbe = $this->cacheProbe($application, $config);
+        $queueBacklogs = $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now);
+        $isHorizonInstalled = $this->isHorizonInstalled($application);
 
         return new LaravelPostureData(
             environment: $application->environment(),
@@ -126,7 +140,10 @@ final class LaravelPostureService
             isCacheStoreWorking: $cacheProbe['isWorking'],
             unwritableDirectoryNames: $this->unwritableDirectoryNames($application),
             diskUsedPercent: $this->diskSpace->usedPercent($application->storagePath()),
-            queueBacklogs: $this->queueBacklogs($application, $config, $configuration->queueBacklogQueueNames, $now),
+            queueBacklogs: $queueBacklogs,
+            queueWorkerHeartbeats: $this->queueWorkerHeartbeats($application, $config, $queueBacklogs),
+            isHorizonInstalled: $isHorizonInstalled,
+            horizonStatus: $isHorizonInstalled ? $this->horizonStatus($application) : null,
         );
     }
 
@@ -336,6 +353,99 @@ final class LaravelPostureService
         }
 
         return $backlogs;
+    }
+
+    /**
+     * Last `QueueWorkerHeartbeatService` heartbeat of each queue the backlog
+     * probe read, on the default queue connection. Null when the backlog is
+     * unknown (driver not read) or the cache store throws.
+     *
+     * @param  list<array{queue: string, pendingCount: int, oldestAgeMinutes: int|null}>|null  $queueBacklogs
+     * @return list<array{connection: string, queue: string, lastSeenAt: DateTimeImmutable|null}>|null
+     */
+    private function queueWorkerHeartbeats(Application $application, Repository $config, ?array $queueBacklogs): ?array
+    {
+        $connection = $config->get('queue.default');
+
+        if ($queueBacklogs === null || ! is_string($connection)) {
+            return null;
+        }
+
+        try {
+            $cache = $application->make('cache');
+            $heartbeats = [];
+
+            foreach ($queueBacklogs as $backlog) {
+                $timestamp = $cache->get(QueueWorkerHeartbeatService::cacheKey($connection, $backlog['queue']));
+                $heartbeats[] = [
+                    'connection' => $connection,
+                    'queue' => $backlog['queue'],
+                    'lastSeenAt' => is_int($timestamp) ? new DateTimeImmutable('@'.$timestamp) : null,
+                ];
+            }
+
+            return $heartbeats;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Horizon is optional: it counts as installed when its master supervisor
+     * repository contract exists and is bound, and is only read through its
+     * contracts.
+     */
+    private function isHorizonInstalled(Application $application): bool
+    {
+        return interface_exists(self::HORIZON_MASTER_SUPERVISOR_REPOSITORY) && $application->bound(self::HORIZON_MASTER_SUPERVISOR_REPOSITORY);
+    }
+
+    /**
+     * Horizon's status as `php artisan horizon:status` reports it: `inactive`
+     * without a live master supervisor, `paused` when one is paused,
+     * `running` otherwise. Supervisor names drop the master name prefix
+     * (`<host>-<random>:`), which carries the hostname, and only the total
+     * worker process count is kept. Null when Horizon's store throws.
+     *
+     * @return array{status: string, processes: int, supervisors: list<string>}|null
+     */
+    private function horizonStatus(Application $application): ?array
+    {
+        try {
+            $masters = (array) $application->make(self::HORIZON_MASTER_SUPERVISOR_REPOSITORY)->all();
+            $supervisors = $application->bound(self::HORIZON_SUPERVISOR_REPOSITORY)
+                ? (array) $application->make(self::HORIZON_SUPERVISOR_REPOSITORY)->all()
+                : [];
+        } catch (Throwable) {
+            return null;
+        }
+
+        $status = $masters === [] ? 'inactive' : 'running';
+
+        foreach ($masters as $master) {
+            if ((((array) $master)['status'] ?? null) === 'paused') {
+                $status = 'paused';
+            }
+        }
+
+        $processes = 0;
+        $names = [];
+
+        foreach ($supervisors as $supervisor) {
+            $supervisor = (array) $supervisor;
+            $name = (string) ($supervisor['name'] ?? '');
+            $separator = strpos($name, ':');
+            $names[] = $separator === false ? $name : substr($name, $separator + 1);
+
+            foreach ((array) ($supervisor['processes'] ?? []) as $count) {
+                $processes += is_numeric($count) ? (int) $count : 0;
+            }
+        }
+
+        $names = array_values(array_unique(array_filter($names, static fn (string $name): bool => $name !== '')));
+        sort($names);
+
+        return ['status' => $status, 'processes' => $processes, 'supervisors' => $names];
     }
 
     private function ageMinutes(?int $timestamp, DateTimeImmutable $now): ?int
