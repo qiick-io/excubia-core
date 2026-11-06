@@ -145,11 +145,11 @@ Everything is read with PHP, never through a shell; macOS exposes cores and memo
 
 Each server pushes its own samples, so a server that does not run the scheduler sends none. Name each server so the dashboard shows it readably:
 
-```json
-{ "runtime": { "enabled": true, "server": { "enabled": true, "name": "web-1" } } }
+```bash
+EXCUBIA_SERVER_NAME=web-1
 ```
 
-`excubia.json` is usually the same file on every server, so set `runtime.server.name` in your deploy step on each server (for example with `jq '.runtime.server.name = "web-1"'`). Without a name the server is the first 12 hex characters of sha256(hostname + sha256(app key)): stable for one machine and app, and not reversible to the hostname. The hostname and the storage path are never sent.
+Set `EXCUBIA_SERVER_NAME` in each server's environment (`.env`, Forge, the process manager that runs the scheduler): `excubia.json` is usually the same committed file on every server. The variable wins over the `runtime.server.name` key, which still works for a single server. Both take 1 to 64 letters, digits, `.`, `_` or `-`. An invalid `EXCUBIA_SERVER_NAME` does not stop the push: the server is sent as its hashed id and `excubia:push-runtime` prints a warning on stderr. Without a name the server is the first 12 hex characters of sha256(hostname + sha256(app key)): stable for one machine and app, and not reversible to the hostname. The hostname and the storage path are never sent.
 
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 

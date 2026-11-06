@@ -20,9 +20,18 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * does not exist is an error, because the caller asked for that file.
  * `advisoryId` is copied onto the ignore rule so the existing matcher can
  * target one advisory.
+ *
+ * The one environment variable read here is `EXCUBIA_SERVER_NAME` (#162),
+ * which wins over `runtime.server.name`. An invalid value is not an error:
+ * the server falls back to its hashed id and the push command warns.
  */
 final class ExcubiaConfigurationLoader
 {
+    /**
+     * @param  array<string, string>|null  $environment  tests pass variables here; null reads getenv()
+     */
+    public function __construct(private readonly ?array $environment = null) {}
+
     /**
      * @throws InvalidConfigurationException
      */
@@ -291,6 +300,13 @@ final class ExcubiaConfigurationLoader
             }
         }
 
+        $serverNameVariable = $this->environmentValue(RuntimeConfigurationData::SERVER_NAME_VARIABLE);
+        $isServerNameVariableInvalid = $serverNameVariable !== null && preg_match(RuntimeConfigurationData::SERVER_NAME_PATTERN, $serverNameVariable) !== 1;
+
+        if ($serverNameVariable !== null) {
+            $serverName = $isServerNameVariableInvalid ? null : $serverNameVariable;
+        }
+
         return new RuntimeConfigurationData(
             isEnabled: array_key_exists('enabled', $runtime) ? $this->boolean($runtime['enabled'], 'runtime.enabled') : false,
             enabledTypes: $enabledTypes,
@@ -300,7 +316,18 @@ final class ExcubiaConfigurationLoader
             duplicateQueryThreshold: $duplicateQueryThreshold,
             ignoredCommands: $ignoredCommands,
             serverName: $serverName,
+            isServerNameVariableInvalid: $isServerNameVariableInvalid,
         );
+    }
+
+    /**
+     * A non-empty environment variable, else null.
+     */
+    private function environmentValue(string $name): ?string
+    {
+        $value = $this->environment !== null ? ($this->environment[$name] ?? null) : getenv($name);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

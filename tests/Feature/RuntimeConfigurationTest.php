@@ -128,6 +128,37 @@ it('keeps command runs off by default and reads their ignore list', function () 
         ->and(fn () => $load(['jobs' => ['ignore' => []]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.jobs key [ignore].');
 });
 
+it('takes the server name from EXCUBIA_SERVER_NAME before runtime.server.name, and falls back to the hashed id when it is invalid', function (array $environment, array $server, ?string $expectedName, bool $isInvalid) {
+    $runtime = (new ExcubiaConfigurationLoader($environment))->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => ['enabled' => true, 'server' => ['enabled' => true, ...$server]]], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+
+    expect($runtime->serverName)->toBe($expectedName)
+        ->and($runtime->isServerNameVariableInvalid)->toBe($isInvalid);
+})->with([
+    'variable wins over the key' => [['EXCUBIA_SERVER_NAME' => 'web-2'], ['name' => 'web-1'], 'web-2', false],
+    'variable without a key' => [['EXCUBIA_SERVER_NAME' => 'worker.eu_1'], [], 'worker.eu_1', false],
+    'empty variable is unset' => [['EXCUBIA_SERVER_NAME' => ''], ['name' => 'web-1'], 'web-1', false],
+    'no variable, key' => [[], ['name' => 'web-1'], 'web-1', false],
+    'no variable, no key' => [[], [], null, false],
+    'invalid variable, hashed id' => [['EXCUBIA_SERVER_NAME' => 'web 1'], ['name' => 'web-1'], null, true],
+    'too long variable, hashed id' => [['EXCUBIA_SERVER_NAME' => str_repeat('a', 65)], [], null, true],
+]);
+
+it('reads EXCUBIA_SERVER_NAME from the process environment by default', function () {
+    putenv('EXCUBIA_SERVER_NAME=web-from-env');
+
+    try {
+        $runtime = (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+            'excubia.json' => json_encode(['runtime' => ['enabled' => true]], JSON_THROW_ON_ERROR),
+        ]))->runtime;
+    } finally {
+        putenv('EXCUBIA_SERVER_NAME');
+    }
+
+    expect($runtime->serverName)->toBe('web-from-env');
+});
+
 it('rejects an invalid runtime key', function (string $runtime, string $message) {
     expect(fn () => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => '{"runtime": '.$runtime.'}',

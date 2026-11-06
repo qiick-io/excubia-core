@@ -352,7 +352,7 @@
                 "type": { "const": "server" },
                 "bucket": { "$ref": "#/$defs/bucket" },
                 "sampleRate": { "$ref": "#/$defs/sampleRate" },
-                "server": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$", "description": "runtime.server.name of excubia.json, else the first 12 lowercase hex characters of sha256(hostname + sha256(app key)): stable per machine and app, not reversible. Never the hostname." },
+                "server": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$", "description": "The EXCUBIA_SERVER_NAME environment variable (#162), else runtime.server.name of excubia.json, else the first 12 lowercase hex characters of sha256(hostname + sha256(app key)): stable per machine and app, not reversible. Never the hostname." },
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" },
                 "loadAverage1": { "$ref": "#/$defs/gauge", "description": "System load average over 1 minute, 2 decimals. Compare it with cpuCores." },

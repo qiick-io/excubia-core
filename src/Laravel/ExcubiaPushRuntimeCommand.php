@@ -51,7 +51,9 @@ use Throwable;
  * When `runtime.server` is on (#149), each run first appends one `server`
  * sample of this machine to the runtime buffer, so it goes out in the same
  * run. The scheduler runs the command on every server, so each server
- * pushes its own sample.
+ * pushes its own sample, named by `EXCUBIA_SERVER_NAME` (#162), else
+ * `runtime.server.name`, else a hashed id; an invalid variable is warned
+ * about on stderr and the hashed id is sent.
  *
  * Each batch carries the release resolved when it is sent (`release` key,
  * `EXCUBIA_RELEASE` or a platform variable; no git fallback here).
@@ -178,6 +180,10 @@ final class ExcubiaPushRuntimeCommand extends Command
 
         if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Server) || ($sampleRate < 1.0 && mt_rand() / mt_getrandmax() >= $sampleRate)) {
             return;
+        }
+
+        if ($runtime->isServerNameVariableInvalid) {
+            CheckCommand::writeError($this->output, RuntimeConfigurationData::SERVER_NAME_VARIABLE.' must be 1 to 64 letters, digits, dots, underscores or hyphens; the server is sent as its hashed id.');
         }
 
         try {
