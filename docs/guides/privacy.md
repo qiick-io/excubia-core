@@ -14,7 +14,7 @@ There is no telemetry, no analytics and no phone-home to qiick or any third part
 
 ## Checks
 
-`excubia check` and the Artisan commands send only package **names and versions**, and runtime versions, to the public APIs of the checks: endoflife.date, Packagist (metadata and security advisories), OSV.dev and the GitHub API. No file contents, `.env` values, source code, paths or hostnames.
+`excubia check` and the Artisan commands send only package **names and versions**, and runtime versions, to the public APIs of the checks: endoflife.date, Packagist (metadata and security advisories), OSV.dev, the GitHub API and the npm registry. No file contents, `.env` values, source code, paths or hostnames.
 
 - Private packages are never sent: see [below](#private-packages).
 - `GITHUB_TOKEN` is optional, read from the environment only, sent only to the GitHub API as a bearer header, and never printed or written to the cache or the report.
@@ -24,6 +24,7 @@ There is no telemetry, no analytics and no phone-home to qiick or any third part
 - The infrastructure checks (`laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`) run `select 1`, count pending jobs and measure the disk without writing, except the cache probe key `excubia:cache-probe:<random>`, which is deleted right after it is read. Their findings name the connection, store, directory (`storage`, `bootstrap/cache`) or queue and carry percentages, counts and ages; driver errors are dropped because they can hold a host or a DSN. `php-platform-requirements` names the missing extension, the PHP version and the requiring packages.
 - `env-example-sync` reads key names only: `config/*.php` through PHP's tokenizer (the files are never executed), and the names in `.env.example`, whose values are dropped while reading. It never opens `.env`. Its findings carry key names and project-relative config file names (`config/services.php`), never a value.
 - `laravel-queue-workers` reads the worker heartbeat keys `excubia:worker-heartbeat:<connection>:<queue>`, which queue workers write to the default cache store (the Unix time only, at most once a minute per queue), and, when Laravel Horizon is installed, Horizon's status. Its findings carry connection, queue and Horizon supervisor names, a status, a process count and minutes: never a hostname (the host prefix of Horizon's supervisor names is dropped), a PID or a job payload.
+- `npm-outdated` (#153) sends one request per public direct dependency of `package.json` to `https://registry.npmjs.org/<name>`: the package name only, never its version or your lockfile. Private packages are not sent.
 - The response cache stores public API responses only, in the system temporary directory unless `cache.directory` says otherwise.
 
 ### Private packages
@@ -46,7 +47,7 @@ The lockfile cannot tell a private package on the public npm registry, or one fe
 { "privacy": { "skipPackages": ["acme/*", "@acme/*"] } }
 ```
 
-Each check that would send names (`composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `composer-outdated`) reports the skipped packages in one `skipped` row with subject `private packages`, `skipReason` `not-applicable` and a message such as `2 private packages not sent to Packagist: acme/billing, acme/ui.` The names come from your own lockfile and stay in the local report; with the opt-in push they reach only your own `excubia-app`, and the health endpoint shows the subject without the message. A check with no other finding then reports `skipped`; it never fails and `--strict` ignores it. Private packages are not checked for advisories, abandonment or staleness: watch them yourself. `dependency-licenses` sends nothing, so it inspects private packages too; their findings have no public registry link. It reports the license strings the lockfile declares and drops any with characters SPDX never uses (paths, URLs), so no free text from a lockfile reaches the report.
+Each check that would send names (`composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `composer-outdated`, `npm-outdated`) reports the skipped packages in one `skipped` row with subject `private packages`, `skipReason` `not-applicable` and a message such as `2 private packages not sent to Packagist: acme/billing, acme/ui.` The names come from your own lockfile and stay in the local report; with the opt-in push they reach only your own `excubia-app`, and the health endpoint shows the subject without the message. A check with no other finding then reports `skipped`; it never fails and `--strict` ignores it. Private packages are not checked for advisories, abandonment or staleness: watch them yourself. `dependency-licenses` sends nothing, so it inspects private packages too; their findings have no public registry link. It reports the license strings the lockfile declares and drops any with characters SPDX never uses (paths, URLs), so no free text from a lockfile reaches the report.
 
 ## Push
 

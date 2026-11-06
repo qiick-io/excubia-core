@@ -16,7 +16,7 @@ It describes `develop` as reviewed for #82 (November 2026). Released `0.1.x` con
 
 | Boundary | Inside | Outside |
 | --- | --- | --- |
-| B1 Machine → public data sources | the CLI process | packagist.org, repo.packagist.org, api.github.com, endoflife.date, api.osv.dev |
+| B1 Machine → public data sources | the CLI process | packagist.org, repo.packagist.org, api.github.com, endoflife.date, api.osv.dev, registry.npmjs.org |
 | B2 Machine → user's `excubia-app` | the CLI or Artisan process | the app the user configured with `EXCUBIA_APP_URL` |
 | B3 Process → local disk | the PHP process | the shared temporary directory (response cache), `storage/excubia/` (buffers, health result) |
 | B4 Internet → the app | the Laravel app | anyone who can reach the health endpoint URL |
@@ -33,12 +33,13 @@ It describes `develop` as reviewed for #82 (November 2026). Released `0.1.x` con
 | `https://repo.packagist.org/p2/<vendor>/<name>.json` | one Composer package name per request, at most once per run (shared by `composer-abandoned`, `composer-stale`, `laravel-next-blocker` and `composer-outdated`) | `PackagistApiService::versions()` |
 | `https://api.github.com/repos/<owner>/<repo>` | owner and repository name taken from the Packagist source URL; `Authorization: Bearer $GITHUB_TOKEN` when set | `GitHubRepositoryApiService` |
 | `https://api.osv.dev/v1/querybatch` (POST) | npm package names and versions from `package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`, ecosystem `npm` (public packages only; `.npmrc` and `.yarnrc.yml` are read for registry URLs only, credentials ignored) | `OsvApiService` |
+| `https://registry.npmjs.org/<name>` (scoped: `@scope%2Fname`) | one npm package name per request, no version, for each public direct dependency of `package.json` (`npm-outdated`, #153) | `NpmRegistryService` |
 
-Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`.
+Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`; the npm registry request asks for `application/vnd.npm.install-v1+json` (abbreviated metadata) instead.
 
 **Controls.**
 - Private packages are never sent (#108, SPEC §7): a Composer package is sent only when its `composer.lock` entry has Packagist's `notification-url` (`https://packagist.org/downloads/`) and no `path` or `artifact` dist; an npm package only when `resolved` is on `https://registry.npmjs.org/` and it is not a link. `privacy.skipPackages` globs exclude more names. `ExcubiaConfigurationData::publicPackages()` filters every check before a request is built; the GitHub lookup uses the source URL of the Packagist metadata, so it never runs for a private package. The skipped names appear only in the local report as a `skipped` row (`private packages`).
-- Names are validated before a URL is built: Composer names must match `vendor/name` in lower case, GitHub owners and names must be `[A-Za-z0-9_.-]+` and not `.` or `..`, npm names must not contain `..` or a newline. Anything else is skipped, not sent.
+- Names are validated before a URL is built: Composer names must match `vendor/name` in lower case, GitHub owners and names must be `[A-Za-z0-9_.-]+` and not `.` or `..`, npm names must not contain `..` or a newline, and the npm registry only gets names of the form `[@scope/]name` in URL-safe characters (at most 214), with the `/` of a scope encoded. Anything else is skipped, not sent.
 - `HttpClientContract` is the only HTTP boundary. `SymfonyHttpClientService` refuses any URL that is not HTTPS (plain HTTP only to `localhost`, `127.0.0.1`, `[::1]`), uses TLS peer verification (Symfony default), a 5 s idle timeout, a 15 s total, two retries with backoff, and honours `HTTPS_PROXY`.
 - `GITHUB_TOKEN` is read from the environment at call time, sent only as a header to `api.github.com`, never part of a URL, cache key, cache file, message or report. On a redirect Symfony keeps `Authorization` only for the same scheme and host.
 - The `-v` request list prints the method and URL only, without headers and without URL credentials.

@@ -34,6 +34,7 @@ use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
 use Qiick\Excubia\Checks\LaravelStorageCheck;
 use Qiick\Excubia\Checks\NodeEndOfLifeCheck;
 use Qiick\Excubia\Checks\NpmAdvisoriesCheck;
+use Qiick\Excubia\Checks\NpmOutdatedCheck;
 use Qiick\Excubia\Checks\PhpEndOfLifeCheck;
 use Qiick\Excubia\Checks\PhpPlatformRequirementsCheck;
 use Qiick\Excubia\Contracts\HealthCheckContract;
@@ -246,6 +247,7 @@ final class HealthCheckRunnerService
             new EnvExampleSyncCheck,
             new ComposerOutdatedCheck($packagist, $constraints),
             new LaravelQueueWorkersCheck,
+            new NpmOutdatedCheck(new NpmRegistryService($this->httpClient, $cache), $constraints),
         ];
     }
 }

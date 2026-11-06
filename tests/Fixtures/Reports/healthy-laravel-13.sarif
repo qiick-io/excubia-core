@@ -247,6 +247,14 @@
                                 "text": "Queue workers"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "npm-outdated",
+                            "name": "Outdated packages (npm)",
+                            "shortDescription": {
+                                "text": "Outdated packages (npm)"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

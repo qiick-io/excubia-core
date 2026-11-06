@@ -210,6 +210,8 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('composer-outdated', ['count' => 2]),
         $finding('laravel-queue-workers', ['connection' => 'redis', 'queue' => 'emails', 'minutesSinceLastSeen' => null]),
         $finding('laravel-queue-workers', ['status' => 'paused', 'processes' => 4, 'supervisors' => ['supervisor-1']]),
+        $finding('npm-outdated', ['package' => 'lodash', 'lockedVersion' => '4.17.20', 'latestPatch' => '4.17.21', 'latestMinor' => '4.17.21', 'latestMajor' => null, 'isMajorBehind' => false]),
+        $finding('npm-outdated', ['count' => 1]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
@@ -223,10 +225,14 @@ it('accepts every documented details shape and rejects one that does not fit its
     $invalidOutdated = $render([
         $finding('composer-outdated', $package + ['latestPatch' => null, 'latestMinor' => null, 'latestMajor' => '2.0.0', 'isMajorBehind' => true, 'path' => '/srv/app']),
     ]);
+    $invalidNpmOutdated = $render([
+        $finding('npm-outdated', ['package' => 'lodash', 'lockedVersion' => '4.17.20', 'latestPatch' => null, 'latestMinor' => null, 'latestMajor' => '5.0.0', 'isMajorBehind' => true, 'lockfile' => '/srv/app/package-lock.json']),
+    ]);
 
     expect(reportSchemaErrors($valid))->toBe([])
         ->and(reportSchemaErrors($invalid))->not->toBe([])
-        ->and(reportSchemaErrors($invalidOutdated))->not->toBe([]);
+        ->and(reportSchemaErrors($invalidOutdated))->not->toBe([])
+        ->and(reportSchemaErrors($invalidNpmOutdated))->not->toBe([]);
 });
 
 /**

@@ -132,6 +132,7 @@ final class ProjectSnapshotService
             platformOverrideNames: $parsedLock['platformOverrideNames'],
             javascriptLockfile: $javascriptLockfile,
             environmentKeys: $this->environmentKeys($projectRoot),
+            npmDevelopmentPackageNames: $javascriptLockfile === null ? [] : $this->npmDevelopmentPackageNames($packageJson),
         );
     }
 
@@ -391,6 +392,28 @@ final class ProjectSnapshotService
         }
 
         return $names;
+    }
+
+    /**
+     * Names in `devDependencies` that `dependencies` and
+     * `optionalDependencies` do not list, so `--no-dev` can leave them out
+     * of `npm-outdated`. `npmDirectPackageNames` has already validated the
+     * shape of these objects.
+     *
+     * @param  array<string, mixed>|null  $packageJson
+     * @return list<string>
+     */
+    private function npmDevelopmentPackageNames(?array $packageJson): array
+    {
+        $runtimeNames = [];
+
+        foreach (['dependencies', 'optionalDependencies'] as $key) {
+            $runtimeNames += is_array($packageJson[$key] ?? null) ? $packageJson[$key] : [];
+        }
+
+        $developmentNames = is_array($packageJson['devDependencies'] ?? null) ? $packageJson['devDependencies'] : [];
+
+        return array_map('strval', array_keys(array_diff_key($developmentNames, $runtimeNames)));
     }
 
     /**

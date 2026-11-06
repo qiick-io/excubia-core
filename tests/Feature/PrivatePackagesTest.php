@@ -63,6 +63,13 @@ function privatePackagesProject(): array
         ]], JSON_THROW_ON_ERROR),
         'composer.lock' => json_encode($composerLock, JSON_THROW_ON_ERROR),
         'package-lock.json' => json_encode($packageLock, JSON_THROW_ON_ERROR),
+        'package.json' => json_encode(['dependencies' => [
+            'lodash' => '^4.17.0',
+            '@acme/linked' => 'file:packages/linked',
+            '@acme/tarball' => 'file:vendor/acme-tarball-1.0.0.tgz',
+            '@corp/registry' => '^1.0.0',
+            '@scope/hidden' => '^1.0.0',
+        ]], JSON_THROW_ON_ERROR),
         'excubia.json' => '{"privacy": {"skipPackages": ["internal/*", "@scope/hid?en"]}}',
     ];
 }
@@ -95,7 +102,7 @@ function privatePackagesRun(FakeHttpClient $client): array
     $result = (new HealthCheckRunnerService($client, new DateTimeImmutable('2026-11-03', new DateTimeZone('UTC'))))->run(
         $root,
         $configuration,
-        ['composer-advisories', 'npm-advisories', 'composer-abandoned', 'composer-stale', 'laravel-next-blocker', 'composer-outdated'],
+        ['composer-advisories', 'npm-advisories', 'composer-abandoned', 'composer-stale', 'laravel-next-blocker', 'composer-outdated', 'npm-outdated'],
         null,
         false,
         true,
@@ -117,6 +124,7 @@ function publicDataSourceClient(): FakeHttpClient
         'https://repo.packagist.org/p2/laravel/framework.json' => packagistMetadata('laravel/framework'),
         'https://repo.packagist.org/p2/symfony/console.json' => packagistMetadata('symfony/console'),
         'https://api.osv.dev/v1/querybatch' => ['results' => [['vulns' => []]]],
+        'https://registry.npmjs.org/lodash' => ['dist-tags' => ['latest' => '4.17.21'], 'versions' => ['4.17.20' => [], '4.17.21' => []]],
     ]);
 }
 
@@ -171,7 +179,7 @@ it('marks npm packages private unless the public registry served them', function
     ]);
 });
 
-it('never sends a private package name to Packagist, OSV or GitHub', function () {
+it('never sends a private package name to Packagist, OSV, GitHub or the npm registry', function () {
     $client = publicDataSourceClient();
     privatePackagesRun($client);
     $sent = implode("\n", $client->requests);
@@ -184,7 +192,8 @@ it('never sends a private package name to Packagist, OSV or GitHub', function ()
         ->and($sent)->toContain('GET https://packagist.org/api/security-advisories/ {"packages":["laravel/framework","symfony/console"]}')
         ->and($sent)->toContain('GET https://repo.packagist.org/p2/laravel/framework.json')
         ->and($sent)->toContain('GET https://repo.packagist.org/p2/symfony/console.json')
-        ->and($sent)->toContain('POST https://api.osv.dev/v1/querybatch {"queries":[{"package":{"name":"lodash","ecosystem":"npm"},"version":"4.17.20"}]}');
+        ->and($sent)->toContain('POST https://api.osv.dev/v1/querybatch {"queries":[{"package":{"name":"lodash","ecosystem":"npm"},"version":"4.17.20"}]}')
+        ->and(array_values(array_filter($client->requests, static fn (string $request): bool => str_contains($request, 'registry.npmjs.org'))))->toBe(['GET https://registry.npmjs.org/lodash []']);
 });
 
 it('reports the private packages as one not-applicable skipped row per check', function () {
@@ -206,6 +215,9 @@ it('reports the private packages as one not-applicable skipped row per check', f
         ->and(privateSkipFinding($checks['composer-outdated'])->skipReason)->toBe(SkipReasonEnum::NotApplicable)
         ->and(array_map(static fn (FindingData $finding): string => $finding->subject, $checks['composer-outdated']->findings))->toBe(['private packages', 'laravel/framework', 'symfony/console'])
         ->and(privateSkipFinding($checks['npm-advisories'])->message)->toBe('5 private packages not sent to OSV.dev: @acme/linked, @acme/ui, @acme/tarball, @corp/registry, @scope/hidden.')
+        ->and(privateSkipFinding($checks['npm-outdated'])->message)->toBe('4 private packages not sent to the npm registry: @acme/linked, @acme/tarball, @corp/registry, @scope/hidden.')
+        ->and(privateSkipFinding($checks['npm-outdated'])->skipReason)->toBe(SkipReasonEnum::NotApplicable)
+        ->and(array_map(static fn (FindingData $finding): string => $finding->subject, $checks['npm-outdated']->findings))->toBe(['private packages', 'lodash'])
         ->and((new JsonReportRenderer)->render($run['report']))->toContain('"skipReason": "not-applicable"');
 });
 
