@@ -62,6 +62,7 @@ final class SarifRenderer implements ReportRendererContract
         'env-example-sync' => '.env.example',
         'composer-outdated' => 'composer.lock',
         'laravel-queue-workers' => 'config/queue.php',
+        'laravel-backups' => 'config/backup.php',
     ];
 
     /**

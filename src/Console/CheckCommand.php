@@ -284,6 +284,7 @@ final class CheckCommand extends Command
             queueBacklogQueueNames: $loaded->queueBacklogQueueNames,
             envExampleSync: $loaded->envExampleSync,
             queueWorkersStaleAfterMinutes: $loaded->queueWorkersStaleAfterMinutes,
+            backupsMaxAgeHours: $loaded->backupsMaxAgeHours,
         );
     }
 

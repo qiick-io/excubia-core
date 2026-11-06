@@ -200,6 +200,17 @@
                             "description": "Without Laravel Horizon: warn (medium) for a queue that has pending jobs when no worker heartbeat is newer than this many minutes. Default 5."
                         }
                     }
+                },
+                "laravel-backups": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "maxAgeHours": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Fail (high) for a spatie/laravel-backup destination whose newest backup is older than this many hours. Default 26."
+                        }
+                    }
                 }
             }
         },

@@ -40,6 +40,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `envExampleSync` the `checks.env-example-sync` keys.
  * `queueWorkersStaleAfterMinutes` is `checks.laravel-queue-workers.staleAfterMinutes`:
  * a queue with pending jobs warns when no worker heartbeat is newer (default 5).
+ * `backupsMaxAgeHours` is `checks.laravel-backups.maxAgeHours`: a monitored
+ * backup destination fails when its newest backup is older (default 26).
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -91,6 +93,7 @@ final readonly class ExcubiaConfigurationData
         public EnvExampleSyncConfigurationData $envExampleSync = new EnvExampleSyncConfigurationData,
         public int $queueWorkersStaleAfterMinutes = 5,
         public int $schedulerLateAfterMinutes = 5,
+        public int $backupsMaxAgeHours = 26,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -106,6 +109,10 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->queueWorkersStaleAfterMinutes < 1) {
             throw new InvalidConfigurationException('checks.laravel-queue-workers.staleAfterMinutes must be at least 1.');
+        }
+
+        if ($this->backupsMaxAgeHours < 1) {
+            throw new InvalidConfigurationException('checks.laravel-backups.maxAgeHours must be at least 1.');
         }
 
         if ($this->schedulerLateAfterMinutes < 1) {

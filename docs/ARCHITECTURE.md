@@ -41,7 +41,8 @@ qiick-io/excubia-core
 │   │   ├── EnvExampleSyncCheck.php         (env-example-sync)             # .env.example vs config/*.php env() keys, names only
 │   │   ├── ComposerOutdatedCheck.php       (composer-outdated)            # direct deps vs newest stable, same p2 metadata
 │   │   ├── LaravelQueueWorkersCheck.php    (laravel-queue-workers)        # Horizon status, or worker heartbeat per queue with pending jobs
-│   │   └── NpmOutdatedCheck.php            (npm-outdated)                 # package.json direct deps vs npm registry, names only
+│   │   ├── NpmOutdatedCheck.php            (npm-outdated)                 # package.json direct deps vs npm registry, names only
+│   │   └── LaravelBackupsCheck.php         (laravel-backups)              # spatie/laravel-backup destinations: age, size drop, count
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string

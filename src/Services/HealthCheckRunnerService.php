@@ -13,6 +13,7 @@ use Qiick\Excubia\Checks\ComposerStaleCheck;
 use Qiick\Excubia\Checks\DependencyLicensesCheck;
 use Qiick\Excubia\Checks\EnvExampleSyncCheck;
 use Qiick\Excubia\Checks\LaravelAppKeyCheck;
+use Qiick\Excubia\Checks\LaravelBackupsCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
 use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseCheck;
@@ -248,6 +249,7 @@ final class HealthCheckRunnerService
             new ComposerOutdatedCheck($packagist, $constraints),
             new LaravelQueueWorkersCheck,
             new NpmOutdatedCheck(new NpmRegistryService($this->httpClient, $cache), $constraints),
+            new LaravelBackupsCheck,
         ];
     }
 }

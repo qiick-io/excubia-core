@@ -138,6 +138,7 @@ it('documents the details keys per check id', function () {
             'composer-outdated',
             'laravel-queue-workers',
             'npm-outdated',
+            'laravel-backups',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
@@ -146,5 +147,7 @@ it('documents the details keys per check id', function () {
         ->and($keys('outdatedDetails'))->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])
         ->and($schema['$defs']['outdatedDetails']['required'])->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])
         ->and($keys('queueWorkerHeartbeatDetails'))->toBe(['connection', 'queue', 'minutesSinceLastSeen'])
-        ->and($keys('horizonStatusDetails'))->toBe(['status', 'processes', 'supervisors']);
+        ->and($keys('horizonStatusDetails'))->toBe(['status', 'processes', 'supervisors'])
+        ->and($keys('backupDestinationDetails'))->toBe(['disk', 'ageHours', 'sizeMb', 'count'])
+        ->and($schema['$defs']['backupDestinationDetails']['required'])->toBe(['disk', 'ageHours', 'sizeMb', 'count']);
 });
