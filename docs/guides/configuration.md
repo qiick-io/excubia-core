@@ -24,7 +24,10 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "node-eol": { "enabled": true },
     "laravel-scheduler-heartbeat": { "staleAfterMinutes": 10 },
     "laravel-failed-jobs": { "highSeverityAfterHours": 24 },
-    "dependency-licenses": { "allowed": [], "denied": [], "includeDev": false }
+    "dependency-licenses": { "allowed": [], "denied": [], "includeDev": false },
+    "laravel-database": { "connections": [] },
+    "laravel-disk-space": { "warnAtPercentUsed": 80, "failAtPercentUsed": 90 },
+    "laravel-queue-backlog": { "maxOldestAgeMinutes": 15, "maxPendingJobs": 1000, "queues": [] }
   },
   "ignore": [
     {
@@ -108,6 +111,15 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.dependency-licenses.allowed` | list of strings | `[]` | SPDX license ids or globs that never warn, for example `"GPL-2.0-or-later"`, `"LGPL-*"` or `"proprietary"`. |
 | `checks.dependency-licenses.denied` | list of strings | `[]` | SPDX license ids or globs that fail the check at high. Denied wins over allowed. |
 | `checks.dependency-licenses.includeDev` | boolean | `false` | Also inspect development dependencies (Composer `packages-dev`, npm `dev` and `devOptional`). `--no-dev` and `"includeDev": false` at the top level still leave Composer `packages-dev` out. |
+| `checks.laravel-database` | object | | Settings of `laravel-database`. |
+| `checks.laravel-database.connections` | list of strings | `[]` | Connection names from `config/database.php` probed with `select 1` on top of the default connection. A name that is not configured fails like an unreachable one. |
+| `checks.laravel-disk-space` | object | | Settings of `laravel-disk-space`. |
+| `checks.laravel-disk-space.warnAtPercentUsed` | integer 1–100 | `80` | Warn (medium) when the disk holding `storage/` is at least this many percent used. At most `failAtPercentUsed`. |
+| `checks.laravel-disk-space.failAtPercentUsed` | integer 1–100 | `90` | Fail (high) when the disk holding `storage/` is at least this many percent used. |
+| `checks.laravel-queue-backlog` | object | | Settings of `laravel-queue-backlog`. |
+| `checks.laravel-queue-backlog.maxOldestAgeMinutes` | integer ≥ 1 | `15` | Warn (medium) when the oldest pending job of a queue has waited longer than this many minutes. |
+| `checks.laravel-queue-backlog.maxPendingJobs` | integer ≥ 1 | `1000` | Warn (medium) when a queue holds more than this many pending jobs. |
+| `checks.laravel-queue-backlog.queues` | list of strings | `[]` | Redis only: queues read on top of the default queue of the default queue connection. The `database` driver reads every queue in its jobs table. |
 
 ### Dependency licenses
 
@@ -131,7 +143,7 @@ The JSON report adds a top-level `licenses` inventory with the counts per licens
 | --- | --- | --- | --- |
 | `ignore` | list of objects | `[]` | Accepted findings. |
 | `ignore[].checkId` | string, required | | Check id, for example `composer-advisories`. |
-| `ignore[].subject` | string, required | | The finding subject: a package (`vendor/package`), a runtime (`php`, `laravel/framework`, `node`) or, for the posture checks, `app.debug`, `config-cache`, `route-cache`, `event-cache`, `migrations`, `failed-jobs`, `scheduler` or `maintenance-mode`. |
+| `ignore[].subject` | string, required | | The finding subject: a package (`vendor/package`), a runtime (`php`, `laravel/framework`, `node`) or, for the posture checks, `app.debug`, `config-cache`, `route-cache`, `event-cache`, `migrations`, `failed-jobs`, `scheduler` or `maintenance-mode`; for the infrastructure checks the connection, store or queue name, `storage`, `bootstrap/cache`, `disk`, `php` or an `ext-*` name. |
 | `ignore[].advisoryId` | string or null | `null` | Match only this advisory (GHSA or CVE id as shown in the report). `null` matches every finding of the subject. |
 | `ignore[].reason` | string, required | | Why it is accepted. Printed when the rule expires. |
 | `ignore[].until` | `YYYY-MM-DD` or null | `null` | Last day the rule applies (inclusive, UTC). After it the finding is active again and a warning is printed on stderr. `null` never expires. |

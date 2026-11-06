@@ -509,6 +509,108 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-database"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/databaseDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-cache"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/cacheDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-storage"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/storageDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-disk-space"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/diskSpaceDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-queue-backlog"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/queueBacklogDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "php-platform-requirements"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/platformRequirementsDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -762,6 +864,106 @@
                 "package": {
                     "description": "Composer name of the development tool listed in require and enabled.",
                     "enum": ["laravel/telescope", "barryvdh/laravel-debugbar", "spatie/laravel-ray", "laravel/pail", "itsgoingd/clockwork"]
+                }
+            }
+        },
+        "databaseDetails": {
+            "description": "laravel-database finding, one per connection that did not answer.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connection"],
+            "properties": {
+                "connection": {
+                    "description": "Connection name from config/database.php; never the host or DSN.",
+                    "type": "string"
+                }
+            }
+        },
+        "cacheDetails": {
+            "description": "laravel-cache finding.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["store"],
+            "properties": {
+                "store": {
+                    "description": "Name of the default cache store from config/cache.php.",
+                    "type": "string"
+                }
+            }
+        },
+        "storageDetails": {
+            "description": "laravel-storage finding, one per directory.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["directory"],
+            "properties": {
+                "directory": {
+                    "description": "The framework directory that is not writable, relative to the app.",
+                    "enum": ["storage", "bootstrap/cache"]
+                }
+            }
+        },
+        "diskSpaceDetails": {
+            "description": "laravel-disk-space finding.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["usedPercent"],
+            "properties": {
+                "usedPercent": {
+                    "description": "Used share of the disk holding storage/, in whole percent (rounded down).",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100
+                }
+            }
+        },
+        "queueBacklogDetails": {
+            "description": "laravel-queue-backlog finding, one per queue over a threshold.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["queue", "pendingCount", "oldestAgeMinutes"],
+            "properties": {
+                "queue": {
+                    "description": "Queue name on the default queue connection.",
+                    "type": "string"
+                },
+                "pendingCount": {
+                    "description": "Jobs waiting to be picked up (not reserved, not delayed).",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "oldestAgeMinutes": {
+                    "description": "Whole minutes the oldest pending job has waited; null when unknown (a Redis payload without createdAt).",
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                }
+            }
+        },
+        "platformRequirementsDetails": {
+            "description": "php-platform-requirements finding, one per unmet requirement.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirement", "requiredBy", "checkedPhpVersion", "isStandaloneCli"],
+            "properties": {
+                "requirement": {
+                    "description": "php or an ext-* name, lowercase, as in composer.lock.",
+                    "type": "string",
+                    "pattern": "^(php|ext-.+)$"
+                },
+                "requiredBy": {
+                    "description": "Locked package names whose require is not met, or composer.json for the root platform requirements.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "checkedPhpVersion": {
+                    "description": "Version of the PHP the check ran on (major.minor.release).",
+                    "type": "string"
+                },
+                "isStandaloneCli": {
+                    "description": "True when vendor/bin/excubia ran the check: its PHP can differ from the app's. False under Artisan.",
+                    "type": "boolean"
                 }
             }
         },

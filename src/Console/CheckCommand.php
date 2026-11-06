@@ -275,6 +275,12 @@ final class CheckCommand extends Command
             skippedPackagePatterns: $loaded->skippedPackagePatterns,
             release: $loaded->release,
             dependencyLicenses: $loaded->dependencyLicenses,
+            databaseConnectionNames: $loaded->databaseConnectionNames,
+            diskSpaceWarnAtPercentUsed: $loaded->diskSpaceWarnAtPercentUsed,
+            diskSpaceFailAtPercentUsed: $loaded->diskSpaceFailAtPercentUsed,
+            queueBacklogMaxOldestAgeMinutes: $loaded->queueBacklogMaxOldestAgeMinutes,
+            queueBacklogMaxPendingJobs: $loaded->queueBacklogMaxPendingJobs,
+            queueBacklogQueueNames: $loaded->queueBacklogQueueNames,
         );
     }
 

@@ -21,6 +21,7 @@ There is no telemetry, no analytics and no phone-home to qiick or any third part
 - All HTTP is over TLS with timeouts (connect 5 s, total 15 s) and limited retries; `HTTPS_PROXY` is respected.
 - Excubia never writes to the scanned project except the `--output` file, and `vendor/bin/excubia` never executes project code.
 - The Artisan commands run inside the booted app. The posture checks read it without writing, except the scheduler heartbeat cache key `excubia:scheduler-heartbeat`, and their findings carry only booleans, counts, ages and names: never `.env` values, DSNs, hostnames, paths or exception messages.
+- The infrastructure checks (`laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`) run `select 1`, count pending jobs and measure the disk without writing, except the cache probe key `excubia:cache-probe:<random>`, which is deleted right after it is read. Their findings name the connection, store, directory (`storage`, `bootstrap/cache`) or queue and carry percentages, counts and ages; driver errors are dropped because they can hold a host or a DSN. `php-platform-requirements` names the missing extension, the PHP version and the requiring packages.
 - The response cache stores public API responses only, in the system temporary directory unless `cache.directory` says otherwise.
 
 ### Private packages
@@ -118,5 +119,6 @@ Off until `healthEndpoint.enabled` is true and `EXCUBIA_HEALTH_SECRET` is set to
 | `storage/excubia/exceptions/` | exception capture | Masked groups waiting to be sent, capped by `exceptions.bufferMaxBytes` |
 | `storage/excubia/health.json` | `excubia:check`, `excubia:push` with the endpoint on | The last health result |
 | Cache key `excubia:scheduler-heartbeat` | `excubia:heartbeat` | A Unix timestamp |
+| Cache key `excubia:cache-probe:<random>` | `laravel-cache` | A random value, deleted right after it is read back |
 
 Report a privacy or security problem as described in [`SECURITY.md`](../../SECURITY.md).
