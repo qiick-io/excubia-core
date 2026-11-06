@@ -30,6 +30,12 @@ final readonly class LaravelPostureData
     public const REQUIRES_ARTISAN_MESSAGE = 'This check requires Artisan: run php artisan excubia:check in the app.';
 
     /**
+     * Skip message of `php-opcache` and `php-production-ini` when there is no
+     * web-SAPI snapshot: the CLI that runs Artisan is never checked instead.
+     */
+    public const PHP_WEB_RUNTIME_UNKNOWN_MESSAGE = 'PHP web settings unknown: enable the health endpoint so Excubia can read the web SAPI (the CLI uses different ini settings).';
+
+    /**
      * @param  list<string>|null  $pendingMigrations  migration names (no path) not run yet; null when they could not be read
      * @param  int|null  $failedJobCount  null when there is no failed job store or it could not be read
      * @param  DateTimeImmutable|null  $oldestFailedJobAt  when the oldest failed job failed; null when none or unknown
@@ -53,6 +59,7 @@ final readonly class LaravelPostureData
      * @param  int|null  $databaseConnectionCount  open connections on the default connection's server (MySQL, MariaDB) or database (PostgreSQL); null when not measured
      * @param  array{sizeMb: float, largestTables: list<array{table: string, sizeMb: float}>}|null  $databaseSize  size of the default database and its five largest tables, in MB; null when not measured
      * @param  list<array{connection: string, isCacheConnection: bool, usedBytes: int|null, maxBytes: int|null, policy: string|null}>|null  $redisMemory  `INFO memory` of each Redis connection used by the default cache store, queue connection or session, or of `checks.laravel-redis-memory.connections` (#170): used and max memory in bytes (`maxBytes` 0 when unbounded) and the eviction policy; `usedBytes` null when the connection could not be read; an empty list when no Redis connection is used; null when not measured
+     * @param  array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null  $phpRuntime  OPcache status and production php.ini directives (#172): the web-SAPI snapshot the health endpoint stored (`sapi` `web`, `ageMinutes` its age); null when there is none, because the CLI values of this run are never used
      */
     public function __construct(
         public string $environment,
@@ -93,5 +100,15 @@ final readonly class LaravelPostureData
         public ?int $databaseConnectionCount = null,
         public ?array $databaseSize = null,
         public ?array $redisMemory = null,
+        public ?array $phpRuntime = null,
     ) {}
+
+    /**
+     * Where the `php-opcache` and `php-production-ini` values come from, for
+     * their messages: the web-SAPI snapshot of the health endpoint.
+     */
+    public function phpRuntimeSource(): string
+    {
+        return 'Checked on the web SAPI (health endpoint snapshot, '.($this->phpRuntime['ageMinutes'] ?? 0).' minutes old).';
+    }
 }

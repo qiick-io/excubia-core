@@ -59,6 +59,11 @@ use Throwable;
  * session use (or on `checks.laravel-redis-memory.connections`): used and
  * max memory and the eviction policy, nothing else of the reply.
  *
+ * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
+ * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
+ * Without one the PHP runtime stays unknown: the CLI that runs Artisan has
+ * its own ini settings, so its values would be misleading.
+ *
  * ponytail: Redis, Memcached and `select 1` on an already open connection
  * use the client's own timeouts; wrap them in a deadline if a hung service
  * ever blocks a run.
@@ -180,6 +185,7 @@ final class LaravelPostureService
             databaseConnectionCount: $databaseStatistics['connectionCount'],
             databaseSize: $databaseStatistics['size'],
             redisMemory: $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames),
+            phpRuntime: $this->phpRuntime($application, $now),
         );
     }
 
@@ -735,6 +741,27 @@ final class LaravelPostureService
         }
 
         return $info;
+    }
+
+    /**
+     * The web-SAPI snapshot the health endpoint stored, with its age; null
+     * when there is none. The CLI values of this process are never used:
+     * the CLI has its own ini settings, so they say nothing about the web.
+     *
+     * @return array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null
+     */
+    private function phpRuntime(Application $application, DateTimeImmutable $now): ?array
+    {
+        $snapshot = PhpWebRuntimeSnapshotService::read($application);
+
+        if ($snapshot === null) {
+            return null;
+        }
+
+        $collectedAt = $snapshot['collectedAt'];
+        unset($snapshot['collectedAt']);
+
+        return ['sapi' => 'web', 'ageMinutes' => intdiv(max(0, $now->getTimestamp() - $collectedAt), 60), ...$snapshot];
     }
 
     private function ageMinutes(?int $timestamp, DateTimeImmutable $now): ?int

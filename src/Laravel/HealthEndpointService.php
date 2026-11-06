@@ -35,6 +35,11 @@ use Throwable;
  * aliases print a warning about it. The route is throttled, so secrets
  * cannot be guessed at speed.
  *
+ * An authenticated request also refreshes, at most once an hour, the
+ * web-SAPI OPcache and php.ini snapshot (`PhpWebRuntimeSnapshotService`,
+ * #172) that `php-opcache` and `php-production-ini` read (they never read
+ * the CLI).
+ *
  * ponytail: the secret is read from the process environment like
  * `EXCUBIA_APP_TOKEN`, so with `config:cache` (no `.env` load) it must be
  * set in the real environment; add a published config file if that becomes a need.
@@ -66,6 +71,8 @@ final class HealthEndpointService
         if ($secret === null || ! is_string($given) || ! hash_equals($secret, $given)) {
             throw new NotFoundHttpException;
         }
+
+        PhpWebRuntimeSnapshotService::record($this->application, time());
 
         $payload = self::store($this->application)->read()
             ?? (new OhDearHealthRenderer(self::now()))->renderNotRunYet();

@@ -839,6 +839,40 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "php-opcache"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/phpOpcacheDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "php-production-ini"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/phpProductionIniDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1422,6 +1456,73 @@
                     "description": "maxmemory_policy (noeviction, allkeys-lru, …); null when the server does not report it.",
                     "type": ["string", "null"],
                     "pattern": "^[a-z-]{1,32}$"
+                }
+            }
+        },
+        "phpOpcacheDetails": {
+            "description": "php-opcache finding. Booleans, percentages and a count only, never an ini file or script path.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sapi", "ageMinutes", "isOpcacheEnabled", "hitRate", "memoryUsedPercent", "cachedScripts", "isValidateTimestampsEnabled"],
+            "properties": {
+                "sapi": {
+                    "description": "The PHP SAPI the values come from: always web, the snapshot the health endpoint stores at most once an hour. The CLI that runs Artisan is never reported: without a web snapshot the check is skipped.",
+                    "const": "web"
+                },
+                "ageMinutes": {
+                    "description": "Minutes since the health endpoint stored the web snapshot.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "isOpcacheEnabled": {
+                    "description": "OPcache is enabled for the web SAPI.",
+                    "type": "boolean"
+                },
+                "hitRate": {
+                    "description": "OPcache hits over hits plus misses, in percent with two decimals; null when OPcache is disabled or has no lookup yet.",
+                    "type": ["number", "null"],
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                "memoryUsedPercent": {
+                    "description": "Used plus wasted OPcache shared memory, in percent with two decimals; null when OPcache is disabled.",
+                    "type": ["number", "null"],
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                "cachedScripts": {
+                    "description": "Scripts in the OPcache; null when OPcache is disabled.",
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                },
+                "isValidateTimestampsEnabled": {
+                    "description": "opcache.validate_timestamps is on.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "phpProductionIniDetails": {
+            "description": "php-production-ini finding, one per directive. A boolean only, never the ini value or file path.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["directive", "isEnabled", "sapi", "ageMinutes"],
+            "properties": {
+                "directive": {
+                    "description": "The php.ini directive.",
+                    "enum": ["display_errors", "expose_php", "log_errors"]
+                },
+                "isEnabled": {
+                    "description": "The directive is on.",
+                    "type": "boolean"
+                },
+                "sapi": {
+                    "description": "The PHP SAPI the values come from: always web, the snapshot the health endpoint stores at most once an hour. The CLI that runs Artisan is never reported: without a web snapshot the check is skipped.",
+                    "const": "web"
+                },
+                "ageMinutes": {
+                    "description": "Minutes since the health endpoint stored the web snapshot.",
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },

@@ -25,6 +25,7 @@ use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Client\Events\ResponseReceived;
 use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Log\Logger;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Mail\Mailable;
@@ -46,9 +47,11 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
+use Monolog\Handler\TestHandler;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
+use Qiick\Excubia\Laravel\LogChannelTapService;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -70,6 +73,17 @@ final class RuntimeMonitoringTestJob implements ShouldQueue
         if ($this->shouldFail) {
             throw new RuntimeException('job-exception-secret');
         }
+    }
+}
+
+/** A host application's own logging tap, which must keep running. */
+final class RuntimeMonitoringTestLogTap
+{
+    public static int $calls = 0;
+
+    public function __invoke(Logger $logger): void
+    {
+        self::$calls++;
     }
 }
 
@@ -999,6 +1013,61 @@ it('ignores messages logged while the log listener runs, so it cannot loop', fun
     expect($levels)->toHaveCount(1)
         ->and($levels[0])->toMatchArray(['level' => 'error', 'count' => 1])
         ->and($clockCalls)->toBeLessThan(5);
+});
+
+it('adds the configured log channel, the stack name for a stack, and omits an unknown one', function () {
+    config([
+        'logging.default' => 'stack',
+        'logging.channels.stack' => ['driver' => 'stack', 'channels' => ['single', 'recorded']],
+        'logging.channels.recorded' => ['driver' => 'monolog', 'handler' => TestHandler::class, 'tap' => [RuntimeMonitoringTestLogTap::class]],
+    ]);
+    RuntimeMonitoringTestLogTap::$calls = 0;
+    bootRuntimeProject($this->app, ['enabled' => true, 'logLevels' => ['enabled' => true]]);
+
+    Log::warning('stack-message-secret');
+    Log::channel('single')->warning('single-message-secret');
+    Log::channel('recorded')->warning('recorded-message-secret', ['user' => 'recorded-context-secret']);
+    Log::build(['driver' => 'single', 'path' => storage_path('logs/on-demand.log')])->warning('on-demand-secret');
+    event(new MessageLogged('warning', 'by-hand-secret'));
+    $this->app->terminate();
+
+    $warnings = bufferedOfType($this->app, 'logLevel')->keyBy(fn (array $aggregate): string => $aggregate['channel'] ?? 'none');
+    $record = collect(Log::channel('recorded')->getLogger()->getHandlers()[0]->getRecords())->last();
+
+    expect($warnings->keys()->all())->toEqualCanonicalizing(['stack', 'single', 'recorded', 'none'])
+        ->and($warnings['stack']['count'])->toBe(1)
+        ->and($warnings['none']['count'])->toBe(2)
+        ->and($warnings['none'])->not->toHaveKey('channel')
+        ->and(RuntimeMonitoringTestLogTap::$calls)->toBe(1)
+        ->and($record->message)->toBe('recorded-message-secret')
+        ->and($record->context)->toBe(['user' => 'recorded-context-secret'])
+        ->and($record->extra)->toBe([])
+        ->and(rawBuffer($this->app))->not->toContain('secret');
+});
+
+it('watches the log channels resolved before Excubia booted, once', function () {
+    Log::channel('single');
+    bootRuntimeProject($this->app, ['enabled' => true, 'logLevels' => ['enabled' => true]]);
+    $this->app->make(RuntimeCollectorService::class)->tapLogChannels($this->app);
+
+    Log::channel('single')->error('early-channel-secret');
+    $this->app->terminate();
+
+    $taps = config('logging.channels.single.tap');
+
+    expect(bufferedOfType($this->app, 'logLevel')->all())->toHaveCount(1)
+        ->and(bufferedOfType($this->app, 'logLevel')[0])->toMatchArray(['level' => 'error', 'channel' => 'single', 'count' => 1])
+        ->and(array_count_values($taps)[LogChannelTapService::class.':single'])->toBe(1);
+});
+
+it('leaves the log channels alone when log levels are off, and a stray tap never throws', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+
+    (new LogChannelTapService($this->app))(Log::channel('single'), 'single');
+    Log::channel('single')->error('still logged');
+
+    expect(config('logging.channels.single.tap'))->toBeNull()
+        ->and(Log::channel('single')->getLogger()->getHandlers())->not->toBeEmpty();
 });
 
 it('records nothing for a 1.0.0-beta.2 type with sample rate 0 and keeps the rate on each aggregate', function () {

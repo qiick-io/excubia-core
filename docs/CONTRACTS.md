@@ -28,7 +28,49 @@ Each contract has a contract test. Most of them compare the code with the commit
 
 ### Check ids
 
-In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements`, `env-example-sync`, `composer-outdated`, `laravel-queue-workers`, `npm-outdated`, `laravel-backups`, `laravel-database-connections`, `laravel-database-size`, `laravel-redis-memory` (the seventeen before `laravel-backups` added in 1.0.0-beta.2; `laravel-backups`, `laravel-database-connections`, `laravel-database-size` and `laravel-redis-memory` in 1.0.0-beta.3, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
+In run order, the same list and order as `checkIds` in the snapshot (`PublicContractsTest` fails when this table and the snapshot differ):
+
+| # | Check id |
+| --- | --- |
+| 1 | `php-eol` |
+| 2 | `laravel-eol` |
+| 3 | `node-eol` |
+| 4 | `composer-advisories` |
+| 5 | `npm-advisories` |
+| 6 | `composer-abandoned` |
+| 7 | `composer-stale` |
+| 8 | `laravel-next-blocker` |
+| 9 | `laravel-debug-mode` |
+| 10 | `laravel-production-caches` |
+| 11 | `laravel-pending-migrations` |
+| 12 | `laravel-failed-jobs` |
+| 13 | `laravel-scheduler-heartbeat` |
+| 14 | `laravel-maintenance-mode` |
+| 15 | `laravel-app-key` |
+| 16 | `laravel-session-security` |
+| 17 | `laravel-cors-wildcard` |
+| 18 | `laravel-production-drivers` |
+| 19 | `laravel-log-level` |
+| 20 | `laravel-dev-packages` |
+| 21 | `dependency-licenses` |
+| 22 | `laravel-database` |
+| 23 | `laravel-cache` |
+| 24 | `laravel-storage` |
+| 25 | `laravel-disk-space` |
+| 26 | `laravel-queue-backlog` |
+| 27 | `php-platform-requirements` |
+| 28 | `env-example-sync` |
+| 29 | `composer-outdated` |
+| 30 | `laravel-queue-workers` |
+| 31 | `npm-outdated` |
+| 32 | `laravel-backups` |
+| 33 | `laravel-database-connections` |
+| 34 | `laravel-database-size` |
+| 35 | `laravel-redis-memory` |
+| 36 | `php-opcache` |
+| 37 | `php-production-ini` |
+
+Ids 1 to 14 are the 1.0.0-beta.1 set; every later id was appended, additively. The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
 
 ### Exit codes
 
@@ -59,6 +101,8 @@ The service provider schedules `excubia:heartbeat` every minute (`* * * * *`), a
 
 The provider also always registers the queue worker heartbeat (#151, additive): a queue worker stores the Unix time under `excubia:worker-heartbeat:<connection>:<queue>` in the default cache store, at most once a minute per connection and queue, for `laravel-queue-workers`. The prefix `excubia:worker-heartbeat:` is in the snapshot (`artisan.workerHeartbeatCacheKeyPrefix`).
 
+The health endpoint (#172, additive) stores a web-SAPI snapshot of the OPcache status and production php.ini booleans under `excubia:php-runtime:web` in the default cache store, at most once an hour and for 24 hours, for `php-opcache` and `php-production-ini`. The key is in the snapshot (`artisan.phpWebRuntimeCacheKey`).
+
 ### Configuration and environment
 
 - `excubia.json` keys: every key in `excubia.schema.json` (`failOn`, `includeDev`, `strict`, `checks.*`, `ignore[]`, `cache`, `release`, `app`, `privacy`, `healthEndpoint`, `runtime`, `exceptions`), with the types and defaults in the [configuration reference](./guides/configuration.md). Unknown keys stay a configuration error.
@@ -77,6 +121,8 @@ Envelope `protocolVersion: 1` with `batchId` (UUID v4) and `sentAt`, `Authorizat
 Optional, additive fields from #129 (versions stay `1`): report `release` and `deployedAt` (`push --deploy`), `runtime.release` and `exceptions.release` (one value per batch, not part of the exception fingerprint).
 
 Additive runtime aggregate types from #132 (versions stay `1`): `requestMemory`, `jobMemory`, `queueWait`, `cache`, `mail`, `notification` and `logLevel`, with the metric fields `totalMb`, `maxMb`, `hits`, `misses`, `writes` and `deletes`, and the `excubia.json` keys `runtime.requestMemory`, `runtime.jobMemory`, `runtime.queueWait`, `runtime.cache`, `runtime.mail`, `runtime.notifications` and `runtime.logLevels` (each `enabled`, default `false`, and `sampleRate`). The five 1.0.0-beta.1 types keep their shape and their default (on). An app must accept a runtime batch that holds an aggregate type it does not know and skip those entries, so a newer `excubia-core` can push to an older app; the new types are off by default so an older app does not receive them unless the user turns them on.
+
+Additive log channel from #174 (versions stay `1`): an optional `channel` dimension on the `logLevel` aggregate, the name of the configured logging channel (a stack reports the stack's name). It is omitted when the channel is unknown (on-demand channels, a hand-fired `MessageLogged`, entries from an older `excubia-core`); an app groups an entry without `channel` as its own row, and it never merges with one that has it.
 
 Additive runtime aggregate type from #133 (versions stay `1`): `deprecation`, with the dimensions `source`, `message` and `phpVersion`, and the `excubia.json` key `runtime.deprecations` (`enabled`, default `false`, and `sampleRate`).
 

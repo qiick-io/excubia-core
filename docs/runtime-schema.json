@@ -292,7 +292,7 @@
         },
         "logLevel": {
             "type": "object",
-            "description": "Log entries per level (MessageLogged) (#132). Laravel's event does not carry the channel, so there is no channel dimension. errorCount is always 0. Never the message or the context.",
+            "description": "Log entries per level (MessageLogged) (#132) and, when known, per log channel (#174). errorCount is always 0. Never the message or the context.",
             "additionalProperties": false,
             "required": ["type", "bucket", "sampleRate", "level", "count", "errorCount"],
             "properties": {
@@ -300,6 +300,7 @@
                 "bucket": { "$ref": "#/$defs/bucket" },
                 "sampleRate": { "$ref": "#/$defs/sampleRate" },
                 "level": { "enum": ["emergency", "alert", "critical", "error", "warning", "notice", "info", "debug", "unknown"] },
+                "channel": { "type": "string", "minLength": 1, "description": "Name of the configured logging channel the entry was written to (#174); a stack reports the stack's name, not the channels inside it. Omitted when unknown: an on-demand channel (Log::build, Log::stack), a MessageLogged event fired by hand, or an older excubia-core. Additive, optional." },
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" }
             }
