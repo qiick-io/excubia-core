@@ -87,6 +87,7 @@ final readonly class ExcubiaConfigurationData
         public int $queueBacklogMaxPendingJobs = 1000,
         public array $queueBacklogQueueNames = [],
         public EnvExampleSyncConfigurationData $envExampleSync = new EnvExampleSyncConfigurationData,
+        public int $schedulerLateAfterMinutes = 5,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
@@ -98,6 +99,10 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->schedulerHeartbeatStaleAfterMinutes < 1) {
             throw new InvalidConfigurationException('staleAfterMinutes must be at least 1.');
+        }
+
+        if ($this->schedulerLateAfterMinutes < 1) {
+            throw new InvalidConfigurationException('lateAfterMinutes must be at least 1.');
         }
 
         if ($this->failedJobHighSeverityAfterHours < 1) {

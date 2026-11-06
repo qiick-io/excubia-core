@@ -81,6 +81,16 @@ Add `--deploy` to that post-deploy push (`vendor/bin/excubia push --deploy`, `ph
 
 The release is resolved from `release` in `excubia.json`, `EXCUBIA_RELEASE`, then `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`; the standalone CLI falls back to the commit in the project's `.git`. Runtime and exception batches carry the same `release`, so set `EXCUBIA_RELEASE` (or the platform variable) where the app runs too. Details: [release identifier](./configuration.md#release-identifier).
 
+## Scheduled tasks
+
+`php artisan excubia:push` adds `schedule` to the report (#146): every scheduled event of the app, with its name, cron `expression`, `timezone`, the `withoutOverlapping`, `onOneServer` and `runsInMaintenanceMode` flags, the `environments` it is limited to (empty means all) and a stable `taskId`. With [runtime monitoring](./runtime-monitoring.md) on, each `scheduledTask` aggregate carries the same `taskId`, so the app can flag a task that never ran, ran late or failed:
+
+- a due time of an entry, in its timezone, with no run of that `taskId` within `checks.laravel-scheduler-heartbeat.lateAfterMinutes` (default `5`) is late, and missed once the next due time has passed;
+- a run with `outcome` `failed` is a failure, and `skipped` is a run the scheduler skipped (overlap, `onOneServer`, maintenance mode or a filter);
+- an entry limited to `environments` that do not include the app's environment, or that does not run in maintenance mode while the app is down, is not expected to run.
+
+The standalone `vendor/bin/excubia push` cannot boot the app and sends no `schedule`. Push the report again after a deploy so the inventory follows schedule changes.
+
 ## Stale projects
 
 The app marks a project stale when no report arrives within a window you configure in the app. A stale project usually means the scheduler stopped or the token was revoked, so keep the daily scheduled push even if you also push on deploy.

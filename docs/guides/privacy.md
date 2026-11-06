@@ -62,7 +62,7 @@ Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute,
 - requests: route name (or `unnamed`), HTTP method, status class (`2xx`, …);
 - slow queries: SQL text without bindings, with inline literals (single-quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`; double-quoted and backtick-quoted identifiers stay, and the connection name;
 - jobs: job class, queue and connection names, `processed` or `failed`;
-- scheduled tasks: the description you set (paths relative to the project, secrets such as `token=…` masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, never their arguments, else `Closure`; `finished`, `failed` or `skipped`;
+- scheduled tasks (with a `taskId`, sha256 of the name and the cron expression, #146): the description you set (paths relative to the project, secrets such as `token=…` masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, never their arguments, else `Closure`; `finished`, `failed` or `skipped`;
 - outgoing HTTP (Laravel's HTTP client): host and status class.
 
 Added in 1.0.0-beta.2 and off until each one is switched on (each with `count`, `errorCount`, its `sampleRate` and the metrics named here):

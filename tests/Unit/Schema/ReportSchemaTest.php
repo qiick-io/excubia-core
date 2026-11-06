@@ -61,7 +61,10 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile', 'schedule'])
+        ->and($schema['properties']['schedule']['items']['$ref'])->toBe('#/$defs/scheduledTask')
+        ->and($schema['$defs']['scheduledTask']['required'])->toBe(['taskId', 'task', 'expression', 'timezone', 'withoutOverlapping', 'onOneServer', 'runsInMaintenanceMode', 'environments'])
+        ->and($schema['$defs']['scheduledTask']['properties']['taskId']['pattern'])->toBe('^[0-9a-f]{64}$')
         ->and($schema['properties']['javascriptLockfile']['enum'])->toBe(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'])
         ->and($schema['$defs']['licenseInventory']['required'])->toBe(['packageCount', 'byLicense', 'byEcosystem'])
         ->and($schema['$defs']['licenseInventory']['properties']['byEcosystem']['required'])->toBe(['composer', 'npm'])
