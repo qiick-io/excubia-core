@@ -288,3 +288,129 @@ it('freezes the GitHub Action inputs, their defaults and the outputs', function 
         'outputs' => array_keys(contractActionBlock('outputs')),
     ])->toBe(contractSnapshot('action'), CONTRACT_CHANGE_MESSAGE);
 });
+
+/*
+ * docs/CONTRACTS.md against the snapshot (#187): every list that the
+ * document and tests/Fixtures/Contracts/public-contracts.json both hold must
+ * match, so the human-readable page cannot drift from the frozen contracts.
+ */
+
+const CONTRACT_DOCUMENT_MESSAGE = 'docs/CONTRACTS.md differs from tests/Fixtures/Contracts/public-contracts.json: '
+    .'update the list in docs/CONTRACTS.md to match the snapshot.';
+
+/**
+ * The body of one `### <heading>` section of docs/CONTRACTS.md, up to the
+ * next heading of level 2 or 3.
+ */
+function contractDocumentSection(string $heading): string
+{
+    $document = (string) file_get_contents(dirname(__DIR__, 2).'/docs/CONTRACTS.md');
+    $isFound = preg_match('/^### '.preg_quote($heading, '/').'\n(.*?)(?=^#{2,3} |\z)/ms', $document, $match);
+
+    expect($isFound)->toBe(1, 'docs/CONTRACTS.md has no "### '.$heading.'" section.');
+
+    return $match[1];
+}
+
+/**
+ * Every code span of a Markdown text, in order.
+ *
+ * @return list<string>
+ */
+function contractDocumentCodeSpans(string $text): array
+{
+    preg_match_all('/`([^`]+)`/', $text, $matches);
+
+    return $matches[1];
+}
+
+it('lists every check id in docs/CONTRACTS.md, in run order, as in the snapshot', function (): void {
+    preg_match_all('/^\| (\d+) \| `([a-z0-9-]+)` \|$/m', contractDocumentSection('Check ids'), $rows);
+
+    expect($rows[2])->toBe(contractSnapshot('checkIds'), CONTRACT_DOCUMENT_MESSAGE)
+        ->and(array_map(intval(...), $rows[1]))->toBe(range(1, count($rows[1])), 'The check id table in docs/CONTRACTS.md is not numbered 1, 2, 3, … in order.');
+});
+
+it('lists the exit codes in docs/CONTRACTS.md as in the snapshot', function (): void {
+    preg_match_all('/^\| `(\d+)` \| `([A-Za-z]+)` \|/m', contractDocumentSection('Exit codes'), $rows);
+
+    expect(array_combine($rows[2], array_map(intval(...), $rows[1])))->toBe(contractSnapshot('exitCodes'), CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('lists the commands, their arguments and options in docs/CONTRACTS.md as in the snapshot', function (): void {
+    preg_match_all('/^- `(?:bin\/excubia|php artisan) ([a-z:-]+)( \[path\])?`: (.*)$/m', contractDocumentSection('Commands and options'), $lines, PREG_SET_ORDER);
+    $documented = [];
+
+    foreach ($lines as [, $name, $path, $description]) {
+        $options = array_values(array_filter(contractDocumentCodeSpans($description), static fn (string $span): bool => str_starts_with($span, '--')));
+
+        if (str_contains($description, 'the `check` options')) {
+            $options = $documented['check']['options'];
+        }
+
+        $documented[$name] = ['arguments' => $path === '' ? [] : ['path'], 'options' => $options];
+    }
+
+    $snapshot = [];
+
+    foreach ([...contractSnapshot('cli'), ...contractSnapshot('artisan')['commands']] as $name => $definition) {
+        $snapshot[$name] = ['arguments' => array_keys($definition['arguments']), 'options' => array_keys($definition['options'])];
+    }
+
+    expect($documented)->toBe($snapshot, CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('names the heartbeat and runtime cache keys in docs/CONTRACTS.md as in the snapshot', function (): void {
+    $artisan = contractSnapshot('artisan');
+    $cacheKeys = array_values(array_filter(
+        contractDocumentCodeSpans(contractDocumentSection('Scheduled entries and heartbeat keys')),
+        static fn (string $span): bool => preg_match('/^excubia:(scheduler-heartbeat|[a-z-]+:[a-z]*)$/', $span) === 1,
+    ));
+
+    expect($cacheKeys)->toBe([$artisan['heartbeatCacheKey'], $artisan['workerHeartbeatCacheKeyPrefix'], $artisan['phpWebRuntimeCacheKey']], CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('lists the environment variables in docs/CONTRACTS.md as in the snapshot', function (): void {
+    preg_match('/^- Environment variables: (.*)$/m', contractDocumentSection('Configuration and environment'), $line);
+    $variables = array_values(array_unique(array_filter(
+        contractDocumentCodeSpans($line[1] ?? ''),
+        static fn (string $span): bool => preg_match('/^(EXCUBIA_[A-Z0-9_]+|GITHUB_TOKEN)$/', $span) === 1,
+    )));
+    sort($variables);
+
+    expect($variables)->toBe(contractSnapshot('environmentVariables'), CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('lists the push endpoints, types, bucket and histogram bounds in docs/CONTRACTS.md as in the snapshot', function (): void {
+    $section = contractDocumentSection('Push protocol');
+    preg_match_all('/^\| `POST \{url\}(\/[a-z\/]+)` \| (?:—|`([a-z]+)`) \|/m', $section, $rows);
+    preg_match('/bucket upper bounds are part of the contract: (.*?) ms, inclusive/', $section, $bounds);
+    $push = contractSnapshot('push');
+
+    expect($rows[1])->toBe(array_values($push['endpoints']), CONTRACT_DOCUMENT_MESSAGE)
+        ->and(array_values(array_filter($rows[2])))->toBe($push['types'], CONTRACT_DOCUMENT_MESSAGE)
+        ->and($section)->toContain('`bucketSeconds` `'.$push['runtimeBucketSeconds'].'`')
+        ->and(array_map(intval(...), contractDocumentCodeSpans($bounds[1] ?? '')))->toBe($push['runtimeHistogramBoundsMs'], CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('lists the health endpoint statuses in docs/CONTRACTS.md as in the snapshot', function (): void {
+    preg_match('/statuses (.*?);/', contractDocumentSection('Health endpoint'), $statuses);
+    $health = contractSnapshot('healthEndpoint');
+
+    expect(contractDocumentCodeSpans($statuses[1] ?? ''))->toBe([...array_values($health['statuses']), $health['crashed'][1]], CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('lists the GitHub Action inputs, defaults and outputs in docs/CONTRACTS.md as in the snapshot', function (): void {
+    preg_match('/^Inputs \(default\): (.*?)\. Outputs: (.*)$/m', contractDocumentSection('GitHub Action'), $line);
+    preg_match_all('/`([a-z-]+)` \((?:`([^`]*)`|empty)\)/', $line[1] ?? '', $inputs);
+    preg_match_all('/(?:^|, )`([a-z-]+)`/', $line[2] ?? '', $outputs);
+
+    expect(['inputs' => array_combine($inputs[1], $inputs[2]), 'outputs' => $outputs[1]])
+        ->toBe(contractSnapshot('action'), CONTRACT_DOCUMENT_MESSAGE);
+});
+
+it('lists the skipReason values in docs/CONTRACTS.md as in the snapshot', function (): void {
+    $firstSentence = explode('. ', trim(contractDocumentSection('`skipReason`')))[0];
+
+    expect(contractDocumentCodeSpans($firstSentence))->toBe(contractSnapshot('skipReasons'), CONTRACT_DOCUMENT_MESSAGE);
+});

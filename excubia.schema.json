@@ -502,6 +502,38 @@
                             "description": "Command names, * wildcards allowed, that are never counted. Replaces the default [\"schedule:run\", \"schedule:work\", \"queue:work\", \"queue:listen\", \"horizon*\", \"tinker\"]; excubia:* is always excluded."
                         }
                     }
+                },
+                "health": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Minute-level health samples for failure alerts: every php artisan excubia:push-runtime run, at most once per UTC minute on each server, runs these checks with local probes only (never a data source) and sends one entry per check: its id, status, most serious severity, finding count and finding fingerprints, never a message. A check that would start too late in the run, or whose probe throws, is sent as skipped; the push always goes on. Off by default.",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "description": "Share of runs that take a sample, 0 to 1. Default 1.",
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "checks": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": {
+                                "enum": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"]
+                            },
+                            "description": "The checks to sample, in order. Default all nine fast Artisan checks: laravel-database, laravel-cache, laravel-storage, laravel-disk-space, laravel-queue-backlog, laravel-queue-workers, laravel-scheduler-heartbeat, laravel-redis-memory, laravel-maintenance-mode. Their checks.<id> settings apply."
+                        },
+                        "checkBudgetMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Milliseconds reserved for one check: a check starts only while this much is left of totalBudgetMs. At most totalBudgetMs. Default 3000."
+                        },
+                        "totalBudgetMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Milliseconds of the push-runtime run, from its start, after which no further check starts; the rest are sent as skipped. Default 15000."
+                        }
+                    }
                 }
             }
         },
