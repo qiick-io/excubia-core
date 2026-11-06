@@ -46,7 +46,14 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "slowQueries": { "enabled": true, "sampleRate": 1, "thresholdMs": 1000 },
     "jobs": { "enabled": true, "sampleRate": 1 },
     "scheduler": { "enabled": true, "sampleRate": 1 },
-    "outgoingHttp": { "enabled": true, "sampleRate": 1 }
+    "outgoingHttp": { "enabled": true, "sampleRate": 1 },
+    "requestMemory": { "enabled": false, "sampleRate": 1 },
+    "jobMemory": { "enabled": false, "sampleRate": 1 },
+    "queueWait": { "enabled": false, "sampleRate": 1 },
+    "cache": { "enabled": false, "sampleRate": 1 },
+    "mail": { "enabled": false, "sampleRate": 1 },
+    "notifications": { "enabled": false, "sampleRate": 1 },
+    "logLevels": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -195,6 +202,27 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.outgoingHttp` | object | | Calls made with Laravel's HTTP client. |
 | `runtime.outgoingHttp.enabled` | boolean | `true` | Collect outgoing calls. |
 | `runtime.outgoingHttp.sampleRate` | number 0–1 | `1` | Share of outgoing calls recorded. |
+| `runtime.requestMemory` | object | | Peak PHP memory of incoming requests, per route name and method. Added in 1.0.0-beta.2, off by default. |
+| `runtime.requestMemory.enabled` | boolean | `false` | Collect request peak memory. |
+| `runtime.requestMemory.sampleRate` | number 0–1 | `1` | Share of requests measured. |
+| `runtime.jobMemory` | object | | Peak PHP memory of queued jobs, per class and queue (the peak is reset when a job starts). Off by default. |
+| `runtime.jobMemory.enabled` | boolean | `false` | Collect job peak memory. |
+| `runtime.jobMemory.sampleRate` | number 0–1 | `1` | Share of jobs measured. |
+| `runtime.queueWait` | object | | Time jobs wait between the push and their first attempt, without their delay. Adds an `excubiaQueuedAt` timestamp to every job payload. Off by default. |
+| `runtime.queueWait.enabled` | boolean | `false` | Collect queue wait times. |
+| `runtime.queueWait.sampleRate` | number 0–1 | `1` | Share of jobs measured. |
+| `runtime.cache` | object | | Cache hits, misses, writes and deletes per store and masked key prefix. Off by default. |
+| `runtime.cache.enabled` | boolean | `false` | Collect cache events. |
+| `runtime.cache.sampleRate` | number 0–1 | `1` | Share of cache events recorded. |
+| `runtime.mail` | object | | Sent mail per mailable and mailer; failures through exception capture only. Off by default. |
+| `runtime.mail.enabled` | boolean | `false` | Collect mail counts. |
+| `runtime.mail.sampleRate` | number 0–1 | `1` | Share of mails recorded. |
+| `runtime.notifications` | object | | Sent and failed notifications per class and channel. Off by default. |
+| `runtime.notifications.enabled` | boolean | `false` | Collect notification counts. |
+| `runtime.notifications.sampleRate` | number 0–1 | `1` | Share of notifications recorded. |
+| `runtime.logLevels` | object | | Log entries counted per level, never the message. Off by default. |
+| `runtime.logLevels.enabled` | boolean | `false` | Collect log level counts. |
+| `runtime.logLevels.sampleRate` | number 0–1 | `1` | Share of log entries recorded. |
 
 ## Exception capture
 

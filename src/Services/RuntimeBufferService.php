@@ -40,10 +40,23 @@ final class RuntimeBufferService
     private const BATCH_PATTERN = '/^batch-(\d{20})-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.ndjson$/';
 
     /**
-     * Metric fields of an aggregate. Every other field is a dimension and
-     * part of the merge key.
+     * Metric fields that add up when two aggregates merge: integer counters
+     * and decimal totals. A type carries only the ones it needs (#132).
      */
-    private const METRIC_FIELDS = ['count', 'errorCount', 'totalMs', 'maxMs'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes'];
+
+    private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
+
+    /**
+     * Metric fields that keep the larger value when two aggregates merge.
+     */
+    private const MAXIMUM_FIELDS = ['maxMs', 'maxMb'];
+
+    /**
+     * Every metric field. Every other field is a dimension and part of the
+     * merge key.
+     */
+    private const METRIC_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS];
 
     public function __construct(
         private readonly string $directory,
@@ -207,6 +220,7 @@ final class RuntimeBufferService
 
     /**
      * Add one aggregate's metrics to another with the same dimensions.
+     * Only the metric fields present in either side are written.
      *
      * @param  array<string, mixed>  $into
      * @param  array<string, mixed>  $from
@@ -214,25 +228,49 @@ final class RuntimeBufferService
      */
     public static function combine(array $into, array $from): array
     {
-        $into['count'] = self::integerValue($into['count'] ?? 0) + self::integerValue($from['count'] ?? 0);
-        $into['errorCount'] = self::integerValue($into['errorCount'] ?? 0) + self::integerValue($from['errorCount'] ?? 0);
-        $into['totalMs'] = round(self::numberValue($into['totalMs'] ?? 0) + self::numberValue($from['totalMs'] ?? 0), 3);
-        $into['maxMs'] = max(self::numberValue($into['maxMs'] ?? 0), self::numberValue($from['maxMs'] ?? 0));
+        foreach (self::COUNTER_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = self::integerValue($into[$field] ?? 0) + self::integerValue($from[$field] ?? 0);
+            }
+        }
+
+        foreach (self::TOTAL_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = round(self::numberValue($into[$field] ?? 0) + self::numberValue($from[$field] ?? 0), 3);
+            }
+        }
+
+        foreach (self::MAXIMUM_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = max(self::numberValue($into[$field] ?? 0), self::numberValue($from[$field] ?? 0));
+            }
+        }
 
         return $into;
     }
 
     /**
+     * Every aggregate has a type, a bucket, `count` and `errorCount`; any
+     * other metric field it carries is a number.
+     *
      * @param  array<mixed>  $aggregate
      */
     private static function isAggregate(array $aggregate): bool
     {
-        return is_string($aggregate['type'] ?? null)
-            && is_string($aggregate['bucket'] ?? null)
-            && is_int($aggregate['count'] ?? null)
-            && is_int($aggregate['errorCount'] ?? null)
-            && is_numeric($aggregate['totalMs'] ?? null)
-            && is_numeric($aggregate['maxMs'] ?? null);
+        if (! is_string($aggregate['type'] ?? null)
+            || ! is_string($aggregate['bucket'] ?? null)
+            || ! is_int($aggregate['count'] ?? null)
+            || ! is_int($aggregate['errorCount'] ?? null)) {
+            return false;
+        }
+
+        foreach (self::METRIC_FIELDS as $field) {
+            if (array_key_exists($field, $aggregate) && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static function integerValue(mixed $value): int

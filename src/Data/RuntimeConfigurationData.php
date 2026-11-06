@@ -27,7 +27,7 @@ final readonly class RuntimeConfigurationData
     public const MINIMUM_BUFFER_MAX_BYTES = 4096;
 
     /**
-     * @param  array<string, bool>  $enabledTypes  keyed by RuntimeTypeEnum value; a missing type is enabled
+     * @param  array<string, bool>  $enabledTypes  keyed by RuntimeTypeEnum value; a missing type takes its default
      * @param  array<string, float>  $sampleRates  keyed by RuntimeTypeEnum value; a missing type records every event
      *
      * @throws InvalidConfigurationException
@@ -55,11 +55,12 @@ final readonly class RuntimeConfigurationData
     }
 
     /**
-     * True when runtime monitoring is on and this type is not switched off.
+     * True when runtime monitoring is on and this type is switched on,
+     * explicitly or by default (RuntimeTypeEnum::isEnabledByDefault()).
      */
     public function isTypeEnabled(RuntimeTypeEnum $type): bool
     {
-        return $this->isEnabled && ($this->enabledTypes[$type->value] ?? true);
+        return $this->isEnabled && ($this->enabledTypes[$type->value] ?? $type->isEnabledByDefault());
     }
 
     public function sampleRate(RuntimeTypeEnum $type): float

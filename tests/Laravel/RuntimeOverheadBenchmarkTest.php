@@ -2,11 +2,18 @@
 
 declare(strict_types=1);
 
+use Illuminate\Cache\Events\CacheHit;
+use Illuminate\Cache\Events\CacheMissed;
+use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
 
@@ -17,13 +24,18 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
  *     vendor/bin/pest --group=benchmark
  *
  * It prints the numbers and fails only if the collector cost per request
- * at the default sample rate is above 1 ms.
+ * with every type on, at the default sample rate, is above 1 ms. The
+ * benchmark route reads and writes the cache three times and logs once, so
+ * the cache and log level listeners run as in a typical request.
  */
 const BENCHMARK_REQUESTS = 500;
 
-function benchmarkProject(Application $app, bool $isEnabled): void
+/**
+ * @param  array<string, mixed>  $runtime
+ */
+function benchmarkProject(Application $app, array $runtime): void
 {
-    $app->setBasePath(temporaryProject(['excubia.json' => json_encode(['runtime' => ['enabled' => $isEnabled]], JSON_THROW_ON_ERROR)]));
+    $app->setBasePath(temporaryProject(['excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR)]));
     $app->useStoragePath(temporaryProject([]));
     $app->register(ExcubiaServiceProvider::class, true);
 }
@@ -43,33 +55,59 @@ function meanRequestMilliseconds(mixed $test): float
     return (hrtime(true) - $startedAt) / 1e6 / BENCHMARK_REQUESTS;
 }
 
-it('adds less than 1 ms per request at the default sample rate', function () {
-    Route::get('/benchmark', fn () => 'ok')->name('benchmark');
+it('adds less than 1 ms per request with every type on at the default sample rate', function () {
+    config(['logging.default' => 'null']);
+    Route::get('/benchmark', function () {
+        Cache::get('settings:site');
+        Cache::put('settings:site', 'value');
+        Cache::get('settings:site');
+        Log::info('benchmark');
 
-    benchmarkProject($this->app, false);
+        return 'ok';
+    })->name('benchmark');
+    $allTypes = ['enabled' => true];
+
+    foreach (RuntimeTypeEnum::cases() as $type) {
+        $allTypes[$type->configurationKey()] = ['enabled' => true];
+    }
+
+    benchmarkProject($this->app, ['enabled' => false]);
     $disabled = meanRequestMilliseconds($this);
 
-    benchmarkProject($this->app, true);
+    benchmarkProject($this->app, ['enabled' => true]);
+    $defaultTypes = meanRequestMilliseconds($this);
+
+    benchmarkProject($this->app, $allTypes);
     $enabled = meanRequestMilliseconds($this);
 
-    // The collector alone: one RequestHandled listener call and one flush to the buffer file.
+    // The collector alone, per request: RequestHandled (request and memory), three cache events, one log entry and one flush.
     $collector = $this->app->make(RuntimeCollectorService::class);
     $event = new RequestHandled(Request::create('/benchmark'), new Response('ok'));
+    $cacheEvents = [new CacheMissed('array', 'settings:site'), new KeyWritten('array', 'settings:site', 'value'), new CacheHit('array', 'settings:site', 'value')];
+    $logEvent = new MessageLogged('info', 'benchmark');
     $startedAt = hrtime(true);
 
     for ($i = 0; $i < BENCHMARK_REQUESTS; $i++) {
         $collector->recordRequest($event);
+
+        foreach ($cacheEvents as $cacheEvent) {
+            $collector->recordCache($cacheEvent);
+        }
+
+        $collector->recordLog($logEvent);
         $collector->flush();
     }
 
     $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / BENCHMARK_REQUESTS;
 
     fwrite(STDERR, sprintf(
-        "\nRuntime overhead over %d requests (PHP %s, Laravel %s)\n  disabled:  %.3f ms/request\n  enabled:   %.3f ms/request (delta %.3f ms)\n  collector: %.3f ms/request (listener + flush)\n",
+        "\nRuntime overhead over %d requests (PHP %s, Laravel %s)\n  disabled:      %.3f ms/request\n  default types: %.3f ms/request (delta %.3f ms)\n  all types:     %.3f ms/request (delta %.3f ms)\n  collector:     %.3f ms/request (all listeners + flush)\n",
         BENCHMARK_REQUESTS,
         PHP_VERSION,
         Application::VERSION,
         $disabled,
+        $defaultTypes,
+        $defaultTypes - $disabled,
         $enabled,
         $enabled - $disabled,
         $collectorOnly,

@@ -172,7 +172,16 @@ Rules: every `ignore` entry needs a `reason`; an expired `until` makes the findi
   - scheduled tasks: the developer's description (paths relative to the project, secrets masked as in exception messages), else `artisan <command name>` for Artisan commands or the executable's file name for `exec()` tasks, without any argument, else `Closure`; `finished`, `failed` or `skipped`;
   - outgoing HTTP (Laravel's HTTP client): host and status class.
 
-  Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, `.env` values or absolute paths.
+  Added in 1.0.0-beta.2 (#132, additive), each off until its own `runtime.<type>.enabled` is true, with `count`, `errorCount` and `sampleRate`:
+  - request memory: route name (or `unnamed`), HTTP method, peak MB (`totalMb`, `maxMb`);
+  - job memory: job class and queue, peak MB (the PHP peak is reset when the job starts);
+  - queue wait: job class and queue, wait in ms between the push and the first attempt without the delay (`totalMs`, `maxMs`), from an `excubiaQueuedAt` timestamp added to job payloads, else Horizon's `pushedAt`;
+  - cache: store name and the key prefix before the first `:` or `.`, through the exception message masks, `[masked]` when it still holds a digit, `@`, a space or other punctuation, hex-only text, more than 64 characters or only a mask placeholder; `hits`, `misses`, `writes`, `deletes`;
+  - mail: mailable class (else the mail notification class, else `unknown`) and mailer name; failed mails only when exception capture sees a reported Symfony Mailer transport exception (Laravel has no mail failure event);
+  - notifications: notification class and channel;
+  - log levels: the PSR-3 level only (Laravel's `MessageLogged` carries no channel).
+
+  Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, subjects or bodies, notifiables, log messages or context, `.env` values or absolute paths.
 - Opt-in exception capture (`exceptions.enabled` in `excubia.json`, off by default and independent of `runtime.enabled`, #77, D17) hooks one `reportable()` callback on Laravel's exception handler. It sees only what the app reports (`dontReport` applies), returns nothing so the app's own reporting is unchanged, never throws into the app, and skips the classes in `exceptions.ignore`. Per occurrence group (same fingerprint, context and environment) it sends exactly (`docs/exception-schema.json`):
   - `class` (anonymous classes as `Parent@anonymous`), `fingerprint`, and the masked `message` (at most 1000 characters);
   - `frames`, innermost first, at most 50: `file` relative to the project root (`vendor/<package>/…` for dependencies, the bare file name outside the project), `line`, `function` (`Class::method`, closures without their line), `inApp`. Never arguments or local variables;

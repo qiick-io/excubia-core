@@ -43,6 +43,27 @@ it('reads the runtime key with per-type switches, sample rates and the slow quer
         ->and($runtime->sampleRate(RuntimeTypeEnum::OutgoingHttp))->toBe(0.0);
 });
 
+it('keeps the types added in 1.0.0-beta.2 off by default and reads their switches and sample rates', function () {
+    $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel];
+    $defaults = $load(['enabled' => true]);
+
+    foreach (RuntimeTypeEnum::cases() as $type) {
+        expect($defaults->isTypeEnabled($type))->toBe(! in_array($type, $added, true));
+    }
+
+    $switched = $load(['enabled' => true, 'cache' => ['enabled' => true, 'sampleRate' => 0.1], 'logLevels' => ['enabled' => true], 'notifications' => ['enabled' => false]]);
+
+    expect($switched->isTypeEnabled(RuntimeTypeEnum::Cache))->toBeTrue()
+        ->and($switched->sampleRate(RuntimeTypeEnum::Cache))->toBe(0.1)
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::LogLevel))->toBeTrue()
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::Notification))->toBeFalse()
+        ->and(fn () => $load(['cache' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.cache key [thresholdMs].')
+        ->and(fn () => $load(['logLevels' => ['sampleRate' => 2]]))->toThrow(InvalidConfigurationException::class, 'runtime.logLevels.sampleRate must be between 0 and 1.');
+});
+
 it('rejects an invalid runtime key', function (string $runtime, string $message) {
     expect(fn () => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => '{"runtime": '.$runtime.'}',

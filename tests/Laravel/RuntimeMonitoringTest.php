@@ -3,10 +3,15 @@
 declare(strict_types=1);
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Cache\Events\CacheHit;
+use Illuminate\Cache\Events\CacheMissed;
+use Illuminate\Cache\Events\KeyForgotten;
+use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Application;
@@ -15,16 +20,33 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Client\Events\ResponseReceived;
 use Illuminate\Http\Request;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Mail\Mailable;
+use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Notifications\Events\NotificationFailed;
+use Illuminate\Notifications\Events\NotificationSent;
+use Illuminate\Notifications\Notification;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Jobs\SyncJob;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
+use Qiick\Excubia\Data\RuntimeConfigurationData;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
 use Qiick\Excubia\Services\RuntimeBufferService;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mime\Email;
 
 final class RuntimeMonitoringTestJob implements ShouldQueue
 {
@@ -424,4 +446,439 @@ it('flushes a long-running process before it holds too many aggregates', functio
     }
 
     expect(bufferedRuntime($this->app))->toHaveCount(RuntimeCollectorService::MAX_PENDING_AGGREGATES);
+});
+
+final class RuntimeMonitoringTestMail extends Mailable
+{
+    public function build(): self
+    {
+        return $this->subject('mail-subject-secret')->html('mail-body-secret');
+    }
+}
+
+final class RuntimeMonitoringTestChannel
+{
+    public function send(object $notifiable, Notification $notification): void
+    {
+        if ($notification instanceof RuntimeMonitoringTestNotification && $notification->shouldFail) {
+            throw new RuntimeException('notification-exception-secret');
+        }
+    }
+}
+
+final class RuntimeMonitoringTestNotification extends Notification
+{
+    public function __construct(public bool $shouldFail = false) {}
+
+    /**
+     * @return list<string>
+     */
+    public function via(object $notifiable): array
+    {
+        return [RuntimeMonitoringTestChannel::class];
+    }
+}
+
+/**
+ * Every runtime type switched on, with the given overrides.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function allRuntimeTypes(array $overrides = []): array
+{
+    $runtime = ['enabled' => true];
+
+    foreach (RuntimeTypeEnum::cases() as $type) {
+        $runtime[$type->configurationKey()] = ['enabled' => true];
+    }
+
+    return array_replace_recursive($runtime, $overrides);
+}
+
+/**
+ * The merged buffered aggregates of one type.
+ *
+ * @return Collection<int, array<string, mixed>>
+ */
+function bufferedOfType(Application $app, string $type): Collection
+{
+    return collect(RuntimeBufferService::merge(bufferedRuntime($app)))->where('type', $type)->values();
+}
+
+/**
+ * Boot a project whose excubia.json is this whole document.
+ *
+ * @param  array<string, mixed>  $document
+ */
+function bootExcubiaDocument(Application $app, array $document): void
+{
+    $app->setBasePath(temporaryProject(['excubia.json' => json_encode($document, JSON_THROW_ON_ERROR)]));
+    $app->useStoragePath(temporaryProject([]));
+    $app->register(ExcubiaServiceProvider::class, true);
+}
+
+const BETA_TWO_EVENTS = [
+    CacheHit::class,
+    CacheMissed::class,
+    KeyWritten::class,
+    KeyForgotten::class,
+    MessageSending::class,
+    MessageSent::class,
+    NotificationSent::class,
+    NotificationFailed::class,
+    MessageLogged::class,
+];
+
+/**
+ * @return array<class-string, int>
+ */
+function betaTwoListenerCounts(): array
+{
+    $counts = [];
+
+    foreach (BETA_TWO_EVENTS as $event) {
+        $counts[$event] = count(Event::getListeners($event));
+    }
+
+    return $counts;
+}
+
+it('keeps the types added in 1.0.0-beta.2 off until each one is switched on', function () {
+    $before = betaTwoListenerCounts();
+    bootRuntimeProject($this->app, ['enabled' => true]);
+
+    expect(betaTwoListenerCounts())->toBe($before);
+
+    bootRuntimeProject($this->app, allRuntimeTypes());
+
+    foreach (betaTwoListenerCounts() as $event => $count) {
+        expect($count)->toBe($before[$event] + 1);
+    }
+});
+
+it('records request peak memory by route name and method without the URL', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'requests' => ['enabled' => false], 'requestMemory' => ['enabled' => true]]);
+    Route::get('/orders/{order}', fn () => 'ok')->name('orders.show');
+
+    $this->get('/orders/memory-url-secret')->assertOk();
+    $this->get('/orders/2')->assertOk();
+
+    $memory = bufferedOfType($this->app, 'requestMemory');
+
+    expect($memory)->toHaveCount(1)
+        ->and($memory[0])->toMatchArray(['route' => 'orders.show', 'method' => 'GET', 'count' => 2, 'errorCount' => 0, 'sampleRate' => 1.0])
+        ->and($memory[0])->not->toHaveKeys(['totalMs', 'maxMs', 'statusClass'])
+        ->and($memory[0]['maxMb'])->toBeGreaterThan(0)
+        ->and($memory[0]['totalMb'])->toBeGreaterThanOrEqual($memory[0]['maxMb'])
+        ->and(bufferedOfType($this->app, 'request'))->toBeEmpty()
+        ->and(rawBuffer($this->app))->not->toContain('memory-url-secret');
+});
+
+it('records job peak memory by class and queue, failed jobs included', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'jobs' => ['enabled' => false], 'jobMemory' => ['enabled' => true]]);
+    config(['queue.default' => 'sync']);
+
+    RuntimeMonitoringTestJob::dispatch();
+
+    try {
+        RuntimeMonitoringTestJob::dispatch(true);
+    } catch (RuntimeException) {
+        // The sync queue rethrows the job's own exception to the caller.
+    }
+
+    $memory = bufferedOfType($this->app, 'jobMemory');
+
+    expect($memory)->toHaveCount(1)
+        ->and($memory[0])->toMatchArray(['job' => RuntimeMonitoringTestJob::class, 'count' => 2, 'errorCount' => 0])
+        ->and($memory[0])->toHaveKey('queue')
+        ->and($memory[0]['maxMb'])->toBeGreaterThan(0)
+        ->and(bufferedOfType($this->app, 'job'))->toBeEmpty()
+        ->and(rawBuffer($this->app))->not->toContain('job-exception-secret');
+});
+
+it('keeps the request peak when a sync job resets the PHP peak', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'requestMemory' => ['enabled' => true], 'jobMemory' => ['enabled' => true]]);
+    config(['queue.default' => 'sync']);
+    Route::get('/heavy', function () {
+        $filler = str_repeat('x', 16 * 1048576);
+        $length = strlen($filler);
+        unset($filler);
+        RuntimeMonitoringTestJob::dispatch();
+
+        return (string) $length;
+    })->name('heavy');
+
+    $this->get('/heavy')->assertOk();
+
+    $request = bufferedOfType($this->app, 'requestMemory')[0];
+    $job = bufferedOfType($this->app, 'jobMemory')[0];
+
+    expect($request['maxMb'])->toBeGreaterThan($job['maxMb'] + 8.0);
+});
+
+/**
+ * A job with this payload, as a worker would see it.
+ *
+ * @param  array<string, mixed>  $payload
+ */
+function waitingJob(Application $app, array $payload, int $attempts = 1): SyncJob
+{
+    $json = json_encode(['displayName' => RuntimeMonitoringTestJob::class, 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call', 'data' => ['commandName' => RuntimeMonitoringTestJob::class], ...$payload], JSON_THROW_ON_ERROR);
+
+    return new class($app, $json, 'redis', 'emails', $attempts) extends SyncJob
+    {
+        public function __construct(Container $container, string $payload, string $connectionName, string $queue, private readonly int $attemptCount)
+        {
+            parent::__construct($container, $payload, $connectionName, $queue);
+        }
+
+        public function attempts(): int
+        {
+            return $this->attemptCount;
+        }
+    };
+}
+
+it('records the queue wait from the push time without the delay, first attempts only', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'queueWait' => ['enabled' => true]]);
+    $now = microtime(true);
+
+    event(new JobProcessing('redis', waitingJob($this->app, [RuntimeCollectorService::QUEUED_AT_PAYLOAD_KEY => $now - 2.5, 'delay' => 1])));
+    event(new JobProcessing('redis', waitingJob($this->app, ['pushedAt' => (string) ($now - 0.5)])));
+    event(new JobProcessing('redis', waitingJob($this->app, [RuntimeCollectorService::QUEUED_AT_PAYLOAD_KEY => $now - 60], attempts: 2)));
+    event(new JobProcessing('redis', waitingJob($this->app, [])));
+    $this->app->terminate();
+
+    $wait = bufferedOfType($this->app, 'queueWait');
+
+    expect($wait)->toHaveCount(1)
+        ->and($wait[0])->toMatchArray(['job' => RuntimeMonitoringTestJob::class, 'count' => 2, 'errorCount' => 0])
+        ->and($wait[0])->toHaveKey('queue')
+        ->and($wait[0]['maxMs'])->toBeGreaterThanOrEqual(1500.0)
+        ->and($wait[0]['maxMs'])->toBeLessThan(5000.0)
+        ->and($wait[0]['totalMs'])->toBeGreaterThanOrEqual(2000.0);
+});
+
+it('stamps pushed jobs so the worker can measure their wait', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'queueWait' => ['enabled' => true]]);
+    config(['queue.default' => 'sync']);
+
+    RuntimeMonitoringTestJob::dispatch();
+
+    $wait = bufferedOfType($this->app, 'queueWait');
+
+    expect($wait)->toHaveCount(1)
+        ->and($wait[0])->toMatchArray(['job' => RuntimeMonitoringTestJob::class, 'count' => 1])
+        ->and($wait[0]['maxMs'])->toBeLessThan(1000.0);
+});
+
+it('counts cache hits, misses, writes and deletes per store and masked key prefix, never the key or value', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'cache' => ['enabled' => true]]);
+
+    Cache::put('users:48213:profile', 'cache-value-secret');
+    Cache::get('users:48213:profile');
+    Cache::get('reports.daily');
+    Cache::forget('users:48213:profile');
+    Cache::get('customer-email-secret@example.test');
+    Cache::get('a1b2c3token');
+    $this->app->terminate();
+
+    $cache = bufferedOfType($this->app, 'cache')->keyBy('keyPrefix');
+    $raw = rawBuffer($this->app);
+
+    expect($cache->keys()->all())->toEqualCanonicalizing(['users', 'reports', RuntimeCollectorService::MASKED_KEY_PREFIX])
+        ->and($cache['users'])->toMatchArray(['store' => config('cache.default'), 'count' => 3, 'errorCount' => 0, 'hits' => 1, 'misses' => 0, 'writes' => 1, 'deletes' => 1])
+        ->and($cache['reports'])->toMatchArray(['count' => 1, 'hits' => 0, 'misses' => 1])
+        ->and($cache[RuntimeCollectorService::MASKED_KEY_PREFIX])->toMatchArray(['count' => 2, 'misses' => 2]);
+
+    foreach (['48213', 'profile', 'cache-value-secret', 'daily', 'customer-email-secret', 'a1b2c3token'] as $secret) {
+        expect($raw)->not->toContain($secret);
+    }
+});
+
+it('masks cache key prefixes that look like ids, tokens or personal data', function (string $key, string $expected) {
+    bootRuntimeProject($this->app, ['enabled' => true, 'cache' => ['enabled' => true]]);
+
+    expect($this->app->make(RuntimeCollectorService::class)->keyPrefix($key))->toBe($expected);
+})->with([
+    'plain prefix' => ['illuminate:queue:restart', 'illuminate'],
+    'dotted prefix' => ['settings.site', 'settings'],
+    'whole key without separator' => ['laravel_sessions', 'laravel_sessions'],
+    'masked token kept as a placeholder' => ['framework/schedule-'.sha1('task'), 'framework/schedule-[token]'],
+    'number' => ['48213', '[masked]'],
+    'id with letters' => ['user42:profile', '[masked]'],
+    'uuid' => ['9b2f6c1e-3d4a-4b5c-8d6e-7f8091a2b3c4', '[masked]'],
+    'hex only' => ['deadbeefcafe:x', '[masked]'],
+    'email' => ['someone@example.test', '[masked]'],
+    'spaces' => ['john smith', '[masked]'],
+    'empty' => [':orphan', '[masked]'],
+    'too long' => [str_repeat('z', 65), '[masked]'],
+    'only a placeholder' => ['+41791234567:otp', '[masked]'],
+]);
+
+it('counts sent mail per mailable and mailer without recipients, subjects or bodies', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'mail' => ['enabled' => true]]);
+    config(['mail.default' => 'array']);
+
+    Mail::to('mail-recipient-secret@example.test')->send(new RuntimeMonitoringTestMail);
+    Mail::to('mail-recipient-secret@example.test')->send(new RuntimeMonitoringTestMail);
+    Mail::raw('raw-body-secret', fn ($message) => $message->to('raw-recipient-secret@example.test'));
+    $this->app->terminate();
+
+    $mail = bufferedOfType($this->app, 'mail')->keyBy('mailable');
+    $raw = rawBuffer($this->app);
+
+    expect($mail[RuntimeMonitoringTestMail::class])->toMatchArray(['mailer' => 'array', 'count' => 2, 'errorCount' => 0])
+        ->and($mail['unknown'])->toMatchArray(['mailer' => 'array', 'count' => 1]);
+
+    foreach (['recipient-secret', 'mail-subject-secret', 'mail-body-secret', 'raw-body-secret'] as $secret) {
+        expect($raw)->not->toContain($secret);
+    }
+});
+
+it('counts a failed mail when exception capture sees a mail transport exception', function () {
+    bootExcubiaDocument($this->app, [
+        'runtime' => ['enabled' => true, 'mail' => ['enabled' => true]],
+        'exceptions' => ['enabled' => true, 'ignore' => [TransportException::class]],
+    ]);
+
+    event(new MessageSending(new Email, ['__laravel_mailable' => RuntimeMonitoringTestMail::class, 'mailer' => 'smtp', 'to' => 'failed-recipient-secret@example.test']));
+    report(new TransportException('smtp-transport-secret'));
+    report(new RuntimeException('wrapped', 0, new TransportException('wrapped-transport-secret')));
+    report(new RuntimeException('not-a-mail-failure'));
+    $this->app->terminate();
+
+    $mail = bufferedOfType($this->app, 'mail')->keyBy('mailable');
+
+    expect($mail->keys()->all())->toEqualCanonicalizing([RuntimeMonitoringTestMail::class, 'unknown'])
+        ->and($mail[RuntimeMonitoringTestMail::class])->toMatchArray(['mailer' => 'smtp', 'count' => 1, 'errorCount' => 1])
+        ->and($mail['unknown'])->toMatchArray(['mailer' => 'unknown', 'count' => 1, 'errorCount' => 1])
+        ->and(rawBuffer($this->app))->not->toContain('secret');
+});
+
+it('counts no mail failure when the mail type is off', function () {
+    bootExcubiaDocument($this->app, ['runtime' => ['enabled' => true], 'exceptions' => ['enabled' => true]]);
+
+    report(new TransportException('smtp-transport-secret'));
+    $this->app->terminate();
+
+    expect(bufferedOfType($this->app, 'mail'))->toBeEmpty();
+});
+
+it('counts sent and failed notifications per class and channel without the notifiable', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'notifications' => ['enabled' => true]]);
+    $notifiable = (new AnonymousNotifiable)->route(RuntimeMonitoringTestChannel::class, 'notifiable-route-secret');
+
+    $notifiable->notify(new RuntimeMonitoringTestNotification);
+
+    try {
+        $notifiable->notify(new RuntimeMonitoringTestNotification(true));
+    } catch (RuntimeException) {
+        // The channel's exception reaches the caller after NotificationFailed.
+    }
+
+    $this->app->terminate();
+    $notifications = bufferedOfType($this->app, 'notification');
+    $raw = rawBuffer($this->app);
+
+    expect($notifications)->toHaveCount(1)
+        ->and($notifications[0])->toMatchArray(['notification' => RuntimeMonitoringTestNotification::class, 'channel' => RuntimeMonitoringTestChannel::class, 'count' => 2, 'errorCount' => 1])
+        ->and($raw)->not->toContain('notifiable-route-secret')
+        ->and($raw)->not->toContain('notification-exception-secret');
+});
+
+it('counts log entries per level, never the message or the context', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'logLevels' => ['enabled' => true]]);
+
+    Log::warning('log-message-secret', ['user' => 'log-context-secret']);
+    Log::warning('another-message-secret');
+    Log::channel('single')->error('channel-message-secret');
+    event(new MessageLogged('custom-level-secret', 'message'));
+    $this->app->terminate();
+
+    $levels = bufferedOfType($this->app, 'logLevel')->keyBy('level');
+
+    expect($levels->keys()->all())->toEqualCanonicalizing(['warning', 'error', 'unknown'])
+        ->and($levels['warning'])->toMatchArray(['count' => 2, 'errorCount' => 0])
+        ->and($levels['error'])->toMatchArray(['count' => 1])
+        ->and(rawBuffer($this->app))->not->toContain('secret');
+});
+
+it('ignores messages logged while the log listener runs, so it cannot loop', function () {
+    $project = bootRuntimeProject($this->app, null);
+    $clockCalls = 0;
+    $collector = new RuntimeCollectorService(
+        new RuntimeConfigurationData(isEnabled: true, enabledTypes: ['logLevel' => true]),
+        new RuntimeBufferService($this->app->storagePath('excubia/runtime'), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES),
+        $project,
+        function () use (&$clockCalls): float {
+            $clockCalls++;
+            Log::info('logged-inside-the-listener');
+
+            return microtime(true);
+        },
+    );
+    Event::listen(MessageLogged::class, fn (MessageLogged $event) => $collector->recordLog($event));
+
+    Log::error('outer');
+    $collector->flush();
+
+    $levels = bufferedOfType($this->app, 'logLevel');
+
+    expect($levels)->toHaveCount(1)
+        ->and($levels[0])->toMatchArray(['level' => 'error', 'count' => 1])
+        ->and($clockCalls)->toBeLessThan(5);
+});
+
+it('records nothing for a 1.0.0-beta.2 type with sample rate 0 and keeps the rate on each aggregate', function () {
+    $overrides = ['cache' => ['sampleRate' => 0.5]];
+
+    foreach (['requestMemory', 'jobMemory', 'queueWait', 'mail', 'notifications', 'logLevels'] as $key) {
+        $overrides[$key] = ['sampleRate' => 0];
+    }
+
+    bootRuntimeProject($this->app, allRuntimeTypes($overrides));
+    config(['queue.default' => 'sync', 'mail.default' => 'array']);
+    Route::get('/sampled', fn () => 'ok');
+    mt_srand(132);
+
+    $this->get('/sampled')->assertOk();
+    RuntimeMonitoringTestJob::dispatch();
+    Mail::to('x@example.test')->send(new RuntimeMonitoringTestMail);
+    (new AnonymousNotifiable)->route(RuntimeMonitoringTestChannel::class, 'x')->notify(new RuntimeMonitoringTestNotification);
+    Log::warning('sampled');
+
+    for ($i = 0; $i < 400; $i++) {
+        Cache::get('sampled:key');
+    }
+
+    $this->app->terminate();
+    $types = collect(RuntimeBufferService::merge(bufferedRuntime($this->app)))->pluck('type')->unique()->values()->all();
+    $cache = bufferedOfType($this->app, 'cache')[0];
+
+    expect(array_values(array_intersect($types, ['requestMemory', 'jobMemory', 'queueWait', 'mail', 'notification', 'logLevel'])))->toBe([])
+        ->and($cache['sampleRate'])->toBe(0.5)
+        ->and($cache['count'])->toBeGreaterThan(140)
+        ->and($cache['count'])->toBeLessThan(260);
+});
+
+it('never lets an exception inside the new listeners reach the host app', function () {
+    bootRuntimeProject($this->app, allRuntimeTypes());
+    $blocked = temporaryProject(['storage' => 'not a directory']).'/storage';
+    $this->app->useStoragePath($blocked);
+    $this->app->register(ExcubiaServiceProvider::class, true);
+    config(['queue.default' => 'sync', 'mail.default' => 'array']);
+    $collector = $this->app->make(RuntimeCollectorService::class);
+
+    Cache::put('still:works', 'yes');
+    Log::warning('still works');
+    RuntimeMonitoringTestJob::dispatch();
+    Mail::to('x@example.test')->send(new RuntimeMonitoringTestMail);
+    $collector->recordNotification(new NotificationSent(new stdClass, new stdClass, ['not a string']));
+    $collector->recordMailFailure(new TransportException('x'));
+    $this->app->terminate();
+
+    expect(Cache::get('still:works'))->toBe('yes')
+        ->and(is_file($blocked))->toBeTrue();
 });
