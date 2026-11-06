@@ -61,7 +61,8 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile'])
+        ->and($schema['properties']['javascriptLockfile']['enum'])->toBe(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'])
         ->and($schema['$defs']['licenseInventory']['required'])->toBe(['packageCount', 'byLicense', 'byEcosystem'])
         ->and($schema['$defs']['licenseInventory']['properties']['byEcosystem']['required'])->toBe(['composer', 'npm'])
         ->and($schema['$defs']['project']['required'])->toBe(['php', 'laravel', 'node'])
@@ -89,7 +90,8 @@ it('documents the details keys per check id', function () {
     }
 
     expect($keys('composerAdvisoryDetails'))->toBe(['package', 'lockedVersion', 'affectedVersions', 'fixedVersions'])
-        ->and($keys('npmAdvisoryDetails'))->toBe(['package', 'lockedVersion', 'fixedVersions'])
+        ->and($keys('npmAdvisoryDetails'))->toBe(['package', 'lockedVersion', 'fixedVersions', 'lockfile'])
+        ->and($schema['$defs']['npmAdvisoryDetails']['required'])->toBe(['package', 'lockedVersion', 'fixedVersions'])
         ->and($keys('endOfLifeDetails'))->toBe(['cycle', 'securitySupportEndsOn', 'activeSupportEndsOn'])
         ->and($keys('abandonedDetails'))->toBe(['package', 'lockedVersion', 'replacement'])
         ->and($keys('staleDetails'))->toBe(['package', 'lockedVersion'])

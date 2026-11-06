@@ -76,5 +76,5 @@ it('puts the package and locked version in details, with no fixed version from t
         'results' => [['vulns' => [['id' => 'GHSA-lodash']]]],
     ])->run(npmSnapshot(true, [new LockedPackageData('lodash', '4.17.20', true, false)]), ExcubiaConfigurationData::defaults());
 
-    expect($result->findings[0]->details)->toBe(['package' => 'lodash', 'lockedVersion' => '4.17.20', 'fixedVersions' => []]);
+    expect($result->findings[0]->details)->toBe(['package' => 'lodash', 'lockedVersion' => '4.17.20', 'fixedVersions' => [], 'lockfile' => 'package-lock.json']);
 });

@@ -15,6 +15,7 @@ use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\LicenseVerdictEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Services\SpdxExpressionService;
 
 /**
@@ -27,6 +28,10 @@ use Qiick\Excubia\Services\SpdxExpressionService;
  * warns at low. Allowed and known licenses add no row. Development
  * dependencies are left out unless `includeDev` is true. The counts of
  * every inspected package become the report's `licenses` inventory.
+ *
+ * `yarn.lock` and `pnpm-lock.yaml` record no licenses (#21): their npm
+ * packages without one are left out of the rows and the inventory, and one
+ * `skipped` row (`not-applicable`, subject the lockfile) counts them.
  */
 final class DependencyLicensesCheck implements HealthCheckContract
 {
@@ -55,6 +60,13 @@ final class DependencyLicensesCheck implements HealthCheckContract
 
         foreach (['composer' => $projectSnapshot->composerPackages, 'npm' => $projectSnapshot->npmPackages] as $ecosystem => $lockedPackages) {
             $packages = $this->inspectedPackages($lockedPackages, $policy);
+
+            if ($ecosystem === 'npm' && ! $projectSnapshot->hasJavascriptLicenseData()) {
+                $licensed = array_values(array_filter($packages, static fn (LockedPackageData $package): bool => $package->licenses !== []));
+                $findings = [...$findings, ...$this->withoutLicenseData(count($packages) - count($licensed), (string) $projectSnapshot->javascriptLockfileName())];
+                $packages = $licensed;
+            }
+
             $ecosystems[$ecosystem] = $this->inventory($packages);
 
             foreach ($packages as $package) {
@@ -89,6 +101,30 @@ final class DependencyLicensesCheck implements HealthCheckContract
         }
 
         return array_values($inspected);
+    }
+
+    /**
+     * The summary row for npm packages whose lockfile records no license,
+     * or no row when there are none.
+     *
+     * @return list<FindingData>
+     */
+    private function withoutLicenseData(int $count, string $lockfile): array
+    {
+        if ($count === 0) {
+            return [];
+        }
+
+        return [new FindingData(
+            checkId: $this->id(),
+            severity: SeverityEnum::Info,
+            status: FindingStatusEnum::Skipped,
+            subject: $lockfile,
+            message: $count.' '.($count === 1 ? 'package' : 'packages').' from '.$lockfile.' '.($count === 1 ? 'has' : 'have').' no license data: the lockfile does not record licenses.',
+            fixHint: '',
+            evidenceUrl: null,
+            skipReason: SkipReasonEnum::NotApplicable,
+        )];
     }
 
     /**

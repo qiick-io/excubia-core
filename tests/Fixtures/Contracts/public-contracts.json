@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "eb99acac877132d8a1e561e22b0635d4b9503ff0ebb421bf1a82d32b1743de16"
+            "sha256": "e9aa9b351b93791f1b7a8a9d16d460d4e0e680ddd86420604004a470bca6dfcc"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",

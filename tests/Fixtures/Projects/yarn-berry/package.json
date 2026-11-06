@@ -1,0 +1,8 @@
+{
+    "name": "fixture",
+    "packageManager": "yarn@4.5.1",
+    "dependencies": {
+        "@acme/ui": "workspace:*",
+        "lodash": "^4.17.20"
+    }
+}

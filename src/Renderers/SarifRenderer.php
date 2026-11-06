@@ -28,7 +28,8 @@ final class SarifRenderer implements ReportRendererContract
 
     /**
      * Manifest each check reads its findings from. `node-eol` is resolved by
-     * the caller because the Node declaration can live in several files.
+     * the caller because the Node declaration can live in several files;
+     * `npm-advisories` uses the report's `javascriptLockfile` (#21).
      * The `laravel-*` posture checks read the booted app, so they point at
      * the standard Laravel file where the fix usually starts.
      */
@@ -39,7 +40,6 @@ final class SarifRenderer implements ReportRendererContract
         'composer-abandoned' => 'composer.lock',
         'composer-stale' => 'composer.lock',
         'laravel-next-blocker' => 'composer.lock',
-        'npm-advisories' => 'package-lock.json',
         'laravel-debug-mode' => 'config/app.php',
         'laravel-production-caches' => 'config/app.php',
         'laravel-pending-migrations' => 'database/migrations',
@@ -107,7 +107,7 @@ final class SarifRenderer implements ReportRendererContract
                 continue;
             }
 
-            $results[] = $this->result($finding, $ruleIndexes[$finding->checkId] ?? null);
+            $results[] = $this->result($finding, $ruleIndexes[$finding->checkId] ?? null, $healthReport->javascriptLockfile ?? 'package-lock.json');
         }
 
         return [
@@ -132,9 +132,10 @@ final class SarifRenderer implements ReportRendererContract
      * One SARIF result. A finding whose check has no rule (not produced by the
      * runner, only by hand-built reports) keeps its `ruleId` without an index.
      *
+     * @param  string  $javascriptLockfile  the lockfile the npm findings come from (#21)
      * @return array<string, mixed>
      */
-    private function result(FindingData $finding, ?int $ruleIndex): array
+    private function result(FindingData $finding, ?int $ruleIndex, string $javascriptLockfile): array
     {
         $result = ['ruleId' => $finding->checkId];
 
@@ -162,7 +163,7 @@ final class SarifRenderer implements ReportRendererContract
             'locations' => [
                 [
                     'physicalLocation' => [
-                        'artifactLocation' => ['uri' => $this->manifest($finding)],
+                        'artifactLocation' => ['uri' => $this->manifest($finding, $javascriptLockfile)],
                         'region' => ['startLine' => 1],
                     ],
                 ],
@@ -196,17 +197,22 @@ final class SarifRenderer implements ReportRendererContract
     }
 
     /**
-     * `dependency-licenses` points at the lockfile of the finding's
-     * ecosystem; every other check at its fixed manifest.
+     * `npm-advisories` points at the JavaScript lockfile the report read,
+     * `dependency-licenses` at the lockfile of the finding's ecosystem;
+     * every other check at its fixed manifest.
      */
-    private function manifest(FindingData $finding): string
+    private function manifest(FindingData $finding, string $javascriptLockfile): string
     {
+        if ($finding->checkId === 'npm-advisories') {
+            return $javascriptLockfile;
+        }
+
         if ($finding->checkId === 'node-eol') {
             return $this->nodeVersionManifest;
         }
 
         if ($finding->checkId === 'dependency-licenses') {
-            return ($finding->details['ecosystem'] ?? null) === 'npm' ? 'package-lock.json' : 'composer.lock';
+            return ($finding->details['ecosystem'] ?? null) === 'npm' ? $javascriptLockfile : 'composer.lock';
         }
 
         return self::MANIFEST_BY_CHECK_ID[$finding->checkId] ?? 'composer.lock';

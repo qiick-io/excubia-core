@@ -20,6 +20,8 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * renderer then omits them (optional fields, schema version 1).
  * `release` is set by the commands (`ReleaseService`) and `deployedAt` by
  * `excubia push --deploy`; both are optional and omitted when null.
+ * `javascriptLockfile` names the JavaScript lockfile the npm checks read
+ * (#21), set by the runner and omitted when the project has none.
  */
 final readonly class HealthReportData
 {
@@ -39,6 +41,7 @@ final readonly class HealthReportData
         public ?ProjectVersionsData $project = null,
         public ?string $release = null,
         public ?DateTimeImmutable $deployedAt = null,
+        public ?string $javascriptLockfile = null,
     ) {
         $this->schemaVersion = self::SCHEMA_VERSION;
     }
@@ -137,12 +140,12 @@ final readonly class HealthReportData
             );
         }
 
-        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $this->deployedAt);
+        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $this->deployedAt, $this->javascriptLockfile);
     }
 
     public function withRelease(?string $release): self
     {
-        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $release, $this->deployedAt);
+        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $release, $this->deployedAt, $this->javascriptLockfile);
     }
 
     /**
@@ -151,7 +154,7 @@ final readonly class HealthReportData
      */
     public function withDeployedAt(DateTimeImmutable $deployedAt): self
     {
-        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $deployedAt);
+        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $deployedAt, $this->javascriptLockfile);
     }
 
     /**

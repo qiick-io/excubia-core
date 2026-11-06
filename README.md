@@ -71,7 +71,7 @@ vendor/bin/excubia --version
 | `laravel-eol` | Laravel end of life | endoflife.date | Security fixes ended (critical); bug fixes ended or security ends within 180 days (medium) |
 | `node-eol` | Node end of life | endoflife.date | EOL (high); maintenance ends within 180 days (low). Skipped when no Node version is declared |
 | `composer-advisories` | Known vulnerabilities (Composer) | Packagist security advisories | An advisory affects the locked version (severity from the advisory) |
-| `npm-advisories` | Known vulnerabilities (npm) | OSV.dev | A vulnerability affects a version in `package-lock.json` (severity from OSV, default medium) |
+| `npm-advisories` | Known vulnerabilities (npm) | OSV.dev | A vulnerability affects a version in the JavaScript lockfile (severity from OSV, default medium) |
 | `composer-abandoned` | Abandoned packages | Packagist | Abandoned direct dependency (high); abandoned transitive dependency (medium) |
 | `composer-stale` | Stale packages | Packagist, GitHub | Repository archived (high); no release for more than 24 months (low) |
 | `laravel-next-blocker` | Next-major blockers | Packagist | The latest release of a direct dependency does not allow the next Laravel major (medium), or only in a pre-release (low) |
@@ -87,7 +87,7 @@ vendor/bin/excubia --version
 | `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
-| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
+| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request; `yarn.lock` and `pnpm-lock.yaml` record no licenses) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
 | `laravel-database` | Database | Database connections | The default connection, or one listed in `checks.laravel-database.connections`, does not answer `select 1` (critical, one row per connection) |
 | `laravel-cache` | Cache | Default cache store | The default store cannot write, read and delete a probe key (high). Skipped with the `null` driver |
 | `laravel-storage` | Writable storage | Booted app | `storage` or `bootstrap/cache` is not writable (high, one row per directory) |
@@ -96,7 +96,8 @@ vendor/bin/excubia --version
 | `php-platform-requirements` | Platform requirements | `composer.lock`, running PHP | The running PHP misses an extension, or its version does not satisfy a `php` constraint, that a locked package or the root `platform` requires (high, one row per requirement), like `composer check-platform-reqs` |
 | `env-example-sync` | `.env.example` sync | `.env.example`, `config/*.php` (key names only, no request) | A key that `config/*.php` reads with `env()` is missing from `.env.example` (low, one row per key); keys in `.env.example` that no config file reads are one `info` row. Skipped without `.env.example` or `config/` |
 
-- `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
+- Supported lockfiles: `composer.lock` (Composer 2, required) and one JavaScript lockfile: `package-lock.json` (lockfileVersion 2 and 3), `yarn.lock` (Yarn classic v1 and Yarn Berry v2+) or `pnpm-lock.yaml` (lockfileVersion 6 and 9). When several exist, Excubia reads the one of the `packageManager` in `package.json`, else the first of `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`; the JSON report names it in `javascriptLockfile`, npm findings in their message and SARIF location.
+- `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. `yarn.lock` and `pnpm-lock.yaml` record none: their packages get one `skipped` row ("N packages from yarn.lock have no license data") instead of a low warning each. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
 - `env-example-sync` compares key names only: it tokenizes `config/*.php` (never runs it), reads the names in `.env.example` and drops the values, and never opens `.env`. Optional Laravel keys (`AWS_*`, `PUSHER_*`, `VITE_*`, `MEMCACHED_*`, `REDIS_CLIENT`, …) are ignored by default; extend or replace the list with [`checks.env-example-sync.ignoreKeys`](./docs/guides/configuration.md#env-example-sync).
 - The seventeen `laravel-*` checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - `php-platform-requirements` also runs in `vendor/bin/excubia`, but that is the PHP of the CLI, which can differ from the app's: its findings say so and carry `isStandaloneCli: true`. Under Artisan it checks the app's PHP. Extensions that a locked package provides (polyfills) count as present; `config.platform` overrides do not.
@@ -119,13 +120,14 @@ In the JSON report every `skipped` finding has a `skipReason`: `data-source-fail
 The JSON report also carries, as optional fields of schema version 1:
 
 - top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with `php`, `laravel` and `node`, each `{version, cycle, securitySupportEndsOn, activeSupportEndsOn}` or `null` when not declared (no name, path or hostname). The cycle and the `Y-m-d` dates come from the endoflife.date data the EOL checks already read, also when they pass; they are `null` when that check was skipped or did not run;
+- top level, when the project has a JavaScript lockfile: `javascriptLockfile` (`package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`), the one the npm checks read;
 - top level, when `dependency-licenses` ran: `licenses`, the license inventory without package names: `packageCount`, `byLicense` (list of `{license, packageCount}`, `NOASSERTION` for packages that declare none) and `byEcosystem` with the same counts for `composer` and `npm`;
 - per finding: `fingerprint` (sha256 of `checkId`, `subject` and `advisoryId` joined by a NUL byte, the same value as the SARIF `partialFingerprints`, stable across runs), `advisoryId` on advisory findings, and `details` with check-specific values so you do not parse `message`:
 
 | `checkId` | `details` keys |
 | --- | --- |
 | `composer-advisories` | `package`, `lockedVersion`, `affectedVersions` (Composer constraint), `fixedVersions` (list: the exclusive upper bound of each affected range) |
-| `npm-advisories` | `package`, `lockedVersion`, `fixedVersions` (always empty for now: the OSV batch answer has ids only) |
+| `npm-advisories` | `package`, `lockedVersion`, `fixedVersions` (always empty for now: the OSV batch answer has ids only), `lockfile` (the JavaScript lockfile) |
 | `php-eol`, `laravel-eol`, `node-eol` | `cycle`, `securitySupportEndsOn`, `activeSupportEndsOn` (`Y-m-d` or `null`) |
 | `composer-abandoned` | `package`, `lockedVersion`, `replacement` (or `null`) |
 | `composer-stale` | `package`, `lockedVersion` |

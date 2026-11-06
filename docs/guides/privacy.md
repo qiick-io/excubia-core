@@ -32,7 +32,10 @@ Only packages the lockfile shows as served by the public registries are sent (#1
 | Lockfile | Sent | Not sent |
 | --- | --- | --- |
 | `composer.lock` | `notification-url` is `https://packagist.org/downloads/` | `path` or `artifact` dist, VCS repositories, Satis, Private Packagist (another `notification-url`), no `notification-url` |
-| `package-lock.json` | `resolved` starts with `https://registry.npmjs.org/` | `link: true`, `file:` and VCS dependencies, workspace members (no `resolved`), any other registry |
+| `package-lock.json` | `resolved` is an HTTPS tarball on `registry.npmjs.org` or `registry.yarnpkg.com` | `link: true`, `file:` and VCS dependencies, workspace members (no `resolved`), any other registry |
+| `yarn.lock` (classic v1) | `resolved` is an HTTPS tarball on `registry.npmjs.org` or `registry.yarnpkg.com` | `file:` and git dependencies, any other registry |
+| `yarn.lock` (Berry v2+) | `npm:` resolution, and `.yarnrc.yml` points neither the package's scope (`npmScopes`) nor the default `npmRegistryServer` at another server | `workspace:`, `file:`, `link:`, `portal:`, `patch:`, git and URL resolutions, scopes on another registry |
+| `pnpm-lock.yaml` (6 and 9) | registry entry with a plain `resolution` (or a tarball on the public registry), and `.npmrc` points neither its `@scope:registry` nor `registry` at another server | `file:`, `link:`, directory, git and tarball dependencies, scopes on another registry |
 
 The lockfile cannot tell a private package on the public npm registry, or one fetched through Packagist, from a public one. Name those in `privacy.skipPackages` with globs such as `"acme/*"` or `"@acme/*"` ([configuration](./configuration.md#privacy)):
 

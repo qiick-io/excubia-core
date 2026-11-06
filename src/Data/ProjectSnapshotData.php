@@ -37,7 +37,30 @@ final readonly class ProjectSnapshotData
         public array $providedPlatformNames = [],
         public array $platformOverrideNames = [],
         public ?EnvironmentKeysData $environmentKeys = null,
+        public ?string $javascriptLockfile = null,
     ) {}
+
+    /**
+     * The JavaScript lockfile the npm packages came from. A snapshot built
+     * by hand (the web scanner) with npm packages but no file name came
+     * from `package-lock.json`, the only format it accepts.
+     */
+    public function javascriptLockfileName(): ?string
+    {
+        if (! $this->hasNpmLockfile) {
+            return null;
+        }
+
+        return $this->javascriptLockfile ?? 'package-lock.json';
+    }
+
+    /**
+     * False for `yarn.lock` and `pnpm-lock.yaml`, which record no licenses.
+     */
+    public function hasJavascriptLicenseData(): bool
+    {
+        return ! in_array($this->javascriptLockfileName(), ['yarn.lock', 'pnpm-lock.yaml'], true);
+    }
 
     /**
      * The same snapshot with the posture of the booted app attached.
@@ -57,6 +80,7 @@ final readonly class ProjectSnapshotData
             providedPlatformNames: $this->providedPlatformNames,
             platformOverrideNames: $this->platformOverrideNames,
             environmentKeys: $this->environmentKeys,
+            javascriptLockfile: $this->javascriptLockfile,
         );
     }
 }
