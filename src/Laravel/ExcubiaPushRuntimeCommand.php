@@ -13,12 +13,16 @@ use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Contracts\ServerResourcesContract;
+use Qiick\Excubia\Data\ExcubiaConfigurationData;
+use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 use Qiick\Excubia\Services\DiskSpaceService;
+use Qiick\Excubia\Services\HealthCheckRunnerService;
+use Qiick\Excubia\Services\HealthSampleService;
 use Qiick\Excubia\Services\ReleaseService;
 use Qiick\Excubia\Services\ReportPushService;
 use Qiick\Excubia\Services\RuntimeBufferService;
@@ -55,6 +59,14 @@ use Throwable;
  * `runtime.server.name`, else a hashed id; an invalid variable is warned
  * about on stderr and the hashed id is sent.
  *
+ * When `runtime.health` is on (#188), each run then, at most once per UTC
+ * minute (the last sampled minute is kept in `health-minute` next to the
+ * buffer), runs the checks of `runtime.health.checks` one at a time, with
+ * only the probes each one reads, and appends one `health` aggregate per
+ * check (HealthSampleService). The checks only probe local services; no
+ * data source is called. A check that throws, or that would start after
+ * the time budget, is sent as `skipped`; the push always goes on.
+ *
  * Each batch carries the release resolved when it is sent (`release` key,
  * `EXCUBIA_RELEASE` or a platform variable; no git fallback here).
  *
@@ -75,6 +87,7 @@ final class ExcubiaPushRuntimeCommand extends Command
 
     public function handle(): int
     {
+        $startedAtMs = self::clockMs();
         $config = $this->option('config');
         $configPath = is_string($config) && $config !== '' ? $config : null;
 
@@ -104,7 +117,9 @@ final class ExcubiaPushRuntimeCommand extends Command
         try {
             if ($configuration->runtime->isEnabled) {
                 $runtimeBuffer = new RuntimeBufferService($this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'), $configuration->runtime->bufferMaxBytes);
+                $this->warnAboutInvalidServerName($configuration->runtime);
                 $this->sampleServer($configuration->runtime, $runtimeBuffer, $sentAt->getTimestamp());
+                $this->sampleHealth($configuration, $runtimeBuffer, $sentAt, $startedAtMs);
                 $hasFailed = ! $this->sendBuffer(
                     $runtimeBuffer,
                     static fn (RuntimeBufferService $buffer, string $path): array => $buffer->read($path),
@@ -170,6 +185,17 @@ final class ExcubiaPushRuntimeCommand extends Command
     }
 
     /**
+     * Warn on stderr once per run when `EXCUBIA_SERVER_NAME` is invalid and
+     * a type that names the server (`server`, `health`) is on.
+     */
+    private function warnAboutInvalidServerName(RuntimeConfigurationData $runtime): void
+    {
+        if ($runtime->isServerNameVariableInvalid && ($runtime->isTypeEnabled(RuntimeTypeEnum::Server) || $runtime->isTypeEnabled(RuntimeTypeEnum::Health))) {
+            CheckCommand::writeError($this->output, RuntimeConfigurationData::SERVER_NAME_VARIABLE.' must be 1 to 64 letters, digits, dots, underscores or hyphens; the server is sent as its hashed id.');
+        }
+    }
+
+    /**
      * Append one `server` sample when the type is on and sampled. The disk
      * is the one that holds `storage/`. A failure here never stops the push:
      * monitoring must not break the command.
@@ -178,30 +204,85 @@ final class ExcubiaPushRuntimeCommand extends Command
     {
         $sampleRate = $runtime->sampleRate(RuntimeTypeEnum::Server);
 
-        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Server) || ($sampleRate < 1.0 && mt_rand() / mt_getrandmax() >= $sampleRate)) {
+        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Server) || ! self::isSampled($sampleRate)) {
             return;
         }
 
-        if ($runtime->isServerNameVariableInvalid) {
-            CheckCommand::writeError($this->output, RuntimeConfigurationData::SERVER_NAME_VARIABLE.' must be 1 to 64 letters, digits, dots, underscores or hyphens; the server is sent as its hashed id.');
-        }
-
         try {
-            $applicationKey = $this->laravel->make('config')->get('app.key');
-            $hostname = gethostname();
             $sampler = new ServerMetricsService(
                 $this->bound(ServerResourcesContract::class) ?? new ServerResourcesService,
-                $this->bound(DiskSpaceContract::class) ?? new DiskSpaceService,
+                $this->diskSpace(),
             );
-            $buffer->append([$sampler->aggregate(
-                ServerMetricsService::serverIdentity($runtime->serverName, is_string($hostname) ? $hostname : '', is_string($applicationKey) ? $applicationKey : ''),
-                $this->laravel->storagePath(),
-                $sampleRate,
-                $timestamp,
-            )]);
+            $buffer->append([$sampler->aggregate($this->serverIdentity($runtime), $this->laravel->storagePath(), $sampleRate, $timestamp)]);
         } catch (Throwable) {
             // The server sample is best effort; the buffered data is still sent.
         }
+    }
+
+    /**
+     * Append one `health` aggregate per configured check when the type is
+     * on, sampled, and this minute has no sample yet. Each check gets a
+     * posture with only its own probes, so the time of a slow probe is
+     * charged to its check. A failure here never stops the push.
+     */
+    private function sampleHealth(ExcubiaConfigurationData $configuration, RuntimeBufferService $buffer, DateTimeImmutable $now, float $startedAtMs): void
+    {
+        $runtime = $configuration->runtime;
+        $sampleRate = $runtime->sampleRate(RuntimeTypeEnum::Health);
+        $minute = gmdate('Y-m-d\TH:i', $now->getTimestamp());
+        $minutePath = $this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'health-minute');
+
+        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Health) || (is_file($minutePath) && file_get_contents($minutePath) === $minute) || ! self::isSampled($sampleRate)) {
+            return;
+        }
+
+        try {
+            $posture = new LaravelPostureService($this->diskSpace());
+            $runner = new HealthCheckRunnerService($this->httpClient(), $now);
+            $snapshot = new ProjectSnapshotData(null, null, [], [], null);
+            $sampler = new HealthSampleService($runtime->healthCheckBudgetMs, $runtime->healthTotalBudgetMs, self::clockMs(...));
+            $buffer->append($sampler->aggregates(
+                $runtime->healthCheckIds,
+                fn (string $checkId) => $runner->runCheck($snapshot->withLaravelPosture($posture->collect($this->getLaravel(), $now, $configuration, [$checkId])), $configuration, $checkId),
+                $startedAtMs,
+                $this->serverIdentity($runtime),
+                $sampleRate,
+                $now->getTimestamp(),
+            ));
+            file_put_contents($minutePath, $minute);
+        } catch (Throwable) {
+            // The health sample is best effort; the buffered data is still sent.
+        }
+    }
+
+    /**
+     * The server name of `server` and `health` aggregates: the configured
+     * name, else a hash of the hostname and the app key, never the hostname.
+     */
+    private function serverIdentity(RuntimeConfigurationData $runtime): string
+    {
+        $applicationKey = $this->laravel->make('config')->get('app.key');
+        $hostname = gethostname();
+
+        return ServerMetricsService::serverIdentity($runtime->serverName, is_string($hostname) ? $hostname : '', is_string($applicationKey) ? $applicationKey : '');
+    }
+
+    private function diskSpace(): DiskSpaceContract
+    {
+        return $this->bound(DiskSpaceContract::class) ?? new DiskSpaceService;
+    }
+
+    /**
+     * True for a run that takes the sample: always at rate 1.
+     */
+    private static function isSampled(float $sampleRate): bool
+    {
+        return $sampleRate >= 1.0 || mt_rand() / mt_getrandmax() < $sampleRate;
+    }
+
+    private static function clockMs(): float
+    {
+        return hrtime(true) / 1_000_000;
     }
 
     /**

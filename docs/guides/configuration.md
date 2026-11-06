@@ -66,7 +66,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "deprecations": { "enabled": false, "sampleRate": 1 },
     "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 },
     "server": { "enabled": false, "sampleRate": 1 },
-    "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] }
+    "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] },
+    "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 }
   },
   "exceptions": {
     "enabled": false,
@@ -297,6 +298,12 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.commands.enabled` | boolean | `false` | Collect command runs. |
 | `runtime.commands.sampleRate` | number 0–1 | `1` | Share of command runs recorded. |
 | `runtime.commands.ignore` | list of strings | `["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"]` | Command names, `*` wildcards allowed, never counted. Setting it replaces the default, so list the defaults you want to keep. |
+| `runtime.health` | object | | Minute-level health samples for failure alerts: every `excubia:push-runtime` run, at most once per UTC minute on each server, runs the fast Artisan checks with local probes only and sends their status, severity, finding count and finding fingerprints (no messages). Off by default. See [runtime monitoring](./runtime-monitoring.md#health-samples). |
+| `runtime.health.enabled` | boolean | `false` | Take health samples. |
+| `runtime.health.sampleRate` | number 0–1 | `1` | Share of runs that take a sample. |
+| `runtime.health.checks` | list of check ids | all nine | Checks to sample, in order, without duplicates: any of `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `laravel-queue-workers`, `laravel-scheduler-heartbeat`, `laravel-redis-memory`, `laravel-maintenance-mode`. Any other id is a configuration error. |
+| `runtime.health.checkBudgetMs` | integer ≥ 1 | `3000` | Milliseconds reserved for one check: a check starts only while this much is left of `totalBudgetMs`. At most `totalBudgetMs`. |
+| `runtime.health.totalBudgetMs` | integer | `15000` | Milliseconds of the push-runtime run, from its start, after which no further check starts; the rest are sent as `skipped`. |
 
 ## Exception capture
 

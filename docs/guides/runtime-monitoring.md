@@ -51,7 +51,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "deprecations": { "enabled": true },
     "duplicateQueries": { "enabled": true, "threshold": 5 },
     "server": { "enabled": true },
-    "commands": { "enabled": true }
+    "commands": { "enabled": true },
+    "health": { "enabled": true }
   }
 }
 ```
@@ -112,6 +113,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `duplicateQueries` | `QueryExecuted`, evaluated at `RequestHandled` or when a job ends (`JobProcessed` / `JobFailed` / `JobExceptionOccurred`) | — |
 | `server` | One sample per `excubia:push-runtime` run, on each server | — |
 | `commands` | `CommandStarting` / `CommandFinished`, top-level commands only | Non-zero exit code |
+| `health` | One sample of the fast Artisan checks per `excubia:push-runtime` run, at most once a minute, on each server | The check failed |
 
 Notes on the newer types:
 
@@ -154,6 +156,30 @@ EXCUBIA_SERVER_NAME=web-1
 ```
 
 Set `EXCUBIA_SERVER_NAME` in each server's environment (`.env`, Forge, the process manager that runs the scheduler): `excubia.json` is usually the same committed file on every server. The variable wins over the `runtime.server.name` key, which still works for a single server. Both take 1 to 64 letters, digits, `.`, `_` or `-`. An invalid `EXCUBIA_SERVER_NAME` does not stop the push: the server is sent as its hashed id and `excubia:push-runtime` prints a warning on stderr. Without a name the server is the first 12 hex characters of sha256(hostname + sha256(app key)): stable for one machine and app, and not reversible to the hostname. The hostname and the storage path are never sent.
+
+### Health samples
+
+`excubia:push` sends the full report once a day, so excubia-app learns that the database or the queue is down hours late. With `runtime.health.enabled` (1.0.0-beta.3, #188), every `excubia:push-runtime` run, at most once per UTC minute on each server, also runs the fast Artisan checks and sends one `health` aggregate per check, so the app can alert within a minute or two:
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "health": {
+      "enabled": true,
+      "checks": ["laravel-database", "laravel-cache", "laravel-queue-backlog"],
+      "checkBudgetMs": 3000,
+      "totalBudgetMs": 15000
+    }
+  }
+}
+```
+
+- `checks` defaults to all nine checks that only probe local services: `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `laravel-queue-workers`, `laravel-scheduler-heartbeat`, `laravel-redis-memory` and `laravel-maintenance-mode`. No other id is allowed, so a sample never calls Packagist, OSV, endoflife.date, GitHub or npm. Their `checks.<id>` settings and your `ignore` rules apply, as in the report.
+- Each check runs alone, with only the probes it reads (a `select 1`, a cache write and read, the disk, the queue backlog, the worker and scheduler heartbeats, Redis `INFO memory`, the maintenance file). The sample holds `checkId`, `status` (`pass`, `warn`, `fail` or `skipped`), the most serious `severity`, `findingCount` and the `fingerprints` of its warn and fail findings: the same values as the report's finding `fingerprint`, never a message or a name.
+- Budgets: a check starts only while `checkBudgetMs` (default 3000) is still left of `totalBudgetMs` (default 15000), counted from the start of the run; the rest are sent as `skipped`. A check whose probe throws is `skipped` too, and the push always goes on. A running probe cannot be interrupted: a database the probe opens has a 3 s connect timeout, other clients keep their own.
+- Two samples of one check, server and minute merge with the worst status (fail, then warn, then pass, then skipped: a skipped sample has no reading and never hides one).
+- The server is named as for [server metrics](#server-metrics): `EXCUBIA_SERVER_NAME`, else `runtime.server.name`, else a hashed id.
 
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
