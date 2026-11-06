@@ -266,6 +266,7 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     report(new TransportException('smtp failure'));
     event(new NotificationSent(new AnonymousNotifiable, new class extends Notification {}, 'mail'));
     Log::warning('something');
+    trigger_error('Old::api() is deprecated', E_USER_DEPRECATED);
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);

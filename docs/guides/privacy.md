@@ -66,7 +66,8 @@ Added in 1.0.0-beta.2 and off until each one is switched on (each with `count`, 
 - cache (`cache`): store name and the key prefix before the first `:` or `.`, through the exception message masks; a prefix that still holds a digit, `@`, a space or other punctuation, hex-only text or only a mask placeholder is `[masked]`. Counts of hits, misses, writes and deletes. Never the whole key or the value;
 - mail (`mail`): mailable class (or the notification class of a mail notification, or `unknown`) and mailer name, sent and failed counts. Never recipients, subjects or bodies;
 - notifications (`notifications`): notification class and channel name, sent and failed counts. Never the notifiable or the content;
-- log levels (`logLevels`): the level and a count. Never the message or the context.
+- log levels (`logLevels`): the level and a count. Never the message or the context;
+- PHP deprecations (`deprecations`): the source (`app`, `vendor/<vendor>/<package>` or `unknown`), the deprecation message through the exception message masks (paths made relative or reduced to the file name, secrets, emails, ids and long numbers masked) and cut to 300 characters, the PHP major and minor version, and a count. Never the file path, the line or the stack.
 
 Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, `.env` values or absolute paths.
 

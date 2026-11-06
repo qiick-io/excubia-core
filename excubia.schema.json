@@ -285,6 +285,10 @@
                 "logLevels": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Log entries (MessageLogged) counted per level. Never the message or the context. Off by default (#132)."
+                },
+                "deprecations": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "PHP deprecations (E_DEPRECATED, E_USER_DEPRECATED) counted per source (app, vendor/<vendor>/<package> or unknown), masked message (at most 300 characters) and PHP minor version, through an error handler chained in front of Laravel's, which still runs. Never the file path, line or stack. Off by default (#133)."
                 }
             }
         },

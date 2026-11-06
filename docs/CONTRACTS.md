@@ -76,6 +76,8 @@ Optional, additive fields from #129 (versions stay `1`): report `release` and `d
 
 Additive runtime aggregate types from #132 (versions stay `1`): `requestMemory`, `jobMemory`, `queueWait`, `cache`, `mail`, `notification` and `logLevel`, with the metric fields `totalMb`, `maxMb`, `hits`, `misses`, `writes` and `deletes`, and the `excubia.json` keys `runtime.requestMemory`, `runtime.jobMemory`, `runtime.queueWait`, `runtime.cache`, `runtime.mail`, `runtime.notifications` and `runtime.logLevels` (each `enabled`, default `false`, and `sampleRate`). The five 1.0.0-beta.1 types keep their shape and their default (on). An app must accept a runtime batch that holds an aggregate type it does not know and skip those entries, so a newer `excubia-core` can push to an older app; the new types are off by default so an older app does not receive them unless the user turns them on.
 
+Additive runtime aggregate type from #133 (versions stay `1`): `deprecation`, with the dimensions `source`, `message` and `phpVersion`, and the `excubia.json` key `runtime.deprecations` (`enabled`, default `false`, and `sampleRate`).
+
 ### Health endpoint
 
 `GET /excubia/health` by default (`healthEndpoint.path`), route name `excubia.health`, secret in the `oh-dear-health-check-secret` header compared with `EXCUBIA_HEALTH_SECRET`; a wrong or missing secret is `404`. The response is `{finishedAt, checkResults[]}` with `name`, `label`, `status`, `notificationMessage`, `shortSummary`, `meta` per entry; statuses `ok`, `warning`, `failed`, `skipped`, `crashed`; `excubia-run` for the crashed and not-run-yet entries. The wording of `notificationMessage` and `shortSummary` is not frozen. Full description: [`docs/health-endpoint.md`](./health-endpoint.md).

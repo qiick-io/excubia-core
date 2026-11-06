@@ -53,7 +53,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "cache": { "enabled": false, "sampleRate": 1 },
     "mail": { "enabled": false, "sampleRate": 1 },
     "notifications": { "enabled": false, "sampleRate": 1 },
-    "logLevels": { "enabled": false, "sampleRate": 1 }
+    "logLevels": { "enabled": false, "sampleRate": 1 },
+    "deprecations": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -223,6 +224,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.logLevels` | object | | Log entries counted per level, never the message. Off by default. |
 | `runtime.logLevels.enabled` | boolean | `false` | Collect log level counts. |
 | `runtime.logLevels.sampleRate` | number 0–1 | `1` | Share of log entries recorded. |
+| `runtime.deprecations` | object | | PHP deprecations counted per source (`app`, `vendor/<vendor>/<package>`), masked message and PHP version, through a chained error handler. Off by default. |
+| `runtime.deprecations.enabled` | boolean | `false` | Collect deprecation counts. |
+| `runtime.deprecations.sampleRate` | number 0–1 | `1` | Share of deprecations recorded. |
 
 ## Exception capture
 

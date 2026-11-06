@@ -4,7 +4,7 @@
     "x-excubia-version": 1,
     "$comment": "Contract version of this payload. It travels in an envelope with protocolVersion 1 and changes only with it. Stable from 1.0.0-beta (docs/CONTRACTS.md).",
     "title": "Excubia runtime batch",
-    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes) and keeps the larger maxMs (and maxMb) for entries with the same type, bucket, sampleRate and dimensions, also across batches. Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, or absolute paths.",
+    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes) and keeps the larger maxMs (and maxMb) for entries with the same type, bucket, sampleRate and dimensions, also across batches. Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, the file, line or stack of a deprecation, or absolute paths.",
     "type": "object",
     "additionalProperties": false,
     "required": ["bucketSeconds", "aggregates"],
@@ -34,10 +34,11 @@
                     { "$ref": "#/$defs/cache" },
                     { "$ref": "#/$defs/mail" },
                     { "$ref": "#/$defs/notification" },
-                    { "$ref": "#/$defs/logLevel" }
+                    { "$ref": "#/$defs/logLevel" },
+                    { "$ref": "#/$defs/deprecation" }
                 ]
             },
-            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations; totalMb and maxMb for memory; hits, misses, writes and deletes for cache. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima keep the larger value."
+            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation; additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations; totalMb and maxMb for memory; hits, misses, writes and deletes for cache. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima keep the larger value."
         }
     },
     "$defs": {
@@ -60,7 +61,7 @@
         "errorCount": {
             "type": "integer",
             "minimum": 0,
-            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache and log level types."
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache, log level and deprecation types."
         },
         "milliseconds": {
             "type": "number",
@@ -276,6 +277,26 @@
                 "bucket": { "$ref": "#/$defs/bucket" },
                 "sampleRate": { "$ref": "#/$defs/sampleRate" },
                 "level": { "enum": ["emergency", "alert", "critical", "error", "warning", "notice", "info", "debug", "unknown"] },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" }
+            }
+        },
+        "deprecation": {
+            "type": "object",
+            "description": "PHP deprecations (E_DEPRECATED, E_USER_DEPRECATED) seen by an error handler chained in front of Laravel's (#133), for upgrade readiness. errorCount is always 0. A deprecation PHP raises while compiling a file is seen only when the file is compiled, so with OPcache it is counted once per cache fill, not per request. Never the file path, the line or the stack.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "source", "message", "phpVersion", "count", "errorCount"],
+            "properties": {
+                "type": { "const": "deprecation" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "source": {
+                    "type": "string",
+                    "pattern": "^(app|unknown|vendor/[^/]+(/[^/]+)?)$",
+                    "description": "Where PHP raised the deprecation: app for a file inside the project and not under vendor/, vendor/<vendor>/<package> for a dependency (vendor/<directory> for Composer's own files), unknown for a file outside the project. For E_USER_DEPRECATED this is the library that calls trigger_error, not its caller."
+                },
+                "message": { "type": "string", "minLength": 1, "maxLength": 300, "description": "The deprecation message through the exception message masks (paths relative or reduced to the file name, secrets, emails, ids and long numbers masked), at most 300 characters." },
+                "phpVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$", "description": "PHP major and minor version that raised it, such as 8.4." },
                 "count": { "$ref": "#/$defs/count" },
                 "errorCount": { "$ref": "#/$defs/errorCount" }
             }

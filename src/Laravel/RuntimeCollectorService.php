@@ -50,10 +50,11 @@ use WeakMap;
  * job class, queue and connection names, scheduled task descriptions or
  * Artisan commands, outgoing hosts, peak memory, queue wait times, cache
  * store names and masked key prefixes, mailable, mailer, notification and
- * channel names, log levels. Never request or response bodies, headers,
- * cookies, users, IP addresses, query bindings, exception messages, whole
- * cache keys or values, recipients, log messages or context, or absolute
- * paths.
+ * channel names, log levels, the source package, masked message and PHP
+ * minor version of PHP deprecations. Never request or response bodies,
+ * headers, cookies, users, IP addresses, query bindings, exception messages,
+ * whole cache keys or values, recipients, log messages or context, absolute
+ * paths, or the line and stack of a deprecation.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -79,6 +80,8 @@ final class RuntimeCollectorService
     public const QUEUED_AT_PAYLOAD_KEY = 'excubiaQueuedAt';
 
     public const MASKED_KEY_PREFIX = '[masked]';
+
+    public const MAX_DEPRECATION_MESSAGE_LENGTH = 300;
 
     private const BYTES_PER_MEGABYTE = 1048576;
 
@@ -109,6 +112,11 @@ final class RuntimeCollectorService
     private ?array $pendingMail = null;
 
     private bool $isRecordingLog = false;
+
+    private bool $isRecordingDeprecation = false;
+
+    /** @var list<string>|null */
+    private ?array $projectPrefixes = null;
 
     /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
@@ -178,6 +186,10 @@ final class RuntimeCollectorService
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::LogLevel)) {
             $events->listen(MessageLogged::class, fn (MessageLogged $event) => $collector->recordLog($event));
+        }
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Deprecation)) {
+            $collector->listenToDeprecations();
         }
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::ScheduledTask)) {
@@ -446,6 +458,144 @@ final class RuntimeCollectorService
         } finally {
             $this->isRecordingLog = false;
         }
+    }
+
+    /**
+     * Chain a PHP error handler in front of the current one (Laravel's
+     * `HandleExceptions`, which writes deprecations to the `deprecations`
+     * log channel, when the provider boots). It records `E_DEPRECATED` and
+     * `E_USER_DEPRECATED`, then always calls the previous handler with the
+     * same arguments and returns its result, so Laravel's deprecation log,
+     * its ErrorException for warnings, and any other chained handler (Sentry,
+     * Flare…) behave as before. With no previous handler it returns false and
+     * PHP's own handling continues.
+     *
+     * The handler is registered for every level, not with a level mask: PHP
+     * sends the levels outside a mask to its built-in handler, not to the
+     * previous one, so a mask would stop Laravel turning warnings into
+     * exceptions. A request that raises no PHP error never calls it.
+     *
+     * Why the error handler and not Laravel's `deprecations` channel: the
+     * `MessageLogged` event carries no channel, the log line holds the
+     * absolute file and line in its text, and Laravel skips that channel in
+     * unit tests and before the app is bootstrapped. The handler sees the
+     * file directly and counts the same deprecations whatever the logging
+     * configuration, and Laravel's channel keeps working because the handler
+     * forwards to it.
+     *
+     * ponytail: a handler set later that does not forward to the previous
+     * one hides deprecations from Excubia; it is not re-chained.
+     */
+    public function listenToDeprecations(): void
+    {
+        $previousHandler = null;
+        $previousHandler = set_error_handler(function (int $level, string $message, string $file = '', int $line = 0) use (&$previousHandler): mixed {
+            if ($level === E_DEPRECATED || $level === E_USER_DEPRECATED) {
+                $this->recordDeprecation($message, $file);
+            }
+
+            if ($previousHandler === null) {
+                return false;
+            }
+
+            return $previousHandler($level, $message, $file, $line);
+        });
+    }
+
+    /**
+     * Count one deprecation by source, masked message and PHP minor
+     * version. The line and the stack are never read. A deprecation raised
+     * while this runs is not counted (it is still forwarded), so the
+     * collector cannot loop.
+     */
+    public function recordDeprecation(string $message, string $file): void
+    {
+        if ($this->isRecordingDeprecation) {
+            return;
+        }
+
+        $this->isRecordingDeprecation = true;
+
+        try {
+            $this->guard(function () use ($message, $file): void {
+                if (! $this->isSampled(RuntimeTypeEnum::Deprecation)) {
+                    return;
+                }
+
+                $masked = mb_strimwidth(ExceptionPayloadService::mask($message, $this->basePath), 0, self::MAX_DEPRECATION_MESSAGE_LENGTH, '…');
+
+                $this->record(RuntimeTypeEnum::Deprecation, [
+                    'source' => $this->deprecationSource($file),
+                    'message' => $masked === '' ? 'unknown' : $masked,
+                    'phpVersion' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,
+                ], []);
+            });
+        } finally {
+            $this->isRecordingDeprecation = false;
+        }
+    }
+
+    /**
+     * `vendor/<vendor>/<package>` for a file under the project's `vendor/`
+     * (`vendor/<directory>` for Composer's own files), `app` for any other
+     * file inside the project (compiled views included), `unknown` for a
+     * file outside it or no file. Never the path itself.
+     *
+     * ponytail: assumes Composer's default `vendor/` directory; a custom
+     * `vendor-dir` counts as `app`, and a path repository symlinked into
+     * `vendor/` reports its real path.
+     */
+    public function deprecationSource(string $file): string
+    {
+        $file = str_replace('\\', '/', preg_replace("/\\(\\d+\\) : eval\\(\\)'d code$/", '', $file) ?? $file);
+        $relative = null;
+
+        foreach ($this->projectPrefixes() as $prefix) {
+            if ($file !== '' && str_starts_with($file, $prefix)) {
+                $relative = substr($file, strlen($prefix));
+
+                break;
+            }
+        }
+
+        if ($relative === null) {
+            return 'unknown';
+        }
+
+        if (preg_match('#^vendor/([^/]+)(?:/([^/]+)/)?#', $relative, $matches) !== 1) {
+            return 'app';
+        }
+
+        return isset($matches[2]) ? 'vendor/'.$matches[1].'/'.$matches[2] : 'vendor/'.$matches[1];
+    }
+
+    /**
+     * The project root with a trailing `/`, as configured and resolved
+     * (PHP reports included files by their real path, so a root reached
+     * through a symlink, such as `/var` on macOS, still matches). Computed
+     * on the first deprecation only.
+     *
+     * @return list<string>
+     */
+    private function projectPrefixes(): array
+    {
+        if ($this->projectPrefixes !== null) {
+            return $this->projectPrefixes;
+        }
+
+        $roots = [$this->basePath];
+        $realPath = realpath($this->basePath);
+
+        if ($realPath !== false) {
+            $roots[] = $realPath;
+        }
+
+        $this->projectPrefixes = array_values(array_unique(array_map(
+            static fn (string $root): string => rtrim(str_replace('\\', '/', $root), '/').'/',
+            $roots,
+        )));
+
+        return $this->projectPrefixes;
     }
 
     /**

@@ -115,3 +115,68 @@ it('adds less than 1 ms per request with every type on at the default sample rat
 
     expect($collectorOnly)->toBeLessThan(1.0);
 })->group('benchmark');
+
+it('costs nothing on a request that raises no deprecation, with deprecations on', function () {
+    config(['logging.default' => 'null']);
+    Route::get('/benchmark', fn () => 'ok')->name('benchmark');
+    $without = [];
+    $with = [];
+
+    $deprecationsRaised = 0;
+    set_error_handler(static function (int $level) use (&$deprecationsRaised): bool {
+        $deprecationsRaised += $level === E_DEPRECATED || $level === E_USER_DEPRECATED ? 1 : 0;
+
+        return false;
+    });
+
+    // Every boot adds the provider's listeners again, so later rounds are slower: alternate
+    // which setup goes first so that drift hits both alike.
+    for ($round = 0; $round < 6; $round++) {
+        foreach ($round % 2 === 0 ? [false, true] : [true, false] as $isOn) {
+            benchmarkProject($this->app, ['enabled' => true, 'deprecations' => ['enabled' => $isOn]]);
+
+            if ($isOn) {
+                $with[] = meanRequestMilliseconds($this);
+                restore_error_handler(); // unchain this round's handler so rounds do not stack
+            } else {
+                $without[] = meanRequestMilliseconds($this);
+            }
+        }
+    }
+
+    restore_error_handler();
+    sort($without);
+    sort($with);
+    $withoutMedian = ($without[2] + $without[3]) / 2;
+    $withMedian = ($with[2] + $with[3]) / 2;
+
+    // The handler alone per triggered deprecation, in front of a handler that does nothing.
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    set_error_handler(static fn (): bool => true);
+    $collector->listenToDeprecations();
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < BENCHMARK_REQUESTS; $i++) {
+        trigger_error('Benchmark::old() is deprecated', E_USER_DEPRECATED);
+    }
+
+    $perDeprecation = (hrtime(true) - $startedAt) / 1e6 / BENCHMARK_REQUESTS;
+    restore_error_handler();
+    restore_error_handler();
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nDeprecation hook over 6 x %d requests that raise no deprecation (%d raised; PHP %s, Laravel %s, medians)\n  deprecations off: %.3f ms/request\n  deprecations on:  %.3f ms/request (delta %.3f ms)\n  per deprecation:  %.4f ms (hook + record, previous handler a no-op)\n",
+        BENCHMARK_REQUESTS,
+        $deprecationsRaised,
+        PHP_VERSION,
+        Application::VERSION,
+        $withoutMedian,
+        $withMedian,
+        $withMedian - $withoutMedian,
+        $perDeprecation,
+    ));
+
+    expect($deprecationsRaised)->toBe(0)
+        ->and($perDeprecation)->toBeLessThan(0.1);
+})->group('benchmark');
