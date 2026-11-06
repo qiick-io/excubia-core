@@ -9,13 +9,14 @@ use DateTimeZone;
 use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\EndOfLifeCycleData;
 use Qiick\Excubia\Data\HealthReportData;
+use Qiick\Excubia\Data\LicenseInventoryData;
 
 /**
  * JSON report for schema version 1.
  *
  * Optional fields, all additive (still schema version 1): `generatedAt`,
  * `excubiaVersion`, `release`, `deployedAt` and `project` when the report
- * carries them;
+ * carries them, `licenses` when `dependency-licenses` ran;
  * per finding `fingerprint` always, `advisoryId` when the finding names
  * one, `skipReason` on skipped rows and `details` when the check set any.
  */
@@ -112,10 +113,61 @@ final class JsonReportRenderer implements ReportRendererContract
             ];
         }
 
-        return $document + [
+        $document += [
             'checks' => $checks,
             'upgradePlan' => $upgradePlan,
         ];
+        $licenses = $healthReport->licenses();
+
+        if ($licenses !== null) {
+            $document['licenses'] = $this->licenses($licenses);
+        }
+
+        return $document;
+    }
+
+    /**
+     * The top-level `licenses` inventory. Counts are lists of
+     * `{license, packageCount}` sorted by id, so an empty inventory and an
+     * id made of digits encode the same way in every JSON decoder.
+     *
+     * @return array{
+     *     packageCount: int,
+     *     byLicense: list<array{license: string, packageCount: int}>,
+     *     byEcosystem: array<string, array{packageCount: int, byLicense: list<array{license: string, packageCount: int}>}>
+     * }
+     */
+    private function licenses(LicenseInventoryData $licenses): array
+    {
+        $byEcosystem = [];
+
+        foreach ($licenses->ecosystems as $ecosystem => $inventory) {
+            $byEcosystem[$ecosystem] = [
+                'packageCount' => $inventory['packageCount'],
+                'byLicense' => $this->licenseCounts($inventory['byLicense']),
+            ];
+        }
+
+        return [
+            'packageCount' => $licenses->packageCount(),
+            'byLicense' => $this->licenseCounts($licenses->byLicense()),
+            'byEcosystem' => $byEcosystem,
+        ];
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     * @return list<array{license: string, packageCount: int}>
+     */
+    private function licenseCounts(array $counts): array
+    {
+        $rows = [];
+
+        foreach ($counts as $license => $packageCount) {
+            $rows[] = ['license' => (string) $license, 'packageCount' => $packageCount];
+        }
+
+        return $rows;
     }
 
     private static function timestamp(DateTimeImmutable $moment): string

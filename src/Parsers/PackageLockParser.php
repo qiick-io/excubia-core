@@ -18,6 +18,10 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * registry. Links (`link: true`), `file:` and VCS dependencies, other
  * registries and entries without `resolved` (workspace members) are
  * private, so their names are never sent to OSV.
+ *
+ * Licenses come from the entry's `license` field (an SPDX expression), or
+ * the legacy `licenses` list of `{"type": …}` objects some old packages
+ * still declare.
  */
 final class PackageLockParser
 {
@@ -76,6 +80,7 @@ final class PackageLockParser
                 isDirectDependency: isset($direct[$name]),
                 isDevelopmentDependency: ($package['dev'] ?? false) === true || ($package['devOptional'] ?? false) === true,
                 isPrivate: $this->isPrivate($package),
+                licenses: LockedPackageData::licensesFrom($package['license'] ?? $package['licenses'] ?? null),
             );
         }
 

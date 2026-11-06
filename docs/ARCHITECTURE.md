@@ -19,6 +19,7 @@ qiick-io/excubia-core
 │   │   ├── ComposerAbandonedCheck.php      (composer-abandoned)
 │   │   ├── ComposerStaleCheck.php          (composer-stale)
 │   │   ├── LaravelNextMajorBlockerCheck.php (laravel-next-blocker)
+│   │   ├── DependencyLicensesCheck.php     (dependency-licenses)          # lockfile licenses, no request
 │   │   ├── LaravelDebugModeCheck.php       (laravel-debug-mode)           # posture checks: read the
 │   │   ├── LaravelProductionCachesCheck.php (laravel-production-caches)   # snapshot's laravelPosture,
 │   │   ├── LaravelPendingMigrationsCheck.php (laravel-pending-migrations) # skipped "requires Artisan"

@@ -84,6 +84,32 @@
                             "description": "Failed jobs warn at medium; at high once the oldest is older than this many hours. Default 24."
                         }
                     }
+                },
+                "dependency-licenses": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "allowed": {
+                            "type": "array",
+                            "description": "SPDX license ids or globs (* any characters, ? exactly one, case-insensitive) that never warn. An expression such as MIT OR GPL-3.0-only passes when any option is allowed. Default [].",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9.+:*?-]+$"
+                            }
+                        },
+                        "denied": {
+                            "type": "array",
+                            "description": "SPDX license ids or globs that make the finding a fail at high. Denied wins over allowed. Default [].",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9.+:*?-]+$"
+                            }
+                        },
+                        "includeDev": {
+                            "type": "boolean",
+                            "description": "Also inspect development dependencies (Composer packages-dev, npm dev and devOptional). Default false. --no-dev and a top-level includeDev of false still leave Composer packages-dev out of every check."
+                        }
+                    }
                 }
             }
         },

@@ -44,6 +44,21 @@ final readonly class HealthReportData
     }
 
     /**
+     * The license inventory of `dependency-licenses`, or null when that
+     * check did not run. Ignore rules drop findings, never inventory rows.
+     */
+    public function licenses(): ?LicenseInventoryData
+    {
+        foreach ($this->checkResults as $checkResult) {
+            if ($checkResult->licenseInventory !== null) {
+                return $checkResult->licenseInventory;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * The human summary from the spec. Counts fail and warn findings only.
      */
     public function summaryLine(): string
@@ -118,6 +133,7 @@ final readonly class HealthReportData
                 $checkResult->name,
                 $remainingFindings,
                 $checkResult->endOfLifeCycle,
+                $checkResult->licenseInventory,
             );
         }
 

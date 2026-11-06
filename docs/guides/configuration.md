@@ -23,7 +23,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "laravel-eol": { "warnDaysBeforeEol": 180 },
     "node-eol": { "enabled": true },
     "laravel-scheduler-heartbeat": { "staleAfterMinutes": 10 },
-    "laravel-failed-jobs": { "highSeverityAfterHours": 24 }
+    "laravel-failed-jobs": { "highSeverityAfterHours": 24 },
+    "dependency-licenses": { "allowed": [], "denied": [], "includeDev": false }
   },
   "ignore": [
     {
@@ -96,6 +97,24 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.laravel-scheduler-heartbeat.staleAfterMinutes` | integer ≥ 1 | `10` | Warn when the heartbeat written by `excubia:heartbeat` is older than this many minutes. |
 | `checks.laravel-failed-jobs` | object | | Settings of `laravel-failed-jobs`. |
 | `checks.laravel-failed-jobs.highSeverityAfterHours` | integer ≥ 1 | `24` | Failed jobs warn at medium, and at high once the oldest is at least this many hours old. |
+| `checks.dependency-licenses` | object | | Settings of `dependency-licenses`, see [below](#dependency-licenses). |
+| `checks.dependency-licenses.allowed` | list of strings | `[]` | SPDX license ids or globs that never warn, for example `"GPL-2.0-or-later"`, `"LGPL-*"` or `"proprietary"`. |
+| `checks.dependency-licenses.denied` | list of strings | `[]` | SPDX license ids or globs that fail the check at high. Denied wins over allowed. |
+| `checks.dependency-licenses.includeDev` | boolean | `false` | Also inspect development dependencies (Composer `packages-dev`, npm `dev` and `devOptional`). `--no-dev` and `"includeDev": false` at the top level still leave Composer `packages-dev` out. |
+
+### Dependency licenses
+
+`dependency-licenses` reads the `license` entries of `composer.lock` and `package-lock.json` (lockfileVersion 2 and 3). It sends nothing anywhere. Each package gets one verdict:
+
+1. **Denied** (fail, high): a license matches `denied`.
+2. **Allowed** (no row): a license matches `allowed`.
+3. **Strong copyleft** (warn, medium): GPL, AGPL, SSPL, EUPL, OSL, RPL or Sleepycat. LGPL, MPL, EPL and CDDL are weak copyleft and do not warn.
+4. **Known** (no row): one of the common SPDX ids Excubia knows (MIT, BSD, Apache, ISC, LGPL, MPL and about 35 more).
+5. **Missing or unknown** (warn, low): everything else, such as no license, `UNLICENSED`, `proprietary`, `SEE LICENSE IN …`, an expression that does not parse, or a rarer SPDX id. Add a valid id you accept to `allowed`.
+
+Expressions follow SPDX: `OR` passes when any option passes, `AND` needs every part, parentheses group, and `WITH` exceptions are read as the license they modify. Composer's `license` array is a choice, like `OR`. A `+`, `-only` or `-or-later` suffix is matched both as written and without the suffix, so `"GPL-2.0"` in `allowed` also covers `GPL-2.0-or-later` and `GPL-2.0+`. Globs use `*` for any characters and `?` for exactly one, case-insensitively, against the whole id; only letters, digits, `. + : -` and the two wildcards are allowed.
+
+The JSON report adds a top-level `licenses` inventory with the counts per license and per ecosystem (see the [README](../../README.md#formats)). To accept one package instead of a license, add an `ignore` rule with `checkId` `dependency-licenses` and the package name as `subject`.
 
 ## Ignore rules
 

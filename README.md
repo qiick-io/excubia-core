@@ -75,6 +75,7 @@ vendor/bin/excubia --version
 | `composer-abandoned` | Abandoned packages | Packagist | Abandoned direct dependency (high); abandoned transitive dependency (medium) |
 | `composer-stale` | Stale packages | Packagist, GitHub | Repository archived (high); no release for more than 24 months (low) |
 | `laravel-next-blocker` | Next-major blockers | Packagist | The latest release of a direct dependency does not allow the next Laravel major (medium), or only in a pre-release (low) |
+| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
 | `laravel-debug-mode` | Debug mode | Booted app | `app.debug` on outside `local` / `testing` (high) |
 | `laravel-production-caches` | Production caches | Booted app | Config, route or event cache missing in `production` (low, one row per cache) |
 | `laravel-pending-migrations` | Pending migrations | Migrator | Migrations have not run (medium) |
@@ -88,7 +89,8 @@ vendor/bin/excubia --version
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
 
-- The twelve `laravel-*` posture checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
+- `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
+- The twelve `laravel-*` posture checks after `dependency-licenses` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - For `laravel-scheduler-heartbeat`, the service provider schedules `php artisan excubia:heartbeat` every minute. It stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store. Keep the usual `* * * * * php artisan schedule:run` cron (or `schedule:work`), and use a shared cache store (database, Redis) when the scheduler and `excubia:check` run on different machines.
 - Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements. It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`.
 - Thresholds (180 days, 24 months, 10 minutes, 24 hours) are configurable in [`excubia.json`](./docs/guides/configuration.md#checks). Full severity rules: [`docs/SPEC.md`](./docs/SPEC.md) section 3.
@@ -107,6 +109,7 @@ In the JSON report every `skipped` finding has a `skipReason`: `data-source-fail
 The JSON report also carries, as optional fields of schema version 1:
 
 - top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with `php`, `laravel` and `node`, each `{version, cycle, securitySupportEndsOn, activeSupportEndsOn}` or `null` when not declared (no name, path or hostname). The cycle and the `Y-m-d` dates come from the endoflife.date data the EOL checks already read, also when they pass; they are `null` when that check was skipped or did not run;
+- top level, when `dependency-licenses` ran: `licenses`, the license inventory without package names: `packageCount`, `byLicense` (list of `{license, packageCount}`, `NOASSERTION` for packages that declare none) and `byEcosystem` with the same counts for `composer` and `npm`;
 - per finding: `fingerprint` (sha256 of `checkId`, `subject` and `advisoryId` joined by a NUL byte, the same value as the SARIF `partialFingerprints`, stable across runs), `advisoryId` on advisory findings, and `details` with check-specific values so you do not parse `message`:
 
 | `checkId` | `details` keys |
@@ -117,6 +120,7 @@ The JSON report also carries, as optional fields of schema version 1:
 | `composer-abandoned` | `package`, `lockedVersion`, `replacement` (or `null`) |
 | `composer-stale` | `package`, `lockedVersion` |
 | `laravel-next-blocker` | `package`, `lockedVersion`, `targetMajor` (integer) |
+| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`) |
 | `laravel-pending-migrations` | `count` |
 | `laravel-failed-jobs` | `count`, `oldestAgeHours` (or `null`) |
 | `laravel-scheduler-heartbeat` | `minutesSinceLastRun` (`null`: never ran) |
