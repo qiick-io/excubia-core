@@ -9,14 +9,20 @@ use DateTimeImmutable;
 use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
+use Qiick\Excubia\Checks\LaravelAppKeyCheck;
+use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
 use Qiick\Excubia\Checks\LaravelDebugModeCheck;
+use Qiick\Excubia\Checks\LaravelDevPackagesCheck;
 use Qiick\Excubia\Checks\LaravelEndOfLifeCheck;
 use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
+use Qiick\Excubia\Checks\LaravelLogLevelCheck;
 use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelNextMajorBlockerCheck;
 use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
 use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
+use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
 use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
+use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
 use Qiick\Excubia\Checks\NodeEndOfLifeCheck;
 use Qiick\Excubia\Checks\NpmAdvisoriesCheck;
 use Qiick\Excubia\Checks\PhpEndOfLifeCheck;
@@ -212,6 +218,12 @@ final class HealthCheckRunnerService
             new LaravelFailedJobsCheck,
             new LaravelSchedulerHeartbeatCheck,
             new LaravelMaintenanceModeCheck,
+            new LaravelAppKeyCheck,
+            new LaravelSessionSecurityCheck,
+            new LaravelCorsWildcardCheck,
+            new LaravelProductionDriversCheck,
+            new LaravelLogLevelCheck,
+            new LaravelDevPackagesCheck,
         ];
     }
 }

@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "c39a608a712e9b462221ebd9386b00526d0c0a2908fa00df9521fe36d4282d10"
+            "sha256": "2f23a72a0bb89c2f5e121dca7747f23124d5d6fbb115c5bdb05905f3d54e9485"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -40,7 +40,13 @@
         "laravel-pending-migrations",
         "laravel-failed-jobs",
         "laravel-scheduler-heartbeat",
-        "laravel-maintenance-mode"
+        "laravel-maintenance-mode",
+        "laravel-app-key",
+        "laravel-session-security",
+        "laravel-cors-wildcard",
+        "laravel-production-drivers",
+        "laravel-log-level",
+        "laravel-dev-packages"
     ],
     "sarif": {
         "fingerprintKeys": [

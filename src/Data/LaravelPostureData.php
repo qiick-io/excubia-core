@@ -16,6 +16,9 @@ use DateTimeImmutable;
  * database, no failed job store, cache store down); the check then skips.
  * The standalone CLI cannot boot the app, so there the snapshot carries no
  * posture at all and every posture check is skipped.
+ *
+ * The production posture fields after `collectedAt` default to the safe
+ * value, so a hand-built posture only names what it tests.
  */
 final readonly class LaravelPostureData
 {
@@ -29,6 +32,8 @@ final readonly class LaravelPostureData
      * @param  int|null  $failedJobCount  null when there is no failed job store or it could not be read
      * @param  DateTimeImmutable|null  $oldestFailedJobAt  when the oldest failed job failed; null when none or unknown
      * @param  DateTimeImmutable|null  $schedulerHeartbeatAt  last `excubia:heartbeat` run; null when never written
+     * @param  array<string, string>  $driverNames  driver name per component (`queue`, `cache`, `session`, `mail`) of the default connection, store or mailer; a component is missing when it could not be read
+     * @param  list<string>  $enabledDevelopmentPackageNames  development tool packages (Telescope, Debugbar, …) whose service provider is loaded and whose enable flag is on
      */
     public function __construct(
         public string $environment,
@@ -43,5 +48,14 @@ final readonly class LaravelPostureData
         public bool $isSchedulerHeartbeatReadable,
         public ?DateTimeImmutable $schedulerHeartbeatAt,
         public DateTimeImmutable $collectedAt,
+        public bool $hasApplicationKey = true,
+        public bool $isApplicationUrlHttps = false,
+        public bool $isSessionCookieSecure = true,
+        public bool $isSessionCookieHttpOnly = true,
+        public bool $hasCorsWildcardOrigin = false,
+        public bool $isCorsCredentialSupportEnabled = false,
+        public array $driverNames = [],
+        public bool $isDefaultLogLevelDebug = false,
+        public array $enabledDevelopmentPackageNames = [],
     ) {}
 }

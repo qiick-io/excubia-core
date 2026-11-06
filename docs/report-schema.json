@@ -181,7 +181,7 @@
                     "enum": ["data-source-failure", "offline", "not-applicable"]
                 },
                 "details": {
-                    "description": "Check-specific values, so consumers do not parse message. Present only when the check sets any; the keys per checkId are fixed by the allOf rules of this definition. The private packages skip row of composer-advisories, npm-advisories, composer-abandoned, composer-stale and laravel-next-blocker carries privatePackagesDetails. Other skipped rows, and laravel-debug-mode, laravel-production-caches and laravel-maintenance-mode findings, carry no details.",
+                    "description": "Check-specific values, so consumers do not parse message. Present only when the check sets any; the keys per checkId are fixed by the allOf rules of this definition. The private packages skip row of composer-advisories, npm-advisories, composer-abandoned, composer-stale and laravel-next-blocker carries privatePackagesDetails. Other skipped rows, and laravel-debug-mode, laravel-production-caches, laravel-maintenance-mode, laravel-app-key, laravel-session-security and laravel-log-level findings, carry no details.",
                     "type": "object"
                 }
             },
@@ -373,6 +373,57 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-cors-wildcard"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/corsWildcardDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-production-drivers"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/productionDriversDetails"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-dev-packages"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/devPackagesDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -559,6 +610,46 @@
                     "description": "Whole minutes since the last excubia:heartbeat; null when the scheduler never ran it.",
                     "type": ["integer", "null"],
                     "minimum": 0
+                }
+            }
+        },
+        "corsWildcardDetails": {
+            "description": "laravel-cors-wildcard finding.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hasCredentials"],
+            "properties": {
+                "hasCredentials": {
+                    "description": "True when cors.supports_credentials is on as well (the fail row).",
+                    "type": "boolean"
+                }
+            }
+        },
+        "productionDriversDetails": {
+            "description": "laravel-production-drivers finding, one per component.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["component", "driver"],
+            "properties": {
+                "component": {
+                    "description": "The component whose default driver is meant for local work.",
+                    "enum": ["queue", "cache", "session", "mail"]
+                },
+                "driver": {
+                    "description": "The driver name, always one of the flagged development drivers.",
+                    "enum": ["sync", "array", "null", "log"]
+                }
+            }
+        },
+        "devPackagesDetails": {
+            "description": "laravel-dev-packages finding, one per package.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package"],
+            "properties": {
+                "package": {
+                    "description": "Composer name of the development tool listed in require and enabled.",
+                    "enum": ["laravel/telescope", "barryvdh/laravel-debugbar", "spatie/laravel-ray", "laravel/pail", "itsgoingd/clockwork"]
                 }
             }
         },
