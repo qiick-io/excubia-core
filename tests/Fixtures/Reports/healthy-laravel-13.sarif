@@ -223,6 +223,14 @@
                                 "text": "Platform requirements"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "env-example-sync",
+                            "name": ".env.example sync",
+                            "shortDescription": {
+                                "text": ".env.example sync"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

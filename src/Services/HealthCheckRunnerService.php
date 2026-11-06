@@ -10,6 +10,7 @@ use Qiick\Excubia\Checks\ComposerAbandonedCheck;
 use Qiick\Excubia\Checks\ComposerAdvisoriesCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
 use Qiick\Excubia\Checks\DependencyLicensesCheck;
+use Qiick\Excubia\Checks\EnvExampleSyncCheck;
 use Qiick\Excubia\Checks\LaravelAppKeyCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
 use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
@@ -238,6 +239,7 @@ final class HealthCheckRunnerService
             new LaravelDiskSpaceCheck,
             new LaravelQueueBacklogCheck,
             new PhpPlatformRequirementsCheck($constraints),
+            new EnvExampleSyncCheck,
         ];
     }
 }

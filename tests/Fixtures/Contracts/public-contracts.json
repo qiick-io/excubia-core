@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "acac053848d09d704c71722fa2df8ab7b823c1cb7ef7bf0b6fc305a489a780c1"
+            "sha256": "eb99acac877132d8a1e561e22b0635d4b9503ff0ebb421bf1a82d32b1743de16"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "379c1752f358b30226aed6e566e842f568237db83b65b0e3aca0a30cc58b1160"
+            "sha256": "c5f7255282b2b8ddc1532106eb3e682720a191c9677e99d707ac20fe6a8fe5e3"
         }
     },
     "checkIds": [
@@ -53,7 +53,8 @@
         "laravel-storage",
         "laravel-disk-space",
         "laravel-queue-backlog",
-        "php-platform-requirements"
+        "php-platform-requirements",
+        "env-example-sync"
     ],
     "sarif": {
         "fingerprintKeys": [

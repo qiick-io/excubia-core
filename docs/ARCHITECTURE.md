@@ -37,7 +37,8 @@ qiick-io/excubia-core
 │   │   ├── LaravelStorageCheck.php         (laravel-storage)
 │   │   ├── LaravelDiskSpaceCheck.php       (laravel-disk-space)           # DiskSpaceContract, faked in tests
 │   │   ├── LaravelQueueBacklogCheck.php    (laravel-queue-backlog)
-│   │   └── PhpPlatformRequirementsCheck.php (php-platform-requirements)   # composer.lock vs running PHP, also standalone
+│   │   ├── PhpPlatformRequirementsCheck.php (php-platform-requirements)   # composer.lock vs running PHP, also standalone
+│   │   └── EnvExampleSyncCheck.php         (env-example-sync)             # .env.example vs config/*.php env() keys, names only
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string

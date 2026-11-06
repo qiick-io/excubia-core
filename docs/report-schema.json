@@ -611,6 +611,30 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "env-example-sync"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/$defs/envExampleMissingKeyDetails"
+                                    },
+                                    {
+                                        "$ref": "#/$defs/envExampleUnusedKeysDetails"
+                                    }
+                                ]
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -964,6 +988,45 @@
                 "isStandaloneCli": {
                     "description": "True when vendor/bin/excubia ran the check: its PHP can differ from the app's. False under Artisan.",
                     "type": "boolean"
+                }
+            }
+        },
+        "envExampleMissingKeyDetails": {
+            "description": "env-example-sync finding for a key that config/*.php reads but .env.example does not list, one per key. Key names only, never a value.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "configFiles"],
+            "properties": {
+                "key": {
+                    "description": "Environment variable name read with env() in the config files.",
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "configFiles": {
+                    "description": "Project-relative config files that read the key, such as config/services.php.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string",
+                        "pattern": "^config/[^/]+\\.php$"
+                    }
+                }
+            }
+        },
+        "envExampleUnusedKeysDetails": {
+            "description": "env-example-sync summary row (subject unused keys, severity info) for the keys .env.example lists that no config file reads.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["keys"],
+            "properties": {
+                "keys": {
+                    "description": "The unused key names, sorted. Never a value.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    }
                 }
             }
         },

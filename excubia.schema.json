@@ -166,6 +166,24 @@
                             "description": "Redis only: queue names read on top of the default queue of the default connection. The database driver reads every queue in its table. Default none."
                         }
                     }
+                },
+                "env-example-sync": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "ignoreKeys": {
+                            "type": "array",
+                            "description": "Environment key names or globs (* any characters, ? exactly one, case-insensitive) that env-example-sync never reports, neither as missing from .env.example nor as unused. Added to the default list of optional Laravel keys (AWS_*, PUSHER_*, VITE_*, MEMCACHED_*, REDIS_CLIENT, ...) unless useDefaultIgnoreKeys is false. Default [].",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_*?]+$"
+                            }
+                        },
+                        "useDefaultIgnoreKeys": {
+                            "type": "boolean",
+                            "description": "Keep the default list of optional Laravel keys. false makes ignoreKeys replace it. Default true."
+                        }
+                    }
                 }
             }
         },
