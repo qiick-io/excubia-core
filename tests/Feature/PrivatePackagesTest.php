@@ -95,7 +95,7 @@ function privatePackagesRun(FakeHttpClient $client): array
     $result = (new HealthCheckRunnerService($client, new DateTimeImmutable('2026-11-03', new DateTimeZone('UTC'))))->run(
         $root,
         $configuration,
-        ['composer-advisories', 'npm-advisories', 'composer-abandoned', 'composer-stale', 'laravel-next-blocker'],
+        ['composer-advisories', 'npm-advisories', 'composer-abandoned', 'composer-stale', 'laravel-next-blocker', 'composer-outdated'],
         null,
         false,
         true,
@@ -202,6 +202,9 @@ it('reports the private packages as one not-applicable skipped row per check', f
         ->and(privateSkipFinding($checks['composer-abandoned'])->message)->toBe('6 private packages not sent to Packagist: '.$composerNames.'.')
         ->and(privateSkipFinding($checks['composer-stale'])->message)->toBe('6 private packages not sent to Packagist or GitHub: '.$composerNames.'.')
         ->and(privateSkipFinding($checks['laravel-next-blocker'])->message)->toBe('2 private packages not sent to Packagist: acme/path-package, acme/satis-package.')
+        ->and(privateSkipFinding($checks['composer-outdated'])->message)->toBe('2 private packages not sent to Packagist: acme/path-package, acme/satis-package.')
+        ->and(privateSkipFinding($checks['composer-outdated'])->skipReason)->toBe(SkipReasonEnum::NotApplicable)
+        ->and(array_map(static fn (FindingData $finding): string => $finding->subject, $checks['composer-outdated']->findings))->toBe(['private packages', 'laravel/framework', 'symfony/console'])
         ->and(privateSkipFinding($checks['npm-advisories'])->message)->toBe('5 private packages not sent to OSV.dev: @acme/linked, @acme/ui, @acme/tarball, @corp/registry, @scope/hidden.')
         ->and((new JsonReportRenderer)->render($run['report']))->toContain('"skipReason": "not-applicable"');
 });

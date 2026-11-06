@@ -14,9 +14,16 @@ use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
  *
  * Advisories go out as one request for every package name. Metadata is one
  * request per package because that is the p2 API. Only names are sent.
+ * Parsed metadata is kept for the run, so the checks that read it
+ * (`composer-abandoned`, `composer-stale`, `laravel-next-blocker`,
+ * `composer-outdated`) share one request per package even when the response
+ * cache is bypassed.
  */
 final class PackagistApiService
 {
+    /** @var array<string, list<PackagistVersionData>> */
+    private array $versionsByPackageName = [];
+
     public function __construct(
         private readonly HttpClientContract $httpClient,
         private readonly ResponseCacheService $responseCache,
@@ -95,18 +102,18 @@ final class PackagistApiService
             throw new DataSourceUnavailableException('packagist', 'Package name is not a Composer package.');
         }
 
+        if (isset($this->versionsByPackageName[$packageName])) {
+            return $this->versionsByPackageName[$packageName];
+        }
+
         $url = 'https://repo.packagist.org/p2/'.$packageName.'.json';
         $document = $this->responseCache->remember($url, fn (): array => $this->httpClient->getJson($url));
         $packages = $document['packages'] ?? null;
 
-        if (! is_array($packages)) {
-            return [];
-        }
-
-        $published = $packages[$packageName] ?? null;
+        $published = is_array($packages) ? ($packages[$packageName] ?? null) : null;
 
         if (! is_array($published)) {
-            return [];
+            return $this->versionsByPackageName[$packageName] = [];
         }
 
         $versions = [];
@@ -140,7 +147,7 @@ final class PackagistApiService
             );
         }
 
-        return $versions;
+        return $this->versionsByPackageName[$packageName] = $versions;
     }
 
     /**

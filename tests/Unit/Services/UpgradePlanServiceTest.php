@@ -107,6 +107,35 @@ it('uses the locked major plus one rather than a fixed Laravel 13', function () 
         ->and($service->nextLaravelMajor(null))->toBeNull();
 });
 
+it('ends with one latest-patch step for outdated packages without an advisory', function () {
+    $outdated = static fn (string $package, ?string $latestPatch, FindingStatusEnum $status = FindingStatusEnum::Warn): FindingData => new FindingData(
+        checkId: 'composer-outdated',
+        severity: SeverityEnum::Info,
+        status: $status,
+        subject: $package,
+        message: 'Behind.',
+        fixHint: 'Update.',
+        evidenceUrl: null,
+        details: ['package' => $package, 'lockedVersion' => '1.0.0', 'latestPatch' => $latestPatch, 'latestMinor' => null, 'latestMajor' => null, 'isMajorBehind' => false],
+    );
+    $snapshot = new ProjectSnapshotData(null, null, [], [], null);
+
+    expect(planMessages($snapshot, [
+        $outdated('vendor/patched', '1.0.3'),
+        $outdated('vendor/vulnerable', '1.0.5'),
+        $outdated('vendor/minor-only', null),
+        $outdated('vendor/ignored', '1.0.1', FindingStatusEnum::Pass),
+        $outdated('vendor/second', 'v2.4.9'),
+        planFinding('composer-abandoned', FindingStatusEnum::Warn, 'Replace with vendor/other.', 'vendor/old'),
+        planFinding('composer-advisories', FindingStatusEnum::Fail, 'Update vendor/vulnerable to 1.0.5.', 'vendor/vulnerable', 'GHSA-1'),
+    ]))->toBe([
+        '1. Update vendor/vulnerable to 1.0.5.',
+        '2. vendor/old is abandoned. Replace with vendor/other.',
+        '3. Update to the latest patch: vendor/patched 1.0.3, vendor/second v2.4.9.',
+    ])
+        ->and(planMessages($snapshot, [$outdated('vendor/minor-only', null)]))->toBe([]);
+});
+
 it('does not change the exit code', function () {
     $steps = (new UpgradePlanService)->plan(
         new ProjectSnapshotData(null, 'v12.0.0', [], [], null),

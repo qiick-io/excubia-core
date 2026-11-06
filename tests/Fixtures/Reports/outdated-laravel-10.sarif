@@ -231,6 +231,14 @@
                                 "text": ".env.example sync"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "composer-outdated",
+                            "name": "Outdated packages",
+                            "shortDescription": {
+                                "text": "Outdated packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

@@ -206,6 +206,8 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-disk-space', ['usedPercent' => 91]),
         $finding('laravel-queue-backlog', ['queue' => 'default', 'pendingCount' => 1200, 'oldestAgeMinutes' => null]),
         $finding('php-platform-requirements', ['requirement' => 'ext-intl', 'requiredBy' => ['laravel/framework'], 'checkedPhpVersion' => '8.4.1', 'isStandaloneCli' => true]),
+        $finding('composer-outdated', $package + ['latestPatch' => '1.0.3', 'latestMinor' => '1.2.0', 'latestMajor' => null, 'isMajorBehind' => false]),
+        $finding('composer-outdated', ['count' => 2]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
@@ -214,8 +216,13 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-storage', ['directory' => '/srv/app/storage']),
     ]);
 
+    $invalidOutdated = $render([
+        $finding('composer-outdated', $package + ['latestPatch' => null, 'latestMinor' => null, 'latestMajor' => '2.0.0', 'isMajorBehind' => true, 'path' => '/srv/app']),
+    ]);
+
     expect(reportSchemaErrors($valid))->toBe([])
-        ->and(reportSchemaErrors($invalid))->not->toBe([]);
+        ->and(reportSchemaErrors($invalid))->not->toBe([])
+        ->and(reportSchemaErrors($invalidOutdated))->not->toBe([]);
 });
 
 /**

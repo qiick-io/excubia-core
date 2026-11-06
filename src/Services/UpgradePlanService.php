@@ -13,10 +13,12 @@ use Qiick\Excubia\Enums\FindingStatusEnum;
  * Turns findings into numbered upgrade steps.
  *
  * Order is security fixes, PHP end of life, next-major blockers, the Laravel
- * major, then stale and abandoned replacements. Steps are grouped so the plan
- * reads as one list: one step per vulnerable package, one step naming every
- * next-major blocker, one step per abandoned package and one step for all
- * stale packages. Identical steps are dropped. The next Laravel major is the
+ * major, stale and abandoned replacements, then patch updates. Steps are
+ * grouped so the plan reads as one list: one step per vulnerable package, one
+ * step naming every next-major blocker, one step per abandoned package, one
+ * step for all stale packages and one step for every direct dependency that
+ * is behind on a patch and has no advisory (`composer-outdated`). Identical
+ * steps are dropped. The next Laravel major is the
  * locked major plus one. Steps are informational and are not findings, so
  * they never change the exit code. node-eol is not in this order.
  */
@@ -43,6 +45,10 @@ final class UpgradePlanService
             ...$this->replacementMessages(
                 $this->findingsFor($actionableFindings, ['composer-abandoned']),
                 $this->findingsFor($actionableFindings, ['composer-stale']),
+            ),
+            ...$this->patchUpdateMessages(
+                $this->findingsFor($actionableFindings, ['composer-outdated']),
+                $this->findingsFor($actionableFindings, ['composer-advisories']),
             ),
         ];
         $steps = [];
@@ -168,6 +174,36 @@ final class UpgradePlanService
         }
 
         return $messages;
+    }
+
+    /**
+     * One step naming the newest patch of every outdated package that has
+     * no advisory finding; a vulnerable package already has its own step.
+     *
+     * @param  list<FindingData>  $outdatedFindings
+     * @param  list<FindingData>  $advisoryFindings
+     * @return list<string>
+     */
+    private function patchUpdateMessages(array $outdatedFindings, array $advisoryFindings): array
+    {
+        $vulnerablePackages = array_map(static fn (FindingData $finding): string => $finding->subject, $advisoryFindings);
+        $updates = [];
+
+        foreach ($outdatedFindings as $finding) {
+            $latestPatch = $finding->details['latestPatch'] ?? null;
+
+            if (! is_string($latestPatch) || in_array($finding->subject, $vulnerablePackages, true)) {
+                continue;
+            }
+
+            $updates[] = $finding->subject.' '.$latestPatch;
+        }
+
+        if ($updates === []) {
+            return [];
+        }
+
+        return ['Update to the latest patch: '.implode(', ', $updates).'.'];
     }
 
     /**
