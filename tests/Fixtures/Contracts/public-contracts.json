@@ -13,7 +13,7 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "2f8b2e1a5b26e27685244de04e10aaab613e29312408a38e74cbe490afefaed1"
+            "sha256": "47f88caf684ceb2d0559f4b9ab961c2fdf0a673fbda630a7db0f572c9f861983"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
@@ -171,7 +171,20 @@
             "runtime",
             "exceptions"
         ],
-        "runtimeBucketSeconds": 60
+        "runtimeBucketSeconds": 60,
+        "runtimeHistogramBoundsMs": [
+            5,
+            10,
+            25,
+            50,
+            100,
+            250,
+            500,
+            1000,
+            2500,
+            5000,
+            10000
+        ]
     },
     "healthEndpoint": {
         "secretHeader": "oh-dear-health-check-secret",

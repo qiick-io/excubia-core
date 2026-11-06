@@ -279,6 +279,36 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
         ->and(runtimeSchemaErrors($runtimePayload))->toBe([])
         ->and(collect($runtimePayload['aggregates'])->firstWhere('type', 'notification')['notification'])->toBe(Notification::class.'@anonymous')
         ->and(json_encode($runtimePayload, JSON_THROW_ON_ERROR))->not->toContain('someone@example.test');
+
+    foreach ($runtimePayload['aggregates'] as $aggregate) {
+        expect(array_key_exists('histogram', $aggregate))->toBe(array_key_exists('maxMs', $aggregate));
+
+        if (isset($aggregate['histogram'])) {
+            expect(array_sum($aggregate['histogram']))->toBe($aggregate['count']);
+        }
+    }
+});
+
+it('sends each batch with histograms that add up to count, and the schema rejects one with other buckets', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client);
+    recordOneRequest($this);
+    $this->get('/dashboard')->assertOk();
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+    $this->get('/dashboard')->assertOk();
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $first = $client->postedPayloads[0]['runtime'];
+    $second = $client->postedPayloads[1]['runtime'];
+    $broken = $first;
+    $broken['aggregates'][0]['histogram'] = [1, 0, 0];
+
+    expect($first['aggregates'][0])->toMatchArray(['type' => 'request', 'count' => 2])
+        ->and(array_sum($first['aggregates'][0]['histogram']))->toBe(2)
+        ->and(array_sum($second['aggregates'][0]['histogram']))->toBe($second['aggregates'][0]['count'])
+        ->and(runtimeSchemaErrors($first))->toBe([])
+        ->and(runtimeSchemaErrors($second))->toBe([])
+        ->and(runtimeSchemaErrors($broken))->not->toBe([]);
 });
 
 it('registers excubia:push-runtime', function () {
