@@ -350,6 +350,20 @@ it('sends one server sample per run, named by runtime.server.name, before the bu
         ->and(runtimeSchemaErrors($first))->toBe([]);
 });
 
+it('sends the container limits of a server sample, valid against the schema (#173)', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => ['enabled' => true, 'name' => 'web-1']]]);
+    $this->app->instance(ServerResourcesContract::class, new FakeServerResources(memory: ['usedBytes' => 629145600, 'totalBytes' => 1073741824], cpuLimit: 1.5, isContainer: true));
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtime = $client->postedPayloads[0]['runtime'];
+
+    expect($runtime['aggregates'][0])->toMatchArray(['type' => 'server', 'cpuCores' => 4, 'cpuLimit' => 1.5, 'memoryUsedMb' => 600, 'memoryTotalMb' => 1024, 'isContainer' => true])
+        ->and(runtimeSchemaErrors($runtime))->toBe([])
+        ->and(runtimeSchemaErrors(['aggregates' => [[...$runtime['aggregates'][0], 'isContainer' => 'yes']]] + $runtime))->not->toBe([]);
+});
+
 it('names the server from EXCUBIA_SERVER_NAME over runtime.server.name', function () {
     putenv('EXCUBIA_SERVER_NAME=web-2');
     $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);

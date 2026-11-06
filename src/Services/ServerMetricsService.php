@@ -11,7 +11,9 @@ use Qiick\Excubia\Enums\RuntimeTypeEnum;
 /**
  * One `server` runtime aggregate (#149): load averages, CPU cores, memory
  * and the disk that holds `storage/`, taken once per `excubia:push-runtime`
- * run. A value the platform does not expose is null.
+ * run. A value the platform does not expose is null. Inside a container
+ * with cgroup limits (#173), memory is the container's, `cpuLimit` holds
+ * the CPU quota in cores and `isContainer` is true.
  *
  * The server is identified by `runtime.server.name`, else by a stable,
  * non-reversible id (`serverIdentity()`); the hostname and the measured
@@ -57,10 +59,12 @@ final class ServerMetricsService
             'loadAverage5' => $loadAverages === null ? null : round($loadAverages[1], 2),
             'loadAverage15' => $loadAverages === null ? null : round($loadAverages[2], 2),
             'cpuCores' => $this->resources->cpuCoreCount(),
+            'cpuLimit' => $this->resources->cpuLimit(),
             'memoryUsedMb' => $memory === null ? null : intdiv($memory['usedBytes'], self::MEBIBYTE),
             'memoryTotalMb' => $memory === null ? null : intdiv($memory['totalBytes'], self::MEBIBYTE),
             'diskUsedGb' => $disk === null ? null : round($disk['usedBytes'] / self::GIBIBYTE, 2),
             'diskTotalGb' => $disk === null ? null : round($disk['totalBytes'] / self::GIBIBYTE, 2),
+            'isContainer' => $this->resources->isContainer(),
         ];
     }
 

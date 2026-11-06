@@ -24,9 +24,21 @@ interface ServerResourcesContract
     public function cpuCoreCount(): ?int;
 
     /**
-     * Used and total memory in bytes, or null.
+     * Used and total memory in bytes, or null. Inside a container with a
+     * memory limit, the container's (#173).
      *
      * @return array{usedBytes: int, totalBytes: int}|null
      */
     public function memory(): ?array;
+
+    /**
+     * Effective CPU cores from a container CPU quota (quota / period, may
+     * be fractional such as 1.5), or null without a quota (#173).
+     */
+    public function cpuLimit(): ?float;
+
+    /**
+     * Whether a container (cgroup) memory or CPU limit applies (#173).
+     */
+    public function isContainer(): bool;
 }

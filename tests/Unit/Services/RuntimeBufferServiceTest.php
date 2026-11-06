@@ -114,6 +114,35 @@ it('keeps the larger reading of each server gauge per server and bucket, whateve
         ->and($reversed)->toEqual([$aggregates[0]]);
 });
 
+it('merges isContainer with OR and the cpuLimit gauge by the larger value, also with entries written before #173, without making them dimensions', function () {
+    $sample = static fn (array $fields): array => [
+        'type' => 'server',
+        'bucket' => '2026-11-03T10:15:00Z',
+        'sampleRate' => 1.0,
+        'server' => 'web-1',
+        'count' => 1,
+        'errorCount' => 0,
+        'cpuCores' => 4,
+        ...$fields,
+    ];
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([$sample(['cpuLimit' => null, 'isContainer' => false]), $sample(['cpuLimit' => 1.5, 'isContainer' => true]), $sample([])]);
+
+    $aggregates = $buffer->read($buffer->claimBatches()[0]['path']);
+
+    expect($aggregates)->toHaveCount(1)
+        ->and($aggregates[0])->toMatchArray(['count' => 3, 'cpuLimit' => 1.5, 'isContainer' => true])
+        ->and(RuntimeBufferService::merge([$sample(['isContainer' => false]), $sample([])]))->toEqual([[...$sample(['isContainer' => false]), 'count' => 2]])
+        ->and(RuntimeBufferService::mergeKey($sample(['isContainer' => true])))->toBe(RuntimeBufferService::mergeKey($sample([])));
+});
+
+it('skips lines whose isContainer is not a boolean', function () {
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([bufferedAggregate('home'), [...bufferedAggregate('broken'), 'isContainer' => 'yes']]);
+
+    expect(array_column($buffer->read($buffer->claimBatches()[0]['path']), 'route'))->toBe(['home']);
+});
+
 it('skips lines whose server gauge is not a number or null', function () {
     $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
     $buffer->append([bufferedAggregate('home'), [...bufferedAggregate('broken'), 'cpuCores' => '4']]);
