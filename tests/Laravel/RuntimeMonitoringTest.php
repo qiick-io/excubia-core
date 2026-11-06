@@ -394,6 +394,75 @@ it('aggregates outgoing HTTP by host and status class only', function () {
     }
 });
 
+const TIMED_RUNTIME_TYPES = ['request', 'slowQuery', 'job', 'scheduledTask', 'outgoingHttp', 'queueWait'];
+
+/**
+ * A histogram with these counts per bucket index and zero elsewhere.
+ *
+ * @param  array<int, int>  $counts
+ * @return list<int>
+ */
+function runtimeHistogram(array $counts): array
+{
+    return array_replace(array_fill(0, count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1, 0), $counts);
+}
+
+it('puts each duration in the first bucket whose upper bound holds it, else in the overflow bucket', function (float $durationMs, int $bucket) {
+    expect(RuntimeTypeEnum::histogramBucket($durationMs))->toBe($bucket);
+})->with([
+    '0 ms' => [0.0, 0],
+    'on the first bound' => [5.0, 0],
+    'just above the first bound' => [5.001, 1],
+    'inside 25-50' => [30.0, 3],
+    'on the last bound' => [10000.0, 10],
+    'above the last bound' => [10000.001, 11],
+]);
+
+it('emits a latency histogram that adds up to count on every timed type, also merged across flushes', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'slowQueries' => ['thresholdMs' => 0], 'queueWait' => ['enabled' => true], 'requestMemory' => ['enabled' => true]]);
+    config(['queue.default' => 'sync']);
+    Route::get('/timed', fn () => 'ok')->name('timed');
+    Http::fake(['api.example.test/*' => Http::response(['ok' => true])]);
+    $task = $this->app->make(Schedule::class)->command('inspire');
+    $connection = DB::connection();
+
+    for ($round = 0; $round < 2; $round++) {
+        $this->get('/timed')->assertOk();
+        event(new QueryExecuted('select 1', [], 3.0, $connection));
+        event(new QueryExecuted('select 1', [], 30.0, $connection));
+        RuntimeMonitoringTestJob::dispatch();
+        event(new ScheduledTaskFinished($task, 0.25));
+        event(new ScheduledTaskFinished($task, 12.0));
+        Http::get('https://api.example.test/ping');
+        $this->app->terminate();
+    }
+
+    $lines = collect(bufferedRuntime($this->app));
+    $merged = collect(RuntimeBufferService::merge($lines->all()))->keyBy('type');
+
+    expect($merged->keys()->intersect(TIMED_RUNTIME_TYPES)->values()->all())->toEqualCanonicalizing(TIMED_RUNTIME_TYPES)
+        ->and($lines->whereIn('type', TIMED_RUNTIME_TYPES)->count())->toBeGreaterThan(count(TIMED_RUNTIME_TYPES));
+
+    foreach ($lines->whereIn('type', TIMED_RUNTIME_TYPES) as $line) {
+        expect($line['histogram'])->toHaveCount(count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1)
+            ->and(array_sum($line['histogram']))->toBe($line['count']);
+    }
+
+    foreach (TIMED_RUNTIME_TYPES as $type) {
+        expect(array_sum($merged[$type]['histogram']))->toBe($merged[$type]['count']);
+    }
+
+    expect($merged['slowQuery']['count'])->toBe(4)
+        ->and($merged['slowQuery']['histogram'])->toBe(runtimeHistogram([0 => 2, 3 => 2]))
+        ->and($merged['scheduledTask']['count'])->toBe(4)
+        ->and($merged['scheduledTask']['histogram'])->toBe(runtimeHistogram([5 => 2, 11 => 2]))
+        ->and($merged['job']['count'])->toBe(2)
+        ->and($merged['queueWait']['count'])->toBe(2)
+        ->and($merged['request']['count'])->toBe(2)
+        ->and($merged['outgoingHttp']['count'])->toBe(2)
+        ->and($merged['requestMemory'])->not->toHaveKey('histogram');
+});
+
 it('records nothing for a type with sample rate 0', function () {
     bootRuntimeProject($this->app, ['enabled' => true, 'requests' => ['sampleRate' => 0]]);
     Route::get('/sampled', fn () => 'ok');

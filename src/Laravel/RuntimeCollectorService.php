@@ -39,11 +39,12 @@ use WeakMap;
  * Opt-in runtime aggregates (`docs/runtime-schema.json`, SPEC section 13).
  *
  * Listens to Laravel events, aggregates in memory per type, dimensions and
- * UTC minute (counts, and total and maximum milliseconds or megabytes where
- * the type has them) and writes the aggregates to the local buffer when the
- * request or command terminates, and after each queued job or scheduled task
- * (a queue worker terminates only when it stops). Nothing is sent from here:
- * `excubia:push-runtime` sends the buffer.
+ * UTC minute (counts, total and maximum milliseconds or megabytes where the
+ * type has them, and a latency histogram for durations) and writes the
+ * aggregates to the local buffer when the request or command terminates,
+ * and after each queued job or scheduled task (a queue worker terminates only
+ * when it stops). Nothing is sent from here: `excubia:push-runtime` sends
+ * the buffer.
  *
  * What is kept: route names (or `unnamed`), HTTP methods and status classes,
  * SQL text without bindings (quoted literals masked) and the connection name,
@@ -702,13 +703,19 @@ final class RuntimeCollectorService
     }
 
     /**
+     * One timed event: its duration in `totalMs` and `maxMs`, and one count
+     * in its latency histogram bucket (#147), so the histogram always adds
+     * up to `count`.
+     *
      * @param  array<string, string>  $dimensions
      */
     private function add(RuntimeTypeEnum $type, array $dimensions, float $durationMs, bool $isError): void
     {
         $durationMs = round(max($durationMs, 0.0), 3);
+        $histogram = array_fill(0, count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1, 0);
+        $histogram[RuntimeTypeEnum::histogramBucket($durationMs)]++;
 
-        $this->record($type, $dimensions, ['errorCount' => $isError ? 1 : 0, 'totalMs' => $durationMs, 'maxMs' => $durationMs]);
+        $this->record($type, $dimensions, ['errorCount' => $isError ? 1 : 0, 'totalMs' => $durationMs, 'maxMs' => $durationMs, 'histogram' => $histogram]);
     }
 
     /**
@@ -727,7 +734,7 @@ final class RuntimeCollectorService
      * says otherwise.
      *
      * @param  array<string, string>  $dimensions
-     * @param  array<string, int|float>  $metrics
+     * @param  array<string, int|float|list<int>>  $metrics
      */
     private function record(RuntimeTypeEnum $type, array $dimensions, array $metrics): void
     {

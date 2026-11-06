@@ -12,9 +12,22 @@ namespace Qiick\Excubia\Enums;
  * The five types of 1.0.0-beta.1 are on by default once `runtime.enabled`
  * is true. The types added in 1.0.0-beta.2 (#132, #133) are off by default,
  * so an excubia-app that does not know them yet never receives them.
+ *
+ * The duration types (`request`, `slowQuery`, `job`, `scheduledTask`,
+ * `outgoingHttp`, `queueWait`) also carry a latency `histogram` (#147) with
+ * the bucket bounds below, a public contract (`docs/CONTRACTS.md`).
  */
 enum RuntimeTypeEnum: string
 {
+    /**
+     * Upper bounds, in milliseconds and inclusive, of the latency histogram
+     * buckets (#147). The histogram has one more bucket for durations above
+     * the last bound, so it holds `count(HISTOGRAM_BOUNDS_MS) + 1` counts.
+     * Fixed and the same for every type, so histograms always add up
+     * element by element; changing them is a contract change.
+     */
+    public const HISTOGRAM_BOUNDS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
     case Request = 'request';
     case SlowQuery = 'slowQuery';
     case Job = 'job';
@@ -61,5 +74,20 @@ enum RuntimeTypeEnum: string
             self::Request, self::SlowQuery, self::Job, self::ScheduledTask, self::OutgoingHttp => true,
             default => false,
         };
+    }
+
+    /**
+     * Index of the histogram bucket a duration falls into: the first bucket
+     * whose upper bound is at or above it, else the overflow bucket.
+     */
+    public static function histogramBucket(float $durationMs): int
+    {
+        foreach (self::HISTOGRAM_BOUNDS_MS as $index => $upperBoundMs) {
+            if ($durationMs <= $upperBoundMs) {
+                return $index;
+            }
+        }
+
+        return count(self::HISTOGRAM_BOUNDS_MS);
     }
 }
