@@ -131,7 +131,7 @@ The JSON report also carries, as optional fields of schema version 1:
 
 ```
 vendor/bin/excubia check [path] [options]
-vendor/bin/excubia push [path] [--config=FILE] [--strict]
+vendor/bin/excubia push [path] [--config=FILE] [--strict] [--deploy]
 vendor/bin/excubia cache:clear [path] [--config=FILE]
 ```
 
@@ -150,6 +150,7 @@ vendor/bin/excubia cache:clear [path] [--config=FILE]
 | `--config=FILE` | all | Config file (default: `excubia.json` in the project, if present). A missing explicit file is an error |
 | `--no-banner` | `check` | Hide the ASCII banner |
 | `--strict` | `check`, `push` | Exit `3` when a data-source failure skipped a check; `push` then sends nothing. Same as `"strict": true` |
+| `--deploy` | `push` | Mark the report as a deploy: it carries `deployedAt` next to its `release`, so `excubia-app` draws a deploy marker. Run it as the post-deploy step ([CI guide](./docs/guides/ci.md#deploy-markers)) |
 | `-q`, `-v`, `-vv` | all | Quiet, verbose, debug. From `-v` every HTTP request is listed on stderr |
 | `--version` | | Print the Excubia version |
 
@@ -158,7 +159,7 @@ The Artisan commands take the same options, without `path` (they always scan the
 | Artisan command | Options | What it does |
 | --- | --- | --- |
 | `php artisan excubia:check` | as `check` | Runs every check, posture checks included |
-| `php artisan excubia:push` | `--config`, `--strict` | Runs the checks and sends the report to your `excubia-app` ([guide](./docs/guides/excubia-app.md)) |
+| `php artisan excubia:push` | `--config`, `--strict`, `--deploy` | Runs the checks and sends the report to your `excubia-app` ([guide](./docs/guides/excubia-app.md)) |
 | `php artisan excubia:push-runtime` | `--config` | Sends the buffered runtime aggregates and exceptions ([guide](./docs/guides/runtime-monitoring.md)). Scheduled every minute when an opt-in is on |
 | `php artisan excubia:heartbeat` | | Stores the scheduler heartbeat. Scheduled every minute by the provider |
 
@@ -198,7 +199,7 @@ Excubia works without configuration. To change defaults, add `excubia.json` at t
 }
 ```
 
-Unknown keys are a configuration error (exit `2`). Every key, type and default, and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`), are in the [configuration reference](./docs/guides/configuration.md). Put the push token in `EXCUBIA_APP_TOKEN`, not in `excubia.json`, which is normally committed; Excubia warns when `app.token` is set in the file. JSON Schema: [`excubia.schema.json`](./excubia.schema.json).
+Unknown keys are a configuration error (exit `2`). Every key, type and default, and the environment variables (`EXCUBIA_APP_URL`, `EXCUBIA_APP_TOKEN`, `EXCUBIA_RELEASE`, `EXCUBIA_HEALTH_SECRET`, `GITHUB_TOKEN`), are in the [configuration reference](./docs/guides/configuration.md). Put the push token in `EXCUBIA_APP_TOKEN`, not in `excubia.json`, which is normally committed; Excubia warns when `app.token` is set in the file. JSON Schema: [`excubia.schema.json`](./excubia.schema.json).
 
 ## Guides
 

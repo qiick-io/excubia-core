@@ -30,6 +30,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * `--strict`, a data source failure skipped a check (nothing is sent).
  * `EXCUBIA_APP_URL` / `EXCUBIA_APP_TOKEN` win over the `app` keys of
  * `excubia.json`, so CI can override a committed file.
+ * `--deploy` marks the report as a deploy: it carries `deployedAt` (the
+ * push time) next to its `release`, so the app can draw a deploy marker.
  */
 final class PushCommand extends Command
 {
@@ -54,7 +56,8 @@ final class PushCommand extends Command
             ->setDescription('Run the checks and send the report to your excubia-app.')
             ->addArgument('path', InputArgument::OPTIONAL, 'Project directory')
             ->addOption('config', null, InputOption::VALUE_REQUIRED, 'Config file')
-            ->addOption('strict', null, InputOption::VALUE_NONE, 'Do not send, exit 3, when a data source failure skipped a check');
+            ->addOption('strict', null, InputOption::VALUE_NONE, 'Do not send, exit 3, when a data source failure skipped a check')
+            ->addOption('deploy', null, InputOption::VALUE_NONE, 'Mark the report as a deploy (adds deployedAt)');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -64,7 +67,7 @@ final class PushCommand extends Command
 
         return $this->runWithOptions(
             is_string($path) ? $path : null,
-            ['config' => is_string($config) ? $config : null, 'strict' => (bool) $input->getOption('strict')],
+            ['config' => is_string($config) ? $config : null, 'strict' => (bool) $input->getOption('strict'), 'deploy' => (bool) $input->getOption('deploy')],
             $output,
         );
     }
@@ -74,12 +77,13 @@ final class PushCommand extends Command
      * source failed stops the push before anything is sent: the app would
      * otherwise store an incomplete report as if it were the full picture.
      *
-     * @param  array{config?: string|null, strict?: bool}  $options
+     * @param  array{config?: string|null, strict?: bool, deploy?: bool}  $options
      */
     public function runWithOptions(?string $path, array $options, OutputInterface $output): int
     {
         $now = $this->now ?? new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $checkCommand = new CheckCommand($this->httpClient, $now, $this->reportListener, $this->laravelPosture);
+        $checkCommand = new CheckCommand($this->httpClient, $now, $this->reportListener, $this->laravelPosture, $this->environment);
+        $isDeploy = $options['deploy'] ?? false;
 
         try {
             $scan = $checkCommand->scan($path, ['config' => $options['config'] ?? null, 'strict' => $options['strict'] ?? false], $output);
@@ -91,8 +95,14 @@ final class PushCommand extends Command
                 return ExitCodeEnum::DataSourceFailure->value;
             }
 
+            $report = $isDeploy ? $scan['report']->withDeployedAt($now) : $scan['report'];
+
+            if ($isDeploy && $report->release === null) {
+                CheckCommand::writeError($output, 'No release identifier was found, so the deploy marker has none. Set EXCUBIA_RELEASE or release in excubia.json.');
+            }
+
             $batchId = (new ReportPushService($checkCommand->httpClient($output)))->push(
-                $scan['report'],
+                $report,
                 $this->environmentValue('EXCUBIA_APP_URL') ?? $scan['configuration']->appUrl,
                 $this->environmentValue('EXCUBIA_APP_TOKEN') ?? $scan['configuration']->appToken,
                 $now,
@@ -107,7 +117,7 @@ final class PushCommand extends Command
             return ExitCodeEnum::DataSourceFailure->value;
         }
 
-        $output->writeln('Report sent to excubia-app (batch '.$batchId.').');
+        $output->writeln(($isDeploy ? 'Deploy marker and report' : 'Report').' sent to excubia-app (batch '.$batchId.').');
 
         return self::SUCCESS;
     }

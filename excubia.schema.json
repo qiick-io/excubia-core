@@ -129,6 +129,12 @@
                 }
             }
         },
+        "release": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9._+/@-]+$",
+            "description": "Release identifier sent with reports, runtime and exception batches. Wins over EXCUBIA_RELEASE and the CI and platform variables. Up to 100 characters of A-Z a-z 0-9 . _ + / @ -; any other value is reported as no release."
+        },
         "app": {
             "type": "object",
             "additionalProperties": false,

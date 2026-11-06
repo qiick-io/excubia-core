@@ -54,6 +54,22 @@ How it works:
 - `excubia.json` in `path` is read as usual, so ignore rules and thresholds apply.
 - Pin the action to a commit SHA if your policy requires it.
 
+## Deploy markers
+
+Run `excubia push --deploy` as the step after the deploy. It sends the report like `excubia push`, plus `deployedAt`, so `excubia-app` draws a deploy marker and can show what changed with that release ("this exception started with release X", "slow requests doubled after the deploy").
+
+```yaml
+# GitHub Actions, after the deploy step
+- run: vendor/bin/excubia push --deploy
+  env:
+    EXCUBIA_APP_URL: ${{ vars.EXCUBIA_APP_URL }}
+    EXCUBIA_APP_TOKEN: ${{ secrets.EXCUBIA_APP_TOKEN }}
+```
+
+On the server, `php artisan excubia:push --deploy` as the last line of the deploy script does the same and includes the posture checks.
+
+The release comes from `release` in `excubia.json`, `EXCUBIA_RELEASE`, or the variable the platform already sets (`GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`); `vendor/bin/excubia` falls back to the commit in the project's `.git`, read from the files without running `git`. Order and rules: [release identifier](./configuration.md#release-identifier). Without any of them the marker has no release and a warning goes to stderr. Set `EXCUBIA_RELEASE` in the environment of the app as well, so runtime and exception batches carry the same release.
+
 ## SARIF
 
 `--format=sarif` writes a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log:

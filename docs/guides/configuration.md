@@ -64,6 +64,18 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
 | `failOn` | `critical`, `high`, `medium`, `low` or `none` | `high` | A finding at or above this severity makes `check` exit `1`. `none` never fails on findings. `--fail-on` wins. |
 | `includeDev` | boolean | `true` | Scan `packages-dev` too. `--no-dev` sets it to `false`. |
 | `strict` | boolean | `false` | Exit `3` when a check was skipped because a data source failed; `push` then sends nothing. Same as `--strict`, which wins over `false`. |
+| `release` | string | — | Release identifier of the deployed code, sent as `release` with reports, runtime and exception batches (see [release identifier](#release-identifier)). Wins over `EXCUBIA_RELEASE` and the CI variables. |
+
+### Release identifier
+
+Reports (`check`, `push` and their Artisan aliases) and runtime and exception batches carry an optional `release`, so `excubia-app` can tie a problem to the deploy that introduced it. It is resolved in this order; the first one set wins:
+
+1. the `release` key of `excubia.json`;
+2. `EXCUBIA_RELEASE`;
+3. the CI and platform variables, in this order: `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT`;
+4. only for the standalone `vendor/bin/excubia`: the commit checked out in the project directory. Excubia does not run `git`: it reads `.git/HEAD` and the ref file it names (or `packed-refs`), and follows the `gitdir:` pointer of a worktree or submodule. Only the commit id is used; no branch name, author or commit message. Only the project directory itself is looked at, not its parents.
+
+The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is rejected and the release is reported as absent (`null`), without trying the next source. Runtime and exception batches use the release at the time they are sent, without the git step.
 
 ## Checks
 
@@ -185,6 +197,7 @@ Excubia reads these from the process environment (`getenv()`), never from Larave
 | --- | --- | --- |
 | `EXCUBIA_APP_URL` | `push`, `excubia:push`, `excubia:push-runtime` | Base URL of your `excubia-app`. Wins over `app.url`. |
 | `EXCUBIA_APP_TOKEN` | `push`, `excubia:push`, `excubia:push-runtime` | Project push token. Wins over `app.token`. Never printed, cached or written to a report. |
+| `EXCUBIA_RELEASE` | `check`, `push`, their Artisan aliases, `excubia:push-runtime` | Release identifier. `release` in `excubia.json` wins; it wins over `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT` ([release identifier](#release-identifier)). |
 | `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header, at least 32 characters. Without it, or when it is shorter, the route is not registered. |
 | `GITHUB_TOKEN` | `composer-stale` | Optional. Raises the GitHub API rate limit for the archived-repository lookup. Sent only to `api.github.com`; never printed, cached or written to a report. |
 | `HTTPS_PROXY` | all HTTP requests | Proxy for the data sources and the push, read by Symfony HttpClient. |

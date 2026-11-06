@@ -28,6 +28,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * `skippedPackagePatterns` is `privacy.skipPackages`: globs (`*`, `?`) of
  * package names that are never sent to a public data source, on top of the
  * packages the lockfile already marks private.
+ * `release` is the `release` key as written; `ReleaseService` validates it
+ * and falls back to the environment when it is null.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -66,6 +68,7 @@ final readonly class ExcubiaConfigurationData
         public RuntimeConfigurationData $runtime = new RuntimeConfigurationData,
         public ExceptionConfigurationData $exceptions = new ExceptionConfigurationData,
         public array $skippedPackagePatterns = [],
+        public ?string $release = null,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');
