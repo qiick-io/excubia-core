@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "9c5a111a5d6056ef1df69d8f4becd4a6cb054b31cb615bde84bbbca910f28c0e"
+            "sha256": "c3b7d67576f6c77722e9639c457f15ea54b9dd6f72ecb8b98f5734a99f41d772"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "e5508d11203d1efc03ae4bc8995396b20fe8994d025c9017054432b394f242d0"
+            "sha256": "ebe9ffc23b7b5823d2b40bdea99c5b4e019cba34704aa4f71f616b4957ffcccd"
         }
     },
     "checkIds": [
@@ -60,7 +60,8 @@
         "npm-outdated",
         "laravel-backups",
         "laravel-database-connections",
-        "laravel-database-size"
+        "laravel-database-size",
+        "laravel-redis-memory"
     ],
     "sarif": {
         "fingerprintKeys": [

@@ -32,7 +32,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "laravel-queue-workers": { "staleAfterMinutes": 5 },
     "laravel-backups": { "maxAgeHours": 26 },
     "laravel-database-connections": { "warnAt": 50, "failAt": 100 },
-    "laravel-database-size": { "warnAtMb": 10240 }
+    "laravel-database-size": { "warnAtMb": 10240 },
+    "laravel-redis-memory": { "warnAtPercentUsed": 80, "failAtPercentUsed": 90, "connections": [] }
   },
   "ignore": [
     {
@@ -142,6 +143,10 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.laravel-database-connections.failAt` | integer ≥ 1 | `100` | Fail (high) when the default database connection has more open connections than this. |
 | `checks.laravel-database-size` | object | | Settings of `laravel-database-size`. |
 | `checks.laravel-database-size.warnAtMb` | integer ≥ 1 | unset | Warn (medium) when the default database is larger than this many MB. Unset, the size and the five largest tables are only reported (pass, info). |
+| `checks.laravel-redis-memory` | object | | Settings of `laravel-redis-memory`. |
+| `checks.laravel-redis-memory.warnAtPercentUsed` | integer 1–100 | `80` | Warn (medium) when a Redis connection uses this share of its `maxmemory` or more. Not above `failAtPercentUsed`. |
+| `checks.laravel-redis-memory.failAtPercentUsed` | integer 1–100 | `90` | Fail (high) when a Redis connection uses this share of its `maxmemory` or more. |
+| `checks.laravel-redis-memory.connections` | list of strings | `[]` | Redis connection names (`database.redis.*`) to read instead of the ones the default cache store, queue connection and session use. Empty reads the ones in use. |
 
 ### Dependency licenses
 
