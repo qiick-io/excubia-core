@@ -238,6 +238,7 @@ These decisions are final. They extend section 10 and replace D2 where they disa
 17. **D17 Exceptions before 1.0.0:** opt-in exception capture (#77) ships before 1.0.0, with messages masked before sending.
 18. **D18 Health endpoint:** an opt-in endpoint compatible with the Oh Dear application health JSON (#74) is approved at low priority. It complements the push for external monitors; it is not the channel to `excubia-app`. Contract: `docs/health-endpoint.md` (`healthEndpoint` keys, `EXCUBIA_HEALTH_SECRET`, serves the last stored Artisan run).
 19. **D19 Laravel 11 dropped (Luca, 2026-11-03):** the Artisan integration supports Laravel 12 and 13 from 1.0. Laravel 11 is past security support and Composer blocks its releases by default, so it cannot be tested in CI. The standalone CLI still scans Laravel 11 projects.
+20. **D20 Competitor parity in the betas (Luca, 2026-11-06):** after 1.0.0-beta.1, the next betas add the data competitors already collect: release and deploy markers, more posture and infrastructure checks, more runtime aggregates, PHP deprecation counts, license inventory, `env-example-sync`, Yarn and pnpm lockfiles. Every addition is additive against `docs/CONTRACTS.md`; frozen contracts never change. Yarn and pnpm are no longer non-goals (section 6).
 
 ## 13. Push protocol (approved 2026-11-02)
 
