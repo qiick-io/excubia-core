@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts. It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts and N+1 duplicate query detection. It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -48,7 +48,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "mail": { "enabled": true },
     "notifications": { "enabled": true },
     "logLevels": { "enabled": true },
-    "deprecations": { "enabled": true }
+    "deprecations": { "enabled": true },
+    "duplicateQueries": { "enabled": true, "threshold": 5 }
   }
 }
 ```
@@ -105,6 +106,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `notifications` | `NotificationSent` / `NotificationFailed` | The notification failed |
 | `logLevels` | `MessageLogged` | — |
 | `deprecations` | A PHP error handler for `E_DEPRECATED` / `E_USER_DEPRECATED`, chained in front of Laravel's | — |
+| `duplicateQueries` | `QueryExecuted`, evaluated at `RequestHandled` or when a job ends (`JobProcessed` / `JobFailed` / `JobExceptionOccurred`) | — |
 
 Notes on the newer types:
 
@@ -114,12 +116,13 @@ Notes on the newer types:
 - **Mail failures**: Laravel has no event for a failed mail. A failure is counted only when [exception capture](./exception-capture.md) is on and sees a reported Symfony Mailer transport exception (also counted when `exceptions.ignore` lists it). A failure your code catches without reporting is not counted, and without exception capture the failed count stays 0.
 - **Log levels** are counted per level only: Laravel's `MessageLogged` event does not say which channel logged. Excubia never logs, and messages logged while its listener runs are ignored, so the listener cannot loop.
 - **Deprecations** feed upgrade readiness in excubia-app: how many deprecations the code really triggers on this PHP version, and where. When the provider boots, Excubia puts an error handler in front of the current one (Laravel's). It counts `E_DEPRECATED` and `E_USER_DEPRECATED` and then always calls the previous handler with the same arguments, so Laravel still writes deprecations to its `deprecations` log channel when you configured one, still turns warnings into exceptions, and Sentry, Flare or any other handler still sees everything. Each row is the source (`app` for a file in your project outside `vendor/`, `vendor/<vendor>/<package>` for a dependency, `unknown` outside the project), the message through the exception message masks and cut to 300 characters, and the PHP version (`8.4`). Never the file path, the line or the stack. A request that raises no deprecation never calls the handler, so it costs nothing (`vendor/bin/pest --group=benchmark`: the difference is run-to-run noise and the handler is called zero times; about 0.01 ms per deprecation raised). Things to know: silenced deprecations (`@trigger_error()`, the Symfony convention) are counted too, as Laravel logs them; for `E_USER_DEPRECATED` the source is the package that calls `trigger_error()`, not your code that called it; deprecations PHP raises while compiling a file (such as an implicitly nullable parameter) appear only when the file is compiled, so with OPcache they are counted once per cache fill; deprecations raised before the provider boots are not seen; and a handler set after Excubia's that does not forward to the previous one hides them from Excubia. The Laravel log channel is not used as the source: `MessageLogged` does not say which channel logged, and Laravel skips that channel in some cases.
+- **Duplicate queries** find N+1 problems, as debug bars and APM tools do: the same query shape run many times within one request or job, usually a relation loaded in a loop. Every query of the request or job is grouped by its normalised SQL and connection name: inline literals become `?` (as for slow queries), `IN (?, ?, …)` lists of any length become `IN (…)`, and whitespace is collapsed; bindings are never read. When a shape runs at least `runtime.duplicateQueries.threshold` times (default `5`, at least `2`), it is recorded once for that request or job, under `origin` `request` with the route name (or `unnamed`) or `origin` `job` with the job class. `count` is how many requests or jobs had it; `totalRepeats` adds up the executions over those requests or jobs (the average is `totalRepeats / count`) and `maxRepeats` is the most in a single one. The counts are cleared after each request and each job; a sync job dispatched inside a request is counted on its own. At most 200 distinct shapes are counted per request or job, so memory stays bounded; later shapes are ignored. `sampleRate` is the share of requests and jobs evaluated. Queries in Artisan commands and scheduled tasks are not evaluated. Cost (`vendor/bin/pest --group=benchmark`): about 0.0002 ms per repeated query, since each raw SQL string is normalised once, and about 0.004 ms the first time a query is seen.
 
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, and the source package, masked message and PHP version of deprecations. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, and the normalised SQL, connection, route name or job class and repeat counts of duplicate queries. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

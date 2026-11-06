@@ -47,7 +47,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {
@@ -69,6 +69,24 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
         ->and($deprecations->sampleRate(RuntimeTypeEnum::Deprecation))->toBe(0.5)
         ->and($load(['deprecations' => ['enabled' => true]])->isTypeEnabled(RuntimeTypeEnum::Deprecation))->toBeFalse()
         ->and(fn () => $load(['deprecations' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.deprecations key [thresholdMs].');
+});
+
+it('keeps duplicate query detection off by default and reads its threshold', function () {
+    $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+    $defaults = $load(['enabled' => true]);
+    $switched = $load(['enabled' => true, 'duplicateQueries' => ['enabled' => true, 'sampleRate' => 0.5, 'threshold' => 3]]);
+
+    expect($defaults->isTypeEnabled(RuntimeTypeEnum::DuplicateQuery))->toBeFalse()
+        ->and($defaults->duplicateQueryThreshold)->toBe(5)
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::DuplicateQuery))->toBeTrue()
+        ->and($switched->sampleRate(RuntimeTypeEnum::DuplicateQuery))->toBe(0.5)
+        ->and($switched->duplicateQueryThreshold)->toBe(3)
+        ->and(fn () => $load(['duplicateQueries' => ['threshold' => 1]]))->toThrow(InvalidConfigurationException::class, 'runtime.duplicateQueries.threshold must be at least 2.')
+        ->and(fn () => $load(['duplicateQueries' => ['threshold' => '5']]))->toThrow(InvalidConfigurationException::class, 'runtime.duplicateQueries.threshold must be an integer.')
+        ->and(fn () => $load(['duplicateQueries' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.duplicateQueries key [thresholdMs].')
+        ->and(fn () => $load(['slowQueries' => ['threshold' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.slowQueries key [threshold].');
 });
 
 it('rejects an invalid runtime key', function (string $runtime, string $message) {

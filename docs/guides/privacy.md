@@ -74,7 +74,8 @@ Added in 1.0.0-beta.2 and off until each one is switched on (each with `count`, 
 - mail (`mail`): mailable class (or the notification class of a mail notification, or `unknown`) and mailer name, sent and failed counts. Never recipients, subjects or bodies;
 - notifications (`notifications`): notification class and channel name, sent and failed counts. Never the notifiable or the content;
 - log levels (`logLevels`): the level and a count. Never the message or the context;
-- PHP deprecations (`deprecations`): the source (`app`, `vendor/<vendor>/<package>` or `unknown`), the deprecation message through the exception message masks (paths made relative or reduced to the file name, secrets, emails, ids and long numbers masked) and cut to 300 characters, the PHP major and minor version, and a count. Never the file path, the line or the stack.
+- PHP deprecations (`deprecations`): the source (`app`, `vendor/<vendor>/<package>` or `unknown`), the deprecation message through the exception message masks (paths made relative or reduced to the file name, secrets, emails, ids and long numbers masked) and cut to 300 characters, the PHP major and minor version, and a count. Never the file path, the line or the stack;
+- duplicate queries (`duplicateQueries`, 1.0.0-beta.3): for a query that runs at least `threshold` times in one request or job, whether it was a `request` or a `job`, the route name (or `unnamed`) or the job class, the SQL text with inline literals replaced by `?`, `IN (…)` for lists and whitespace collapsed, the connection name, and how many times it ran (`totalRepeats`, `maxRepeats`). Never the bindings.
 
 Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, `.env` values or absolute paths.
 

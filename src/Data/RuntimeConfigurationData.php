@@ -15,12 +15,22 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * listener and no schedule. Each type has its own switch and sample rate
  * (0 to 1, the share of events recorded, as in Laravel Pulse); every
  * aggregate carries its rate so the app can scale counts by `1 / sampleRate`.
+ * `duplicateQueryThreshold` is how many times one query shape must run
+ * within one request or job before `duplicateQuery` records it (#148).
  * `bufferMaxBytes` caps the local buffer under `storage/excubia/runtime/`;
  * the oldest entries are dropped first.
  */
 final readonly class RuntimeConfigurationData
 {
     public const DEFAULT_SLOW_QUERY_THRESHOLD_MS = 1000;
+
+    /**
+     * Executions of one query shape within one request or job from which
+     * `duplicateQuery` records it (#148).
+     */
+    public const DEFAULT_DUPLICATE_QUERY_THRESHOLD = 5;
+
+    public const MINIMUM_DUPLICATE_QUERY_THRESHOLD = 2;
 
     public const DEFAULT_BUFFER_MAX_BYTES = 1048576;
 
@@ -38,9 +48,14 @@ final readonly class RuntimeConfigurationData
         public array $sampleRates = [],
         public int $slowQueryThresholdMs = self::DEFAULT_SLOW_QUERY_THRESHOLD_MS,
         public int $bufferMaxBytes = self::DEFAULT_BUFFER_MAX_BYTES,
+        public int $duplicateQueryThreshold = self::DEFAULT_DUPLICATE_QUERY_THRESHOLD,
     ) {
         if ($this->slowQueryThresholdMs < 0) {
             throw new InvalidConfigurationException('runtime.slowQueries.thresholdMs must be zero or greater.');
+        }
+
+        if ($this->duplicateQueryThreshold < self::MINIMUM_DUPLICATE_QUERY_THRESHOLD) {
+            throw new InvalidConfigurationException('runtime.duplicateQueries.threshold must be at least '.self::MINIMUM_DUPLICATE_QUERY_THRESHOLD.'.');
         }
 
         if ($this->bufferMaxBytes < self::MINIMUM_BUFFER_MAX_BYTES) {
