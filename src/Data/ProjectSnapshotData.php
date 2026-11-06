@@ -10,7 +10,9 @@ namespace Qiick\Excubia\Data;
  * Paths, file contents, and hostnames are not stored. Only versions and
  * package names leave this object toward a data source. `laravelPosture`
  * is set only by the Artisan commands, which boot the app; the standalone
- * CLI leaves it null and the posture checks skip.
+ * CLI leaves it null and the posture checks skip. `environmentKeys` holds
+ * key names only (`.env.example` and `config/*.php`, never `.env`); it is
+ * null for a snapshot not read from a project directory.
  */
 final readonly class ProjectSnapshotData
 {
@@ -34,6 +36,7 @@ final readonly class ProjectSnapshotData
         public array $platformRequirements = [],
         public array $providedPlatformNames = [],
         public array $platformOverrideNames = [],
+        public ?EnvironmentKeysData $environmentKeys = null,
     ) {}
 
     /**
@@ -53,6 +56,7 @@ final readonly class ProjectSnapshotData
             platformRequirements: $this->platformRequirements,
             providedPlatformNames: $this->providedPlatformNames,
             platformOverrideNames: $this->platformOverrideNames,
+            environmentKeys: $this->environmentKeys,
         );
     }
 }

@@ -36,7 +36,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * packages the lockfile already marks private.
  * `release` is the `release` key as written; `ReleaseService` validates it
  * and falls back to the environment when it is null.
- * `dependencyLicenses` holds the `checks.dependency-licenses` keys.
+ * `dependencyLicenses` holds the `checks.dependency-licenses` keys and
+ * `envExampleSync` the `checks.env-example-sync` keys.
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -85,6 +86,7 @@ final readonly class ExcubiaConfigurationData
         public int $queueBacklogMaxOldestAgeMinutes = 15,
         public int $queueBacklogMaxPendingJobs = 1000,
         public array $queueBacklogQueueNames = [],
+        public EnvExampleSyncConfigurationData $envExampleSync = new EnvExampleSyncConfigurationData,
     ) {
         if ($this->staleAfterMonths < 1) {
             throw new InvalidConfigurationException('staleAfterMonths must be at least 1.');

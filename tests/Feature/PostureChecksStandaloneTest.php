@@ -67,7 +67,7 @@ it('registers the posture checks after the existing checks and honours --skip', 
     $checkIds = array_column(standalonePostureReport()['report']['checks'], 'checkId');
     $skipped = array_column(standalonePostureReport(['--skip' => 'laravel-debug-mode,laravel-failed-jobs'])['report']['checks'], 'checkId');
 
-    expect(array_slice($checkIds, -19))->toBe([...array_slice(POSTURE_CHECK_IDS, 0, 12), 'dependency-licenses', ...array_slice(POSTURE_CHECK_IDS, 12), 'php-platform-requirements'])
+    expect(array_slice($checkIds, -20))->toBe([...array_slice(POSTURE_CHECK_IDS, 0, 12), 'dependency-licenses', ...array_slice(POSTURE_CHECK_IDS, 12), 'php-platform-requirements', 'env-example-sync'])
         ->and(array_search('laravel-next-blocker', $checkIds, true))->toBeLessThan(array_search('laravel-debug-mode', $checkIds, true))
         ->and($skipped)->not->toContain('laravel-debug-mode', 'laravel-failed-jobs')
         ->and($skipped)->toContain('laravel-maintenance-mode');

@@ -58,6 +58,7 @@ final class SarifRenderer implements ReportRendererContract
         'laravel-disk-space' => 'storage',
         'laravel-queue-backlog' => 'config/queue.php',
         'php-platform-requirements' => 'composer.lock',
+        'env-example-sync' => '.env.example',
     ];
 
     /**

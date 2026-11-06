@@ -94,8 +94,10 @@ vendor/bin/excubia --version
 | `laravel-disk-space` | Disk space | Disk holding `storage/` | At least 80 % used (medium), at least 90 % (high, fail) |
 | `laravel-queue-backlog` | Queue backlog | Default queue connection | A queue's oldest pending job has waited more than 15 minutes, or it holds more than 1000 pending jobs (medium, one row per queue). `database` and `redis` drivers only, others skipped |
 | `php-platform-requirements` | Platform requirements | `composer.lock`, running PHP | The running PHP misses an extension, or its version does not satisfy a `php` constraint, that a locked package or the root `platform` requires (high, one row per requirement), like `composer check-platform-reqs` |
+| `env-example-sync` | `.env.example` sync | `.env.example`, `config/*.php` (key names only, no request) | A key that `config/*.php` reads with `env()` is missing from `.env.example` (low, one row per key); keys in `.env.example` that no config file reads are one `info` row. Skipped without `.env.example` or `config/` |
 
 - `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
+- `env-example-sync` compares key names only: it tokenizes `config/*.php` (never runs it), reads the names in `.env.example` and drops the values, and never opens `.env`. Optional Laravel keys (`AWS_*`, `PUSHER_*`, `VITE_*`, `MEMCACHED_*`, `REDIS_CLIENT`, …) are ignored by default; extend or replace the list with [`checks.env-example-sync.ignoreKeys`](./docs/guides/configuration.md#env-example-sync).
 - The seventeen `laravel-*` checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - `php-platform-requirements` also runs in `vendor/bin/excubia`, but that is the PHP of the CLI, which can differ from the app's: its findings say so and carry `isStandaloneCli: true`. Under Artisan it checks the app's PHP. Extensions that a locked package provides (polyfills) count as present; `config.platform` overrides do not.
 - The infrastructure checks (`laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`) only read, except the cache probe key `excubia:cache-probe:<random>`, which is deleted right away. A service that does not answer is a finding, never an exception in the app. Findings name the connection, store, directory or queue, and carry percentages, counts and ages: never hostnames, DSNs, credentials or absolute paths.
@@ -141,6 +143,7 @@ The JSON report also carries, as optional fields of schema version 1:
 | `laravel-disk-space` | `usedPercent` |
 | `laravel-queue-backlog` | `queue`, `pendingCount`, `oldestAgeMinutes` (or `null`) |
 | `php-platform-requirements` | `requirement` (`php` or `ext-*`), `requiredBy` (list of packages, `composer.json` for the root), `checkedPhpVersion`, `isStandaloneCli` |
+| `env-example-sync` | missing key rows: `key`, `configFiles` (project-relative, such as `config/services.php`); the `unused keys` row: `keys` (names only, never values) |
 | private packages row of the five checks that send names | `count` |
 
 `laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-log-level` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).

@@ -281,6 +281,7 @@ final class CheckCommand extends Command
             queueBacklogMaxOldestAgeMinutes: $loaded->queueBacklogMaxOldestAgeMinutes,
             queueBacklogMaxPendingJobs: $loaded->queueBacklogMaxPendingJobs,
             queueBacklogQueueNames: $loaded->queueBacklogQueueNames,
+            envExampleSync: $loaded->envExampleSync,
         );
     }
 

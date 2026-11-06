@@ -129,7 +129,10 @@ it('documents the details keys per check id', function () {
             'laravel-disk-space',
             'laravel-queue-backlog',
             'php-platform-requirements',
+            'env-example-sync',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
-        ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem']);
+        ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($keys('envExampleMissingKeyDetails'))->toBe(['key', 'configFiles'])
+        ->and($keys('envExampleUnusedKeysDetails'))->toBe(['keys']);
 });

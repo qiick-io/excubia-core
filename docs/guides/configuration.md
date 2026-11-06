@@ -27,7 +27,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "dependency-licenses": { "allowed": [], "denied": [], "includeDev": false },
     "laravel-database": { "connections": [] },
     "laravel-disk-space": { "warnAtPercentUsed": 80, "failAtPercentUsed": 90 },
-    "laravel-queue-backlog": { "maxOldestAgeMinutes": 15, "maxPendingJobs": 1000, "queues": [] }
+    "laravel-queue-backlog": { "maxOldestAgeMinutes": 15, "maxPendingJobs": 1000, "queues": [] },
+    "env-example-sync": { "ignoreKeys": [], "useDefaultIgnoreKeys": true }
   },
   "ignore": [
     {
@@ -120,6 +121,9 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.laravel-queue-backlog.maxOldestAgeMinutes` | integer ≥ 1 | `15` | Warn (medium) when the oldest pending job of a queue has waited longer than this many minutes. |
 | `checks.laravel-queue-backlog.maxPendingJobs` | integer ≥ 1 | `1000` | Warn (medium) when a queue holds more than this many pending jobs. |
 | `checks.laravel-queue-backlog.queues` | list of strings | `[]` | Redis only: queues read on top of the default queue of the default queue connection. The `database` driver reads every queue in its jobs table. |
+| `checks.env-example-sync` | object | | Settings of `env-example-sync`, see [below](#env-example-sync). |
+| `checks.env-example-sync.ignoreKeys` | list of strings | `[]` | Environment key names or globs that are never reported, neither as missing from `.env.example` nor as unused, for example `"STRIPE_*"`. Added to the default list unless `useDefaultIgnoreKeys` is `false`. |
+| `checks.env-example-sync.useDefaultIgnoreKeys` | boolean | `true` | Keep the default list of optional Laravel keys. `false` makes `ignoreKeys` replace it. |
 
 ### Dependency licenses
 
@@ -134,6 +138,26 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 Expressions follow SPDX: `OR` passes when any option passes, `AND` needs every part, parentheses group, and `WITH` exceptions are read as the license they modify. Composer's `license` array is a choice, like `OR`. A `+`, `-only` or `-or-later` suffix is matched both as written and without the suffix, so `"GPL-2.0"` in `allowed` also covers `GPL-2.0-or-later` and `GPL-2.0+`. Globs use `*` for any characters and `?` for exactly one, case-insensitively, against the whole id; only letters, digits, `. + : -` and the two wildcards are allowed.
 
 The JSON report adds a top-level `licenses` inventory with the counts per license and per ecosystem (see the [README](../../README.md#formats)). To accept one package instead of a license, add an `ignore` rule with `checkId` `dependency-licenses` and the package name as `subject`.
+
+### env-example-sync
+
+`env-example-sync` compares the environment keys that `config/*.php` reads with the keys that `.env.example` lists. It sends nothing and reads key names only:
+
+- `config/*.php` (top level) is read with PHP's tokenizer, never included or executed. It finds `env('KEY')`, `\env('KEY')`, `Env::get('KEY')` and `Env::getOrFail('KEY')` with a literal key; computed keys are not seen.
+- `.env.example` is read for its key names: `KEY=value`, `export KEY=value` and commented-out assignments such as `# DB_HOST=127.0.0.1` count as listed. Values are dropped while reading.
+- `.env` is never opened.
+
+A key read by a config file but missing from `.env.example` warns at low, one row per key (subject the key name). Keys in `.env.example` that no config file reads are one `info` row with subject `unused keys`. The check is skipped (`not-applicable`) when the project has no `.env.example` or no `config/` directory.
+
+Keys matching `ignoreKeys` or the default list are left out in both directions. Globs use `*` for any characters and `?` for exactly one, case-insensitively, against the whole name; only letters, digits, `_` and the two wildcards are allowed. The default list covers the optional keys the Laravel 12 and 13 config files read that a fresh application's `.env.example` does not list, and the keys it lists for tools outside `config/`, so a fresh application reports nothing:
+
+`ABLY_*`, `APP_PREVIOUS_KEYS`, `ARGON_*`, `ASSET_URL`, `AUTH_*`, `AWS_*`, `BCRYPT_LIMIT`, `BCRYPT_ROUNDS`, `BEANSTALKD_*`, `BROADCAST_CONNECTION`, `CACHE_STORAGE_*`, `CONCURRENCY_DRIVER`, `DB_CACHE_*`, `DB_CHARSET`, `DB_COLLATION`, `DB_DIRECT_*`, `DB_FOREIGN_KEYS`, `DB_MASK_BINDINGS`, `DB_POOLED`, `DB_QUEUE*`, `DB_SOCKET`, `DB_SSLMODE`, `DB_URL`, `DYNAMODB_*`, `FRONTEND_URL`, `HASH_DRIVER`, `HASH_VERIFY`, `IMAGE_DRIVER`, `LOG_DAILY_DAYS`, `LOG_DEPRECATIONS_TRACE`, `LOG_PAPERTRAIL_*`, `LOG_SLACK_*`, `LOG_STDERR_*`, `LOG_SYSLOG_*`, `MAIL_EHLO_DOMAIN`, `MAIL_LOG_CHANNEL`, `MAIL_MARKDOWN_THEME`, `MAIL_SENDMAIL_PATH`, `MAIL_URL`, `MEMCACHED_*`, `MERCURE_*`, `MYSQL_ATTR_SSL_CA`, `PAPERTRAIL_*`, `PHP_CLI_SERVER_WORKERS`, `POSTMARK_*`, `PUSHER_*`, `QUEUE_FAILED_DRIVER`, `REDIS_BACKOFF_*`, `REDIS_CACHE_*`, `REDIS_CLIENT`, `REDIS_CLUSTER`, `REDIS_COMMAND_RETRIES`, `REDIS_DB`, `REDIS_MAX_RETRIES`, `REDIS_PERSISTENT`, `REDIS_PREFIX`, `REDIS_QUEUE*`, `REDIS_URL`, `REDIS_USERNAME`, `RESEND_*`, `REVERB_*`, `SESSION_CACHE_KEY`, `SESSION_CONNECTION`, `SESSION_COOKIE`, `SESSION_EXPIRE_ON_CLOSE`, `SESSION_HTTP_ONLY`, `SESSION_PARTITIONED_COOKIE`, `SESSION_SAME_SITE`, `SESSION_SECURE_COOKIE`, `SESSION_STORE`, `SESSION_TABLE`, `SLACK_BOT_USER_*`, `SQS_*`, `VIEW_COMPILED_PATH`, `VITE_*`.
+
+```json
+{ "checks": { "env-example-sync": { "ignoreKeys": ["STRIPE_*", "SENTRY_LARAVEL_DSN"] } } }
+```
+
+With `"useDefaultIgnoreKeys": false` only `ignoreKeys` applies. To accept one key instead, add an `ignore` rule with `checkId` `env-example-sync` and the key name as `subject`.
 
 ## Ignore rules
 

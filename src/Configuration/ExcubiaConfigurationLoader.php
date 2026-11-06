@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Configuration;
 
 use Qiick\Excubia\Data\DependencyLicensesConfigurationData;
+use Qiick\Excubia\Data\EnvExampleSyncConfigurationData;
 use Qiick\Excubia\Data\ExceptionConfigurationData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -85,6 +86,31 @@ final class ExcubiaConfigurationLoader
             queueBacklogMaxOldestAgeMinutes: $checks['queueBacklogMaxOldestAgeMinutes'],
             queueBacklogMaxPendingJobs: $checks['queueBacklogMaxPendingJobs'],
             queueBacklogQueueNames: $checks['queueBacklogQueueNames'],
+            envExampleSync: $this->envExampleSync($document['checks'] ?? []),
+        );
+    }
+
+    /**
+     * `checks.env-example-sync`: `ignoreKeys` (key names or globs, added to
+     * the default list) and `useDefaultIgnoreKeys` (default true; false
+     * makes `ignoreKeys` replace the defaults). The glob syntax is checked
+     * by the data object.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function envExampleSync(mixed $checks): EnvExampleSyncConfigurationData
+    {
+        $settings = is_array($checks) ? ($checks['env-example-sync'] ?? []) : [];
+
+        if (! is_array($settings)) {
+            throw new InvalidConfigurationException('checks.env-example-sync must be an object.');
+        }
+
+        $this->rejectUnknownKeys($settings, ['ignoreKeys', 'useDefaultIgnoreKeys'], 'checks.env-example-sync');
+
+        return new EnvExampleSyncConfigurationData(
+            ignoreKeys: $this->stringList($settings['ignoreKeys'] ?? [], 'checks.env-example-sync.ignoreKeys'),
+            shouldUseDefaultIgnoreKeys: array_key_exists('useDefaultIgnoreKeys', $settings) ? $this->boolean($settings['useDefaultIgnoreKeys'], 'checks.env-example-sync.useDefaultIgnoreKeys') : true,
         );
     }
 
@@ -312,7 +338,7 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses', 'laravel-database', 'laravel-disk-space', 'laravel-queue-backlog', 'env-example-sync'], 'checks');
         $database = $this->checkObject($checks, 'laravel-database', ['connections']);
         $diskSpace = $this->checkObject($checks, 'laravel-disk-space', ['warnAtPercentUsed', 'failAtPercentUsed']);
         $queueBacklog = $this->checkObject($checks, 'laravel-queue-backlog', ['maxOldestAgeMinutes', 'maxPendingJobs', 'queues']);
