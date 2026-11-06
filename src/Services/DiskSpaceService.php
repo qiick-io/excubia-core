@@ -14,6 +14,17 @@ final class DiskSpaceService implements DiskSpaceContract
 {
     public function usedPercent(string $directory): ?int
     {
+        $usage = $this->usage($directory);
+
+        if ($usage === null) {
+            return null;
+        }
+
+        return (int) floor($usage['usedBytes'] / $usage['totalBytes'] * 100);
+    }
+
+    public function usage(string $directory): ?array
+    {
         if (! is_dir($directory)) {
             return null;
         }
@@ -25,6 +36,6 @@ final class DiskSpaceService implements DiskSpaceContract
             return null;
         }
 
-        return (int) floor(($total - $free) / $total * 100);
+        return ['usedBytes' => $total - $free, 'totalBytes' => $total];
     }
 }

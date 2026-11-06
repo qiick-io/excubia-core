@@ -11,8 +11,11 @@ namespace Qiick\Excubia\Enums;
  *
  * The five types of 1.0.0-beta.1 are on by default once `runtime.enabled`
  * is true. The types added in 1.0.0-beta.2 (#132, #133) and later
- * (`duplicateQuery`, #148) are off by default, so an excubia-app that does
- * not know them yet never receives them.
+ * (`duplicateQuery`, #148, `server`, #149) are off by default, so an
+ * excubia-app that does not know them yet never receives them.
+ *
+ * `server` is not an event type: `excubia:push-runtime` takes one sample
+ * of the machine per run (ServerMetricsService).
  *
  * The duration types (`request`, `slowQuery`, `job`, `scheduledTask`,
  * `outgoingHttp`, `queueWait`) also carry a latency `histogram` (#147) with
@@ -43,6 +46,7 @@ enum RuntimeTypeEnum: string
     case LogLevel = 'logLevel';
     case Deprecation = 'deprecation';
     case DuplicateQuery = 'duplicateQuery';
+    case Server = 'server';
 
     /**
      * The `excubia.json` key under `runtime` that switches this type.
@@ -64,6 +68,7 @@ enum RuntimeTypeEnum: string
             self::LogLevel => 'logLevels',
             self::Deprecation => 'deprecations',
             self::DuplicateQuery => 'duplicateQueries',
+            self::Server => 'server',
         };
     }
 

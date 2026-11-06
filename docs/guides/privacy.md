@@ -76,9 +76,10 @@ Added in 1.0.0-beta.2 and off until each one is switched on (each with `count`, 
 - notifications (`notifications`): notification class and channel name, sent and failed counts. Never the notifiable or the content;
 - log levels (`logLevels`): the level and a count. Never the message or the context;
 - PHP deprecations (`deprecations`): the source (`app`, `vendor/<vendor>/<package>` or `unknown`), the deprecation message through the exception message masks (paths made relative or reduced to the file name, secrets, emails, ids and long numbers masked) and cut to 300 characters, the PHP major and minor version, and a count. Never the file path, the line or the stack;
-- duplicate queries (`duplicateQueries`, 1.0.0-beta.3): for a query that runs at least `threshold` times in one request or job, whether it was a `request` or a `job`, the route name (or `unnamed`) or the job class, the SQL text with inline literals replaced by `?`, `IN (…)` for lists and whitespace collapsed, the connection name, and how many times it ran (`totalRepeats`, `maxRepeats`). Never the bindings.
+- duplicate queries (`duplicateQueries`, 1.0.0-beta.3): for a query that runs at least `threshold` times in one request or job, whether it was a `request` or a `job`, the route name (or `unnamed`) or the job class, the SQL text with inline literals replaced by `?`, `IN (…)` for lists and whitespace collapsed, the connection name, and how many times it ran (`totalRepeats`, `maxRepeats`). Never the bindings;
+- server metrics (`server`, 1.0.0-beta.3): `runtime.server.name`, else the first 12 hex characters of sha256(hostname + sha256(app key)), with the load average over 1, 5 and 15 minutes, the CPU core count, memory used and total in MiB, and used and total size in GiB of the disk that holds `storage/`. Never the hostname, an IP address or the storage path.
 
-Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, `.env` values or absolute paths.
+Never sent, and never written to the local buffer: URLs and query strings, request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, hostnames, `.env` values or absolute paths.
 
 ## Exception capture
 

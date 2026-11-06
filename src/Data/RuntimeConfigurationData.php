@@ -17,6 +17,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * aggregate carries its rate so the app can scale counts by `1 / sampleRate`.
  * `duplicateQueryThreshold` is how many times one query shape must run
  * within one request or job before `duplicateQuery` records it (#148).
+ * `serverName` (`runtime.server.name`, #149) names this machine in `server`
+ * aggregates; without it the server is a hashed id, never the hostname.
  * `bufferMaxBytes` caps the local buffer under `storage/excubia/runtime/`;
  * the oldest entries are dropped first.
  */
@@ -31,6 +33,11 @@ final readonly class RuntimeConfigurationData
     public const DEFAULT_DUPLICATE_QUERY_THRESHOLD = 5;
 
     public const MINIMUM_DUPLICATE_QUERY_THRESHOLD = 2;
+
+    /**
+     * A readable server name: letters, digits, `.`, `_` and `-`, at most 64.
+     */
+    public const SERVER_NAME_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/';
 
     public const DEFAULT_BUFFER_MAX_BYTES = 1048576;
 
@@ -49,7 +56,12 @@ final readonly class RuntimeConfigurationData
         public int $slowQueryThresholdMs = self::DEFAULT_SLOW_QUERY_THRESHOLD_MS,
         public int $bufferMaxBytes = self::DEFAULT_BUFFER_MAX_BYTES,
         public int $duplicateQueryThreshold = self::DEFAULT_DUPLICATE_QUERY_THRESHOLD,
+        public ?string $serverName = null,
     ) {
+        if ($this->serverName !== null && preg_match(self::SERVER_NAME_PATTERN, $this->serverName) !== 1) {
+            throw new InvalidConfigurationException('runtime.server.name must be 1 to 64 letters, digits, dots, underscores or hyphens.');
+        }
+
         if ($this->slowQueryThresholdMs < 0) {
             throw new InvalidConfigurationException('runtime.slowQueries.thresholdMs must be zero or greater.');
         }

@@ -84,6 +84,43 @@ it('adds up total repeats and keeps the larger max repeats as integers when dupl
         ->and($aggregates[0]['maxRepeats'])->toBe(10);
 });
 
+it('keeps the larger reading of each server gauge per server and bucket, whatever the order, and null only when both are null', function () {
+    $sample = static fn (string $server, ?float $load, ?int $memoryUsedMb, ?float $diskUsedGb): array => [
+        'type' => 'server',
+        'bucket' => '2026-11-03T10:15:00Z',
+        'sampleRate' => 1.0,
+        'server' => $server,
+        'count' => 1,
+        'errorCount' => 0,
+        'loadAverage1' => $load,
+        'loadAverage5' => $load,
+        'loadAverage15' => null,
+        'cpuCores' => 4,
+        'memoryUsedMb' => $memoryUsedMb,
+        'memoryTotalMb' => 7859,
+        'diskUsedGb' => $diskUsedGb,
+        'diskTotalGb' => 80.0,
+    ];
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([$sample('web-1', 0.5, null, 41.25), $sample('web-1', 2.75, 2100, 40.0), $sample('web-1', 1.0, 1900, null), $sample('web-2', 0.1, 900, 12.0)]);
+
+    $aggregates = $buffer->read($buffer->claimBatches()[0]['path']);
+    $reversed = RuntimeBufferService::merge(array_reverse([$sample('web-1', 0.5, null, 41.25), $sample('web-1', 2.75, 2100, 40.0), $sample('web-1', 1.0, 1900, null)]));
+
+    expect($aggregates)->toHaveCount(2)
+        ->and($aggregates[0])->toMatchArray(['server' => 'web-1', 'count' => 3, 'loadAverage1' => 2.75, 'loadAverage5' => 2.75, 'cpuCores' => 4, 'memoryUsedMb' => 2100, 'memoryTotalMb' => 7859, 'diskUsedGb' => 41.25, 'diskTotalGb' => 80.0])
+        ->and($aggregates[0]['loadAverage15'])->toBeNull()
+        ->and($aggregates[1])->toMatchArray(['server' => 'web-2', 'count' => 1, 'memoryUsedMb' => 900])
+        ->and($reversed)->toEqual([$aggregates[0]]);
+});
+
+it('skips lines whose server gauge is not a number or null', function () {
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([bufferedAggregate('home'), [...bufferedAggregate('broken'), 'cpuCores' => '4']]);
+
+    expect(array_column($buffer->read($buffer->claimBatches()[0]['path']), 'route'))->toBe(['home']);
+});
+
 it('keeps a claimed batch and its id until it is deleted', function () {
     $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
     $buffer->append([bufferedAggregate('home')]);
