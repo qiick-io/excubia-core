@@ -16,7 +16,8 @@ use Qiick\Excubia\Enums\SeverityEnum;
 /**
  * Checks `cors.allowed_origins` in `production`: a `*` origin together with
  * `cors.supports_credentials` fails at high (any site can send credentialed
- * requests), a `*` origin alone warns at low. Skipped outside production.
+ * requests); a `*` origin without credentials passes, as it is Laravel's stock
+ * config. Skipped outside production.
  */
 final class LaravelCorsWildcardCheck implements HealthCheckContract
 {
@@ -42,24 +43,21 @@ final class LaravelCorsWildcardCheck implements HealthCheckContract
             return CheckResultData::skipped($this->id(), $this->name(), 'cors.allowed_origins', 'CORS is checked in the production environment only.');
         }
 
-        if (! $posture->hasCorsWildcardOrigin) {
+        // A bare * without credentials is Laravel's stock config and safe for public APIs (#139).
+        if (! $posture->hasCorsWildcardOrigin || ! $posture->isCorsCredentialSupportEnabled) {
             return CheckResultData::fromFindings($this->id(), $this->name(), []);
         }
-
-        $hasCredentials = $posture->isCorsCredentialSupportEnabled;
 
         return CheckResultData::fromFindings($this->id(), $this->name(), [
             new FindingData(
                 checkId: $this->id(),
-                severity: $hasCredentials ? SeverityEnum::High : SeverityEnum::Low,
-                status: $hasCredentials ? FindingStatusEnum::Fail : FindingStatusEnum::Warn,
+                severity: SeverityEnum::High,
+                status: FindingStatusEnum::Fail,
                 subject: 'cors.allowed_origins',
-                message: $hasCredentials
-                    ? 'cors.allowed_origins contains * while cors.supports_credentials is true.'
-                    : 'cors.allowed_origins contains *.',
+                message: 'cors.allowed_origins contains * while cors.supports_credentials is true.',
                 fixHint: 'List the allowed origins in config/cors.php (php artisan config:publish cors) instead of *.',
                 evidenceUrl: 'https://laravel.com/docs/routing#cors',
-                details: ['hasCredentials' => $hasCredentials],
+                details: ['hasCredentials' => true],
             ),
         ]);
     }
