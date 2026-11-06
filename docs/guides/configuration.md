@@ -279,7 +279,7 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.notifications` | object | | Sent and failed notifications per class and channel. Off by default. |
 | `runtime.notifications.enabled` | boolean | `false` | Collect notification counts. |
 | `runtime.notifications.sampleRate` | number 0–1 | `1` | Share of notifications recorded. |
-| `runtime.logLevels` | object | | Log entries counted per level, never the message. Off by default. |
+| `runtime.logLevels` | object | | Log entries counted per level and log channel, never the message. Off by default. |
 | `runtime.logLevels.enabled` | boolean | `false` | Collect log level counts. |
 | `runtime.logLevels.sampleRate` | number 0–1 | `1` | Share of log entries recorded. |
 | `runtime.deprecations` | object | | PHP deprecations counted per source (`app`, `vendor/<vendor>/<package>`), masked message and PHP version, through a chained error handler. Off by default. |

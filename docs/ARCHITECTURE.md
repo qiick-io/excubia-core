@@ -118,6 +118,7 @@ qiick-io/excubia-core
 │   │   ├── QueueWorkerHeartbeatService.php  # worker Looping listener → cache key excubia:worker-heartbeat:<connection>:<queue>, once a minute
 │   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → both buffers + ReportPushService
 │   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
+│   │   ├── LogChannelTapService.php         # logging tap → Monolog processor that names the channel of the next MessageLogged (#174)
 │   │   ├── ExceptionCollectorService.php    # reportable() callback, context (job/route/command), in-memory groups, flush
 │   │   ├── ExceptionPayloadService.php      # masking, relative frames, fingerprint, group merge (pure)
 │   │   ├── ScheduledTaskIdentityService.php # scheduled task name + taskId, shared by the runtime aggregates and the schedule inventory (#146)

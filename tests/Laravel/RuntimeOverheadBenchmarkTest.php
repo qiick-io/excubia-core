@@ -11,10 +11,13 @@ use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Monolog\Handler\NullHandler;
+use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
@@ -31,7 +34,8 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
  * counted for duplicate query detection (#148). The benchmark route reads
  * and writes the cache three times, logs once and runs the same query five
  * times (an N+1 that `duplicateQuery` records), so the cache, log level and
- * query listeners run as in a typical request.
+ * query listeners run as in a typical request. The third test prices the
+ * Monolog processor that learns the log channel (#174) per log entry.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -227,4 +231,51 @@ it('costs nothing on a request that raises no deprecation, with deprecations on'
 
     expect($deprecationsRaised)->toBe(0)
         ->and($perDeprecation)->toBeLessThan(0.1);
+})->group('benchmark');
+
+it('adds little per log entry to learn its channel, with log levels on', function () {
+    benchmarkProject($this->app, ['enabled' => true, 'logLevels' => ['enabled' => true]]);
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $entries = 40 * BENCHMARK_REQUESTS;
+
+    // One Monolog write to a NullHandler without and with the channel processor (#174), no event dispatcher.
+    $writeMilliseconds = function (Logger $logger) use ($entries): float {
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $entries; $i++) {
+            $logger->info('benchmark');
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $entries;
+    };
+    $plain = $writeMilliseconds(new Logger(new Monolog('benchmark', [new NullHandler])));
+    $watched = new Logger(new Monolog('benchmark', [new NullHandler]));
+    $collector->watchLogChannel($watched, 'benchmark');
+    $withProcessor = $writeMilliseconds($watched);
+
+    // The listener per entry once the channel is known: read it, clear it and count it.
+    $logEvent = new MessageLogged('info', 'benchmark');
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $entries; $i++) {
+        $watched->info('benchmark');
+        $collector->recordLog($logEvent);
+    }
+
+    $perEntry = (hrtime(true) - $startedAt) / 1e6 / $entries;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLog channel over %d entries (PHP %s, Laravel %s)\n  write, no processor:   %.5f ms/entry\n  write, with processor: %.5f ms/entry (delta %.5f ms)\n  write + recordLog:     %.5f ms/entry\n",
+        $entries,
+        PHP_VERSION,
+        Application::VERSION,
+        $plain,
+        $withProcessor,
+        $withProcessor - $plain,
+        $perEntry,
+    ));
+
+    expect(bufferedOfType($this->app, 'logLevel')[0])->toMatchArray(['channel' => 'benchmark', 'count' => $entries])
+        ->and($withProcessor - $plain)->toBeLessThan(0.01);
 })->group('benchmark');
