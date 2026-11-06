@@ -822,6 +822,23 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-redis-memory"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/redisMemoryDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1378,6 +1395,33 @@
                             }
                         }
                     }
+                }
+            }
+        },
+        "redisMemoryDetails": {
+            "description": "laravel-redis-memory finding, one per Redis connection that is near or at its maxmemory, has no maxmemory, or holds the cache with the noeviction policy. The connection name only, never a host, port or password.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connection", "usedMb", "maxMb", "policy"],
+            "properties": {
+                "connection": {
+                    "description": "Redis connection name from config/database.php (redis.*).",
+                    "type": "string"
+                },
+                "usedMb": {
+                    "description": "used_memory from INFO memory in MiB, two decimals.",
+                    "type": "number",
+                    "minimum": 0
+                },
+                "maxMb": {
+                    "description": "maxmemory in MiB, two decimals; null when it is 0 (unbounded).",
+                    "type": ["number", "null"],
+                    "minimum": 0
+                },
+                "policy": {
+                    "description": "maxmemory_policy (noeviction, allkeys-lru, …); null when the server does not report it.",
+                    "type": ["string", "null"],
+                    "pattern": "^[a-z-]{1,32}$"
                 }
             }
         },

@@ -217,6 +217,8 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-database-connections', ['connection' => 'mysql', 'connectionCount' => 120]),
         $finding('laravel-database-size', ['connection' => 'mysql', 'sizeMb' => 512.25, 'largestTables' => [['table' => 'activity_log', 'sizeMb' => 300.5], ['table' => 'users', 'sizeMb' => 2]]]),
         $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 0.02, 'largestTables' => []]),
+        $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => 100.0, 'policy' => 'allkeys-lru']),
+        $finding('laravel-redis-memory', ['connection' => 'default', 'usedMb' => 1.25, 'maxMb' => null, 'policy' => null]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
@@ -248,6 +250,8 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('laravel-database-connections', ['connection' => 'mysql', 'connectionCount' => 120, 'host' => 'db.internal']),
         $finding('laravel-database-size', ['connection' => 'sqlite', 'sizeMb' => 1.5, 'largestTables' => [], 'path' => '/srv/app/database.sqlite']),
         $finding('laravel-database-size', ['connection' => 'mysql', 'sizeMb' => 1.5, 'largestTables' => [['table' => 'users', 'sizeMb' => 1.5, 'schema' => 'production_db']]]),
+        $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => 100.0, 'policy' => 'allkeys-lru', 'host' => 'redis.internal']),
+        $finding('laravel-redis-memory', ['connection' => 'cache', 'usedMb' => 92.5, 'maxMb' => null, 'policy' => 'redis://user:secret@host']),
     ] as $invalidDatabaseFinding) {
         expect(reportSchemaErrors($render([$invalidDatabaseFinding])))->not->toBe([]);
     }
