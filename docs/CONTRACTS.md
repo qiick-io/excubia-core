@@ -86,7 +86,9 @@ Additive latency histogram from #147 (versions stay `1`): an optional `histogram
 
 ### SARIF and fingerprints
 
-One SARIF rule per check id (the rule id is the check id), one result per `fail` or `warn` finding, `partialFingerprints` key `excubiaFinding/v1`. The value, and the report's per-finding `fingerprint`, is `sha256(checkId + "\0" + subject + "\0" + (advisoryId ?? ""))` as lowercase hex. SARIF levels follow the severity (`critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`); locations are project-relative manifest paths (`dependency-licenses`: `composer.lock` or `package-lock.json`, by the finding's ecosystem; `env-example-sync`: `.env.example`).
+One SARIF rule per check id (the rule id is the check id), one result per `fail` or `warn` finding, `partialFingerprints` key `excubiaFinding/v1`. The value, and the report's per-finding `fingerprint`, is `sha256(checkId + "\0" + subject + "\0" + (advisoryId ?? ""))` as lowercase hex. SARIF levels follow the severity (`critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`); locations are project-relative manifest paths (`npm-advisories`: the JavaScript lockfile the report read, `package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`; `dependency-licenses`: `composer.lock` or that JavaScript lockfile, by the finding's ecosystem; `env-example-sync`: `.env.example`).
+
+Additive report fields from #21 (`schemaVersion` stays `1`): top-level `javascriptLockfile` and `npm-advisories` `details.lockfile`, both `package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`.
 
 ### GitHub Action
 

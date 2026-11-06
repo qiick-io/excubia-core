@@ -142,7 +142,7 @@ final class HealthCheckRunnerService
             $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
-        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults));
+        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults), javascriptLockfile: $snapshot->javascriptLockfileName());
         $report = $raw->withoutIgnoredFindings($configuration, $this->today);
 
         return [
@@ -152,6 +152,7 @@ final class HealthCheckRunnerService
                 $report->generatedAt,
                 $report->excubiaVersion,
                 $report->project,
+                javascriptLockfile: $report->javascriptLockfile,
             ),
             'expiredIgnoreWarnings' => $configuration->expiredIgnoreWarnings($raw->findings(), $this->today),
         ];

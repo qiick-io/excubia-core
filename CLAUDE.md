@@ -26,7 +26,7 @@ src/Contracts/         *Contract interfaces (HttpClientContract is faked in test
 src/Data/              readonly *Data value objects
 src/Enums/             *Enum (SeverityEnum, FindingStatusEnum, ReportFormatEnum, ExitCodeEnum)
 src/Services/          *Service (runner, upgrade plan, snapshot, data-source API clients, cache)
-src/Parsers/           *Parser for composer.lock/json, package-lock.json, Node version files
+src/Parsers/           *Parser for composer.lock/json, package-lock.json, yarn.lock, pnpm-lock.yaml (YAML subset), Node version files
 src/Renderers/         table / json / markdown *Renderer
 src/Registries/        HealthCheckRegistry (order, --only / --skip)
 src/Configuration/     ExcubiaConfigurationLoader (excubia.json + excubia.schema.json)

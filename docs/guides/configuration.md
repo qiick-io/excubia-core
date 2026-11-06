@@ -128,7 +128,7 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 
 ### Dependency licenses
 
-`dependency-licenses` reads the `license` entries of `composer.lock` and `package-lock.json` (lockfileVersion 2 and 3). It sends nothing anywhere. Each package gets one verdict:
+`dependency-licenses` reads the `license` entries of `composer.lock` and `package-lock.json` (lockfileVersion 2 and 3). It sends nothing anywhere. `yarn.lock` and `pnpm-lock.yaml` record no licenses: their packages are left out of the rows and the inventory, and one `skipped` row (`not-applicable`) says how many there are. Each package gets one verdict:
 
 1. **Denied** (fail, high): a license matches `denied`.
 2. **Allowed** (no row): a license matches `allowed`.

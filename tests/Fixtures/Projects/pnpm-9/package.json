@@ -1,0 +1,7 @@
+{
+    "packageManager": "pnpm@9.12.3",
+    "dependencies": {
+        "@acme/ui": "file:../ui",
+        "lodash": "^4.17.20"
+    }
+}

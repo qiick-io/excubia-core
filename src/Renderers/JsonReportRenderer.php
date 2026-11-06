@@ -15,8 +15,9 @@ use Qiick\Excubia\Data\LicenseInventoryData;
  * JSON report for schema version 1.
  *
  * Optional fields, all additive (still schema version 1): `generatedAt`,
- * `excubiaVersion`, `release`, `deployedAt` and `project` when the report
- * carries them, `licenses` when `dependency-licenses` ran;
+ * `excubiaVersion`, `release`, `deployedAt`, `project` and
+ * `javascriptLockfile` (#21) when the report carries them, `licenses` when
+ * `dependency-licenses` ran;
  * per finding `fingerprint` always, `advisoryId` when the finding names
  * one, `skipReason` on skipped rows and `details` when the check set any.
  */
@@ -111,6 +112,10 @@ final class JsonReportRenderer implements ReportRendererContract
                 'laravel' => $this->runtime($healthReport->project->laravel, $healthReport->project->laravelCycle),
                 'node' => $this->runtime($healthReport->project->node, $healthReport->project->nodeCycle),
             ];
+        }
+
+        if ($healthReport->javascriptLockfile !== null) {
+            $document['javascriptLockfile'] = $healthReport->javascriptLockfile;
         }
 
         $document += [

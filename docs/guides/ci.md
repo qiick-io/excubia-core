@@ -76,7 +76,7 @@ The release comes from `release` in `excubia.json`, `EXCUBIA_RELEASE`, or the va
 
 - Each check id is a rule; each `fail` or `warn` finding is a result. `pass` and `skipped` rows and the upgrade plan are left out.
 - Levels: `critical` and `high` → `error`, `medium` → `warning`, `low` and `info` → `note`. The Excubia severity stays in `properties.severity`.
-- The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `.nvmrc`, `.node-version` or `package.json`; for the posture checks `config/app.php`, `config/queue.php`, `database/migrations` or `routes/console.php`), relative to the project. Never an absolute path.
+- The location is the manifest the finding comes from (`composer.json`, `composer.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `.nvmrc`, `.node-version` or `package.json`; for the posture checks `config/app.php`, `config/queue.php`, `database/migrations` or `routes/console.php`), relative to the project. Never an absolute path.
 - `partialFingerprints` come from the check id, subject and advisory id, so an alert keeps its identity across runs.
 
 ## Any other CI

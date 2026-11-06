@@ -32,7 +32,7 @@ It describes `develop` as reviewed for #82 (November 2026). Released `0.1.x` con
 | `https://packagist.org/api/security-advisories/?packages[]=…` | Composer package names (no versions) in one request | `PackagistApiService::securityAdvisories()` |
 | `https://repo.packagist.org/p2/<vendor>/<name>.json` | one Composer package name per request, at most once per run (shared by `composer-abandoned`, `composer-stale`, `laravel-next-blocker` and `composer-outdated`) | `PackagistApiService::versions()` |
 | `https://api.github.com/repos/<owner>/<repo>` | owner and repository name taken from the Packagist source URL; `Authorization: Bearer $GITHUB_TOKEN` when set | `GitHubRepositoryApiService` |
-| `https://api.osv.dev/v1/querybatch` (POST) | npm package names and versions from `package-lock.json`, ecosystem `npm` | `OsvApiService` |
+| `https://api.osv.dev/v1/querybatch` (POST) | npm package names and versions from `package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`, ecosystem `npm` (public packages only; `.npmrc` and `.yarnrc.yml` are read for registry URLs only, credentials ignored) | `OsvApiService` |
 
 Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`.
 
@@ -115,7 +115,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 
 ### 7. Reports written by the user (local output)
 
-`--format=json|markdown|sarif` and `--output` write the report the user asked for. The JSON report has no paths or hostnames. SARIF locations are manifest paths relative to the scanned project (`composer.lock`, `package-lock.json`, `config/app.php`…), never absolute. Markdown and table output contain finding messages built from package names that passed the validation above and from public advisory data.
+`--format=json|markdown|sarif` and `--output` write the report the user asked for. The JSON report has no paths or hostnames. SARIF locations are manifest paths relative to the scanned project (`composer.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `config/app.php`…), never absolute. Markdown and table output contain finding messages built from package names that passed the validation above and from public advisory data.
 
 ### 8. GitHub Action (B5) — `action.yml`
 
@@ -142,6 +142,7 @@ Every request carries `User-Agent: qiick-excubia` and `Accept: application/json`
 | **Information disclosure**: values in SQL | 4, 5 | bindings never read; inline string, numeric, hex and dollar-quoted literals masked (#106) | MySQL double-quoted strings stay, as they cannot be told apart from PostgreSQL / SQLite identifiers |
 | **Information disclosure**: secrets in scheduled task commands | 4 | arguments dropped: only `artisan <command name>` or the executable's file name (#109); descriptions masked | A secret the developer writes into a task description in a form no mask recognises |
 | **Information disclosure**: private package names to public sources | 1 | names only, no versions to Packagist; packages the lockfile does not show as served by Packagist or the public npm registry are never sent, nor names matching `privacy.skipPackages` (#108) | A private package the lockfile cannot tell apart (a private package on the public npm registry, or one served through Packagist) is sent unless `privacy.skipPackages` names it |
+| **Information disclosure**: registry credentials in `.npmrc` / `.yarnrc.yml` | 1, 2 | the project `.npmrc` (pnpm) and `.yarnrc.yml` (Yarn Berry) are read for registry URLs only; credentials ignored. Each line is matched against `registry=` / `@scope:registry=` or `npmRegistryServer` / `npmScopes.<scope>` and every other line (`_authToken`, `_auth`, `_password`, `npmAuthToken`, `npmAuthIdent`, …) is dropped on the spot, never kept in any object; the URLs are only compared with the public registry, never stored, sent or reported (#21) | — |
 | **Information disclosure**: token or credentials in logs | 1, 3 | headers never logged, URL credentials removed, no response bodies in messages | — |
 | **Information disclosure**: health result | 6 | secret of at least 32 characters, 404 on mismatch, rate limit, `no-store` (#107) | A long secret that leaks (logs, monitor configuration) gives read access until it is rotated |
 | **Information disclosure**: release identifier | 1, 3–5 | only the value the user or the platform sets (`release`, `EXCUBIA_RELEASE`, CI commit variables) or, for the standalone CLI, the commit id read from `.git/HEAD` and its ref file without running `git`; branch names, authors and messages are never read into the report; values outside 100 characters of `[A-Za-z0-9._+/@-]` are dropped (#129) | A release string the user sets to something sensitive is sent to their own app as written |

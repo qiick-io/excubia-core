@@ -62,7 +62,10 @@ qiick-io/excubia-core
 │   ├── Parsers/
 │   │   ├── ComposerLockParser.php
 │   │   ├── ComposerJsonParser.php
-│   │   ├── PackageLockParser.php
+│   │   ├── PackageLockParser.php            # package-lock.json + npm registry rules shared with Yarn and pnpm
+│   │   ├── YarnLockParser.php               # yarn.lock, classic v1 and Berry (#21)
+│   │   ├── PnpmLockParser.php               # pnpm-lock.yaml 6 and 9 (#21)
+│   │   ├── YamlSubsetParser.php             # the YAML subset Berry and pnpm write, no dependency
 │   │   └── NodeVersionParser.php            # .nvmrc / .node-version / engines
 │   ├── Renderers/
 │   │   ├── TableReportRenderer.php
