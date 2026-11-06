@@ -276,7 +276,7 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.server` | object | | Server CPU, memory and disk: one sample of this machine per `excubia:push-runtime` run (load average 1, 5 and 15 minutes, CPU cores, memory used and total, disk used and total for the disk that holds `storage/`). Off by default. |
 | `runtime.server.enabled` | boolean | `false` | Take server samples. |
 | `runtime.server.sampleRate` | number 0–1 | `1` | Share of runs that take a sample. |
-| `runtime.server.name` | string | hashed id | Readable server name in excubia-app: 1 to 64 letters, digits, `.`, `_` or `-`. Unset, the server is the first 12 hex characters of sha256(hostname + sha256(app key)); the hostname is never sent. See [runtime monitoring](./runtime-monitoring.md#server-metrics). |
+| `runtime.server.name` | string | hashed id | Readable server name in excubia-app: 1 to 64 letters, digits, `.`, `_` or `-`. `EXCUBIA_SERVER_NAME` wins. Unset, the server is the first 12 hex characters of sha256(hostname + sha256(app key)); the hostname is never sent. See [runtime monitoring](./runtime-monitoring.md#server-metrics). |
 
 ## Exception capture
 
@@ -299,6 +299,7 @@ Excubia reads these from the process environment (`getenv()`), never from Larave
 | `EXCUBIA_APP_URL` | `push`, `excubia:push`, `excubia:push-runtime` | Base URL of your `excubia-app`. Wins over `app.url`. |
 | `EXCUBIA_APP_TOKEN` | `push`, `excubia:push`, `excubia:push-runtime` | Project push token. Wins over `app.token`. Never printed, cached or written to a report. |
 | `EXCUBIA_RELEASE` | `check`, `push`, their Artisan aliases, `excubia:push-runtime` | Release identifier. `release` in `excubia.json` wins; it wins over `GITHUB_SHA`, `CI_COMMIT_SHA`, `VERCEL_GIT_COMMIT_SHA`, `FORGE_DEPLOY_COMMIT`, `LARAVEL_CLOUD_COMMIT` ([release identifier](#release-identifier)). |
+| `EXCUBIA_SERVER_NAME` | `excubia:push-runtime` | Readable name of this server in `server` runtime aggregates (#162): 1 to 64 letters, digits, `.`, `_` or `-`. Wins over `runtime.server.name`. An invalid value is not an error: the server is sent as its hashed id and the command warns on stderr. |
 | `EXCUBIA_HEALTH_SECRET` | health endpoint | Secret expected in the `oh-dear-health-check-secret` header, at least 32 characters. Without it, or when it is shorter, the route is not registered. |
 | `GITHUB_TOKEN` | `composer-stale` | Optional. Raises the GitHub API rate limit for the archived-repository lookup. Sent only to `api.github.com`; never printed, cached or written to a report. |
 | `HTTPS_PROXY` | all HTTP requests | Proxy for the data sources and the push, read by Symfony HttpClient. |

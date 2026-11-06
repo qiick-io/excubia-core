@@ -13,7 +13,7 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "859500b73a7a4d6dc5d6486c94ccb748ce5f88f64c336805b5469578e8903a2c"
+            "sha256": "00e5219545cf9ac9be5432ce5274fee91594e4b3498301fbc091e578ea42d695"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "762bd90c22438aea1f52f15f1cd395a19ee1821f27e480e3c4c5a12cc88a8c7d"
+            "sha256": "0112cec3157e17c88d40e7c30b13bc7fcc6e7c31b801c7d49271f15dc227e472"
         }
     },
     "checkIds": [
@@ -160,6 +160,7 @@
         "EXCUBIA_APP_URL",
         "EXCUBIA_HEALTH_SECRET",
         "EXCUBIA_RELEASE",
+        "EXCUBIA_SERVER_NAME",
         "GITHUB_TOKEN"
     ],
     "push": {
