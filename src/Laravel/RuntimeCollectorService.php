@@ -14,12 +14,15 @@ use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
+use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Client\Events\ResponseReceived;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Log\Logger;
+use Illuminate\Log\LogManager;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Notifications\Events\NotificationFailed;
@@ -31,12 +34,15 @@ use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Queue;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
+use Monolog\Logger as MonologLogger;
+use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Throwable;
 use WeakMap;
+use WeakReference;
 
 /**
  * Opt-in runtime aggregates (`docs/runtime-schema.json`, SPEC section 13).
@@ -54,7 +60,7 @@ use WeakMap;
  * job class, queue and connection names, scheduled task names and ids
  * (`ScheduledTaskIdentityService`), outgoing hosts, peak memory, queue wait
  * times, cache store names and masked key prefixes, mailable, mailer, notification and
- * channel names, log levels, the source package, masked message and PHP
+ * channel names, log levels and log channel names, the source package, masked message and PHP
  * minor version of PHP deprecations, the normalised SQL shape, connection
  * and route name or job class of queries repeated within one request or job
  * (`duplicateQuery`, #148), and Artisan command names with their exit code
@@ -151,6 +157,23 @@ final class RuntimeCollectorService
     private ?array $pendingMail = null;
 
     private bool $isRecordingLog = false;
+
+    /**
+     * Log channel of the entry being written, set by the Monolog processor
+     * `watchLogChannel()` pushes and read (then cleared) by the next
+     * `MessageLogged`, which Laravel fires after Monolog ran the processors.
+     */
+    private ?string $logChannel = null;
+
+    /**
+     * The `datetime` of the log record `logChannel` belongs to. Each record
+     * has its own; a stack runs its own processor first and then the ones
+     * it copied from the channels inside it, so the first name set for a
+     * record wins and a stack reports the stack's name.
+     *
+     * @var WeakReference<object>|null
+     */
+    private ?WeakReference $logChannelRecord = null;
 
     private bool $isRecordingDeprecation = false;
 
@@ -281,6 +304,7 @@ final class RuntimeCollectorService
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::LogLevel)) {
             $events->listen(MessageLogged::class, fn (MessageLogged $event) => $collector->recordLog($event));
+            $collector->tapLogChannels($application);
         }
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::Deprecation)) {
@@ -655,12 +679,102 @@ final class RuntimeCollectorService
     }
 
     /**
-     * Count one log entry by level. The message and context are never read.
-     * A message logged while this runs (a deprecation raised inside Excubia)
-     * is ignored, so the listener cannot loop.
+     * Learn the channel name of each log entry (#174) without touching the
+     * message or the context: append `LogChannelTapService` to the `tap`
+     * list of every configured channel, so Laravel calls it when it
+     * resolves the channel, and watch the channels it already resolved.
+     * The other taps of a channel are kept and run first.
+     *
+     * Why a tap and a processor, not `LogManager::extend()` or a handler:
+     * `MessageLogged` carries no channel, but Laravel fires it right after
+     * Monolog wrote the record, and Monolog runs the processors before the
+     * handlers. A tap keeps every driver as configured and is lazy.
+     *
+     * ponytail: on-demand channels (`Log::build()`, `Log::stack([...])`)
+     * have no configuration to tap, so their entries have no channel unless
+     * they copy a tapped channel's processors (a stack of named channels
+     * reports the first one). An entry whose handler throws fires no
+     * `MessageLogged`; its channel is overwritten by the next entry.
+     */
+    public function tapLogChannels(Application $application): void
+    {
+        $this->guard(function () use ($application): void {
+            /** @var Repository $config */
+            $config = $application->make('config');
+            $channels = $config->get('logging.channels');
+
+            if (is_array($channels)) {
+                foreach ($channels as $name => $channel) {
+                    if (! is_string($name) || $name === '' || ! is_array($channel)) {
+                        continue;
+                    }
+
+                    $taps = is_array($channel['tap'] ?? null) ? $channel['tap'] : [];
+                    $tap = LogChannelTapService::class.':'.$name;
+
+                    if (! in_array($tap, $taps, true)) {
+                        $channels[$name]['tap'] = [...$taps, $tap];
+                    }
+                }
+
+                $config->set('logging.channels', $channels);
+            }
+
+            if (! $application->resolved('log')) {
+                return;
+            }
+
+            $manager = $application->make('log');
+
+            if (! $manager instanceof LogManager) {
+                return;
+            }
+
+            foreach ($manager->getChannels() as $name => $logger) {
+                if (is_string($name) && $logger instanceof Logger) {
+                    $this->watchLogChannel($logger, $name);
+                }
+            }
+        });
+    }
+
+    /**
+     * Push a Monolog processor onto the channel's logger that remembers the
+     * channel name for the next `MessageLogged`. The processor returns the
+     * record unchanged and never reads its message or context.
+     */
+    public function watchLogChannel(Logger $logger, string $channel): void
+    {
+        $this->guard(function () use ($logger, $channel): void {
+            $monolog = $logger->getLogger();
+
+            if ($channel === '' || ! $monolog instanceof MonologLogger) {
+                return;
+            }
+
+            $monolog->pushProcessor(function (LogRecord $record) use ($channel): LogRecord {
+                if ($this->logChannelRecord?->get() !== $record->datetime) {
+                    $this->logChannel = $channel;
+                    $this->logChannelRecord = WeakReference::create($record->datetime);
+                }
+
+                return $record;
+            });
+        });
+    }
+
+    /**
+     * Count one log entry by level and, when a watched channel wrote it,
+     * channel. The message and context are never read. A message logged
+     * while this runs (a deprecation raised inside Excubia) is ignored, so
+     * the listener cannot loop.
      */
     public function recordLog(MessageLogged $event): void
     {
+        $channel = $this->logChannel;
+        $this->logChannel = null;
+        $this->logChannelRecord = null;
+
         if ($this->isRecordingLog) {
             return;
         }
@@ -668,16 +782,19 @@ final class RuntimeCollectorService
         $this->isRecordingLog = true;
 
         try {
-            $this->guard(function () use ($event): void {
+            $this->guard(function () use ($event, $channel): void {
                 if (! $this->isSampled(RuntimeTypeEnum::LogLevel)) {
                     return;
                 }
 
                 $level = is_string($event->level) ? strtolower($event->level) : '';
+                $dimensions = ['level' => in_array($level, self::LOG_LEVELS, true) ? $level : 'unknown'];
 
-                $this->record(RuntimeTypeEnum::LogLevel, [
-                    'level' => in_array($level, self::LOG_LEVELS, true) ? $level : 'unknown',
-                ], []);
+                if ($channel !== null) {
+                    $dimensions['channel'] = $channel;
+                }
+
+                $this->record(RuntimeTypeEnum::LogLevel, $dimensions, []);
             });
         } finally {
             $this->isRecordingLog = false;
