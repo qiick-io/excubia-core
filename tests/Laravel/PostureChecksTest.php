@@ -429,20 +429,18 @@ describe('laravel-session-security', function () {
 });
 
 describe('laravel-cors-wildcard', function () {
-    it('fails at high for * with credentials and warns at low for * alone', function () {
+    it('fails at high for * with credentials and passes for * alone', function () {
         productionPostureApp();
         config(['cors.allowed_origins' => ['https://example.test', '*']]);
         $withCredentials = postureResult(new LaravelCorsWildcardCheck)->findings[0];
         config(['cors.supports_credentials' => false]);
-        $alone = postureResult(new LaravelCorsWildcardCheck)->findings[0];
+        $alone = postureResult(new LaravelCorsWildcardCheck);
 
         expect($withCredentials->status->value)->toBe('fail')
             ->and($withCredentials->severity->value)->toBe('high')
             ->and($withCredentials->subject)->toBe('cors.allowed_origins')
             ->and($withCredentials->details)->toBe(['hasCredentials' => true])
-            ->and($alone->status->value)->toBe('warn')
-            ->and($alone->severity->value)->toBe('low')
-            ->and($alone->details)->toBe(['hasCredentials' => false]);
+            ->and($alone->findings)->toBe([]);
     });
 });
 
