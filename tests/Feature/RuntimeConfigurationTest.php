@@ -47,7 +47,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {
@@ -62,6 +62,13 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
         ->and($switched->isTypeEnabled(RuntimeTypeEnum::Notification))->toBeFalse()
         ->and(fn () => $load(['cache' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.cache key [thresholdMs].')
         ->and(fn () => $load(['logLevels' => ['sampleRate' => 2]]))->toThrow(InvalidConfigurationException::class, 'runtime.logLevels.sampleRate must be between 0 and 1.');
+
+    $deprecations = $load(['enabled' => true, 'deprecations' => ['enabled' => true, 'sampleRate' => 0.5]]);
+
+    expect($deprecations->isTypeEnabled(RuntimeTypeEnum::Deprecation))->toBeTrue()
+        ->and($deprecations->sampleRate(RuntimeTypeEnum::Deprecation))->toBe(0.5)
+        ->and($load(['deprecations' => ['enabled' => true]])->isTypeEnabled(RuntimeTypeEnum::Deprecation))->toBeFalse()
+        ->and(fn () => $load(['deprecations' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.deprecations key [thresholdMs].');
 });
 
 it('rejects an invalid runtime key', function (string $runtime, string $message) {

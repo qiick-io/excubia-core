@@ -882,3 +882,233 @@ it('never lets an exception inside the new listeners reach the host app', functi
     expect(Cache::get('still:works'))->toBe('yes')
         ->and(is_file($blocked))->toBeTrue();
 });
+
+/**
+ * The PHP error handler on top of the stack right now (get_error_handler()
+ * is PHP 8.5 only).
+ */
+function currentErrorHandler(): ?callable
+{
+    $handler = set_error_handler(static fn (): bool => false);
+    restore_error_handler();
+
+    return $handler;
+}
+
+/**
+ * A project with deprecations on and files that raise deprecations when
+ * included: one in the app, one in a vendor package, one that PHP itself
+ * deprecates (null to a string parameter, no strict types). The app message
+ * carries an absolute path, a secret and an email, which must not reach the
+ * buffer.
+ *
+ * @return array<string, string>
+ */
+function deprecationFiles(): array
+{
+    return [
+        'excubia.json' => json_encode(['runtime' => ['enabled' => true, 'deprecations' => ['enabled' => true]]], JSON_THROW_ON_ERROR),
+        'app/Legacy.php' => "<?php\ntrigger_error('App\\\\Legacy::old() is deprecated, token=deprecation-secret, see /srv/www/private/notes.txt or ops@example.test', E_USER_DEPRECATED);\n",
+        'vendor/acme/widgets/src/Old.php' => "<?php\ntrigger_error('Acme\\\\Widget::render() is deprecated since 2.0, '.str_repeat('long ', 100), E_USER_DEPRECATED);\n",
+        'app/Native.php' => "<?php\nstrlen(null);\n",
+    ];
+}
+
+it('counts app, vendor and native deprecations by source, masked message and PHP version', function () {
+    $project = temporaryProject(deprecationFiles());
+    $this->app->setBasePath($project);
+    $this->app->useStoragePath(temporaryProject([]));
+    $this->app->register(ExcubiaServiceProvider::class, true);
+
+    for ($round = 0; $round < 2; $round++) {
+        include $project.'/app/Legacy.php';
+        include $project.'/vendor/acme/widgets/src/Old.php';
+        include $project.'/app/Native.php';
+    }
+
+    $this->app->terminate();
+    $deprecations = bufferedOfType($this->app, 'deprecation');
+    $phpVersion = PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;
+    $app = $deprecations->firstWhere('message', 'App\Legacy::old() is deprecated, token=[masked], see notes.txt or [email]');
+    $vendor = $deprecations->firstWhere('source', 'vendor/acme/widgets');
+    $native = $deprecations->first(fn (array $aggregate): bool => str_contains($aggregate['message'], 'strlen()'));
+    $raw = rawBuffer($this->app);
+
+    expect($deprecations)->toHaveCount(3)
+        ->and($app)->toMatchArray(['source' => 'app', 'phpVersion' => $phpVersion, 'count' => 2, 'errorCount' => 0, 'sampleRate' => 1])
+        ->and(array_keys($app))->toBe(['type', 'bucket', 'sampleRate', 'source', 'message', 'phpVersion', 'count', 'errorCount'])
+        ->and($vendor)->toMatchArray(['phpVersion' => $phpVersion, 'count' => 2])
+        ->and(mb_strlen($vendor['message']))->toBe(RuntimeCollectorService::MAX_DEPRECATION_MESSAGE_LENGTH)
+        ->and($vendor['message'])->toStartWith('Acme\Widget::render() is deprecated since 2.0, long')
+        ->and($native)->toMatchArray(['source' => 'app', 'count' => 2])
+        ->and($raw)->not->toContain('secret')
+        ->and($raw)->not->toContain($project)
+        ->and($raw)->not->toContain('/srv/www')
+        ->and($raw)->not->toContain('example.test')
+        ->and($raw)->not->toContain('Legacy.php')
+        ->and($raw)->not->toContain('Old.php');
+});
+
+it('names the source of a deprecation without its path', function (string $file, string $source) {
+    $collector = new RuntimeCollectorService(new RuntimeConfigurationData, new RuntimeBufferService(temporaryProject([]), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES), '/srv/project');
+
+    expect($collector->deprecationSource($file))->toBe($source);
+})->with([
+    'app file' => ['/srv/project/app/Models/User.php', 'app'],
+    'compiled view' => ['/srv/project/storage/framework/views/abc.php', 'app'],
+    'eval in the app' => ["/srv/project/app/Legacy.php(12) : eval()'d code", 'app'],
+    'vendor package' => ['/srv/project/vendor/laravel/framework/src/Illuminate/Support/Str.php', 'vendor/laravel/framework'],
+    'composer file' => ['/srv/project/vendor/composer/ClassLoader.php', 'vendor/composer'],
+    'outside the project' => ['/usr/share/php/Legacy.php', 'unknown'],
+    'sibling with the same prefix' => ['/srv/project-old/app/User.php', 'unknown'],
+    'no file' => ['', 'unknown'],
+]);
+
+it('reads Windows paths as well', function () {
+    $collector = new RuntimeCollectorService(new RuntimeConfigurationData, new RuntimeBufferService(temporaryProject([]), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES), 'C:\\project');
+
+    expect($collector->deprecationSource('C:\\project\\vendor\\acme\\widgets\\src\\Old.php'))->toBe('vendor/acme/widgets')
+        ->and($collector->deprecationSource('C:\\project\\app\\Legacy.php'))->toBe('app');
+});
+
+it('always runs the previous error handler and returns its result', function () {
+    $calls = [];
+    set_error_handler(function (int $level, string $message) use (&$calls): bool {
+        $calls[] = [$level, $message];
+
+        return true;
+    });
+
+    try {
+        bootRuntimeProject($this->app, ['enabled' => true, 'deprecations' => ['enabled' => true]]);
+        $handler = currentErrorHandler();
+
+        trigger_error('old api', E_USER_DEPRECATED);
+        trigger_error('a warning', E_USER_WARNING);
+        trigger_error('a notice', E_USER_NOTICE);
+        @trigger_error('silenced', E_USER_DEPRECATED);
+        $result = $handler(E_DEPRECATED, 'direct call', __FILE__, __LINE__);
+    } finally {
+        restore_error_handler();
+        restore_error_handler();
+    }
+
+    $this->app->terminate();
+
+    expect($calls)->toBe([[E_USER_DEPRECATED, 'old api'], [E_USER_WARNING, 'a warning'], [E_USER_NOTICE, 'a notice'], [E_USER_DEPRECATED, 'silenced'], [E_DEPRECATED, 'direct call']])
+        ->and($result)->toBeTrue()
+        ->and(bufferedOfType($this->app, 'deprecation')->sum('count'))->toBe(3);
+});
+
+it('returns false without a previous handler so PHP handles the error as before', function () {
+    $collector = new RuntimeCollectorService(
+        new RuntimeConfigurationData(isEnabled: true, enabledTypes: ['deprecation' => true]),
+        new RuntimeBufferService(temporaryProject([]), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES),
+        '/srv/project',
+    );
+    set_error_handler(null);
+
+    try {
+        $collector->listenToDeprecations();
+        $handler = currentErrorHandler();
+    } finally {
+        restore_error_handler();
+        restore_error_handler();
+    }
+
+    expect($handler(E_USER_DEPRECATED, 'old api', '/srv/project/app/Legacy.php', 3))->toBeFalse()
+        ->and($handler(E_USER_WARNING, 'a warning', '/srv/project/app/Legacy.php', 3))->toBeFalse();
+});
+
+it('keeps Laravel writing deprecations to its deprecations log and warnings as exceptions', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'deprecations' => ['enabled' => true]]);
+    $logged = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$logged): void {
+        $logged[] = [$event->level, $event->message];
+    });
+
+    trigger_error('laravel still logs this', E_USER_DEPRECATED);
+
+    expect(fn () => trigger_error('still an exception', E_USER_WARNING))->toThrow(ErrorException::class, 'still an exception');
+
+    $this->app->terminate();
+
+    expect($logged)->toHaveCount(1)
+        ->and($logged[0][0])->toBe('warning')
+        ->and($logged[0][1])->toContain('laravel still logs this')
+        ->and(bufferedOfType($this->app, 'deprecation')->sum('count'))->toBe(1);
+});
+
+it('registers no error handler when deprecations are off', function (?array $runtime) {
+    $before = currentErrorHandler();
+    bootRuntimeProject($this->app, $runtime);
+
+    expect(currentErrorHandler())->toBe($before);
+
+    trigger_error('not counted', E_USER_DEPRECATED);
+    $this->app->terminate();
+
+    expect(bufferedOfType($this->app, 'deprecation'))->toHaveCount(0);
+})->with([
+    'no excubia.json' => [null],
+    'runtime off' => [['enabled' => false, 'deprecations' => ['enabled' => true]]],
+    'runtime on, deprecations by default' => [['enabled' => true]],
+    'deprecations off' => [['enabled' => true, 'deprecations' => ['enabled' => false]]],
+]);
+
+it('registers the error handler when deprecations are on', function () {
+    $before = currentErrorHandler();
+    bootRuntimeProject($this->app, ['enabled' => true, 'deprecations' => ['enabled' => true]]);
+
+    expect(currentErrorHandler())->not->toBe($before);
+});
+
+it('never lets a failure inside the deprecation collector surface, and cannot loop', function () {
+    $previousCalls = 0;
+    $clockCalls = 0;
+    $collector = null;
+    $collector = new RuntimeCollectorService(
+        new RuntimeConfigurationData(isEnabled: true, enabledTypes: ['deprecation' => true]),
+        new RuntimeBufferService(temporaryProject([]), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES),
+        '/srv/project',
+        function () use (&$clockCalls, &$collector): float {
+            $clockCalls++;
+            // PHP never calls an error handler from inside itself, but code the collector runs could reach it another way.
+            $collector->recordDeprecation('raised inside the collector', '/srv/project/app/Inner.php');
+
+            throw new RuntimeException('collector-failure');
+        },
+    );
+    set_error_handler(function () use (&$previousCalls): bool {
+        $previousCalls++;
+
+        return true;
+    });
+
+    try {
+        $collector->listenToDeprecations();
+        trigger_error('outer', E_USER_DEPRECATED);
+    } finally {
+        restore_error_handler();
+        restore_error_handler();
+    }
+
+    $collector->flush();
+
+    expect($previousCalls)->toBe(1)
+        ->and($clockCalls)->toBe(1);
+
+    // After the failure the collector still works.
+    $collector->recordDeprecation('later', '/srv/project/app/Later.php');
+
+    expect($clockCalls)->toBe(2);
+});
+
+it('records no deprecation at sample rate 0', function () {
+    bootRuntimeProject($this->app, ['enabled' => true, 'deprecations' => ['enabled' => true, 'sampleRate' => 0]]);
+
+    trigger_error('sampled out', E_USER_DEPRECATED);
+    $this->app->terminate();
+
+    expect(bufferedOfType($this->app, 'deprecation'))->toHaveCount(0);
+});
