@@ -47,7 +47,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {
@@ -107,6 +107,25 @@ it('keeps server metrics off by default and reads the server name', function () 
         ->and(fn () => $load(['server' => ['name' => str_repeat('a', 65)]]))->toThrow(InvalidConfigurationException::class, 'runtime.server.name must be 1 to 64 letters, digits, dots, underscores or hyphens.')
         ->and(fn () => $load(['server' => ['threshold' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.server key [threshold].')
         ->and(fn () => $load(['jobs' => ['name' => 'web-1']]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.jobs key [name].');
+});
+
+it('keeps command runs off by default and reads their ignore list', function () {
+    $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+    $defaults = $load(['enabled' => true]);
+    $switched = $load(['enabled' => true, 'commands' => ['enabled' => true, 'sampleRate' => 0.5, 'ignore' => ['app:*', 'migrate']]]);
+
+    expect($defaults->isTypeEnabled(RuntimeTypeEnum::Command))->toBeFalse()
+        ->and($defaults->ignoredCommands)->toBe(['schedule:run', 'schedule:work', 'queue:work', 'queue:listen', 'horizon*', 'tinker'])
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::Command))->toBeTrue()
+        ->and($switched->sampleRate(RuntimeTypeEnum::Command))->toBe(0.5)
+        ->and($switched->ignoredCommands)->toBe(['app:*', 'migrate'])
+        ->and($load(['commands' => ['ignore' => []]])->ignoredCommands)->toBe([])
+        ->and(fn () => $load(['commands' => ['ignore' => 'tinker']]))->toThrow(InvalidConfigurationException::class, 'runtime.commands.ignore must be a list of strings.')
+        ->and(fn () => $load(['commands' => ['ignore' => ['']]]))->toThrow(InvalidConfigurationException::class, 'runtime.commands.ignore[0] must be a non-empty string.')
+        ->and(fn () => $load(['commands' => ['threshold' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.commands key [threshold].')
+        ->and(fn () => $load(['jobs' => ['ignore' => []]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.jobs key [ignore].');
 });
 
 it('takes the server name from EXCUBIA_SERVER_NAME before runtime.server.name, and falls back to the hashed id when it is invalid', function (array $environment, array $server, ?string $expectedName, bool $isInvalid) {

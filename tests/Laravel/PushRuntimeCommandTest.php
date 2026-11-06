@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
@@ -26,6 +28,8 @@ use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Qiick\Excubia\Tests\Support\FakeServerDisk;
 use Qiick\Excubia\Tests\Support\FakeServerResources;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
 
 const RUNTIME_ENDPOINT = 'https://excubia.example.test/api/runtime';
@@ -276,6 +280,8 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     event(new NotificationSent(new AnonymousNotifiable, new class extends Notification {}, 'mail'));
     Log::warning('something');
     trigger_error('Old::api() is deprecated', E_USER_DEPRECATED);
+    event(new CommandStarting('migrate', new ArrayInput([]), new NullOutput));
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 1));
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);

@@ -417,6 +417,27 @@
                             "description": "Readable name of this server in the dashboard, such as web-1. The EXCUBIA_SERVER_NAME environment variable wins (#162); since excubia.json is shared by every server, set that variable per server instead. Default: the first 12 hex characters of sha256(hostname + sha256(app key)), stable and not reversible; the hostname is never sent."
                         }
                     }
+                },
+                "commands": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Artisan command runs counted per command name and exit code class (0, 1, other), with their duration; never arguments or options. Only the top-level command of a process; commands run by the scheduler are scheduledTask and Excubia's own excubia:* commands are never counted. Off by default (#152).",
+                    "properties": {
+                        "enabled": {
+                            "$ref": "#/$defs/optInRuntimeType/properties/enabled"
+                        },
+                        "sampleRate": {
+                            "$ref": "#/$defs/runtimeType/properties/sampleRate"
+                        },
+                        "ignore": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Command names, * wildcards allowed, that are never counted. Replaces the default [\"schedule:run\", \"schedule:work\", \"queue:work\", \"queue:listen\", \"horizon*\", \"tinker\"]; excubia:* is always excluded."
+                        }
+                    }
                 }
             }
         },

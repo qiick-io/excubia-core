@@ -248,8 +248,14 @@ final class ExcubiaConfigurationLoader
         $sampleRates = [];
         $slowQueryThresholdMs = RuntimeConfigurationData::DEFAULT_SLOW_QUERY_THRESHOLD_MS;
         $duplicateQueryThreshold = RuntimeConfigurationData::DEFAULT_DUPLICATE_QUERY_THRESHOLD;
+        $ignoredCommands = RuntimeConfigurationData::DEFAULT_IGNORED_COMMANDS;
         $serverName = null;
-        $extraKeys = [RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'], RuntimeTypeEnum::DuplicateQuery->value => ['threshold'], RuntimeTypeEnum::Server->value => ['name']];
+        $extraKeys = [
+            RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'],
+            RuntimeTypeEnum::DuplicateQuery->value => ['threshold'],
+            RuntimeTypeEnum::Server->value => ['name'],
+            RuntimeTypeEnum::Command->value => ['ignore'],
+        ];
 
         foreach (RuntimeTypeEnum::cases() as $type) {
             $label = 'runtime.'.$type->configurationKey();
@@ -281,6 +287,10 @@ final class ExcubiaConfigurationLoader
                 $duplicateQueryThreshold = $this->integer($settings['threshold'], $label.'.threshold');
             }
 
+            if (array_key_exists('ignore', $settings)) {
+                $ignoredCommands = $this->stringList($settings['ignore'], $label.'.ignore');
+            }
+
             if (array_key_exists('name', $settings)) {
                 if (! is_string($settings['name'])) {
                     throw new InvalidConfigurationException($label.'.name must be a string.');
@@ -304,6 +314,7 @@ final class ExcubiaConfigurationLoader
             slowQueryThresholdMs: $slowQueryThresholdMs,
             bufferMaxBytes: array_key_exists('bufferMaxBytes', $runtime) ? $this->integer($runtime['bufferMaxBytes'], 'runtime.bufferMaxBytes') : RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES,
             duplicateQueryThreshold: $duplicateQueryThreshold,
+            ignoredCommands: $ignoredCommands,
             serverName: $serverName,
             isServerNameVariableInvalid: $isServerNameVariableInvalid,
         );

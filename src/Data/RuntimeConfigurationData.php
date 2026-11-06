@@ -17,6 +17,9 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * aggregate carries its rate so the app can scale counts by `1 / sampleRate`.
  * `duplicateQueryThreshold` is how many times one query shape must run
  * within one request or job before `duplicateQuery` records it (#148).
+ * `ignoredCommands` are the Artisan command names, `*` wildcards allowed,
+ * that `command` never records (#152); Excubia's own `excubia:*` commands
+ * are never recorded whatever the list holds.
  * `serverName` names this machine in `server` aggregates: the
  * `EXCUBIA_SERVER_NAME` environment variable (#162), else
  * `runtime.server.name` (#149); without it the server is a hashed id, never
@@ -39,6 +42,13 @@ final readonly class RuntimeConfigurationData
     public const MINIMUM_DUPLICATE_QUERY_THRESHOLD = 2;
 
     /**
+     * Long-running or interactive commands that `command` skips by default
+     * (#152): their duration says nothing, and the scheduler and queue have
+     * their own types.
+     */
+    public const DEFAULT_IGNORED_COMMANDS = ['schedule:run', 'schedule:work', 'queue:work', 'queue:listen', 'horizon*', 'tinker'];
+
+    /**
      * A readable server name: letters, digits, `.`, `_` and `-`, at most 64.
      */
     public const SERVER_NAME_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/';
@@ -56,6 +66,7 @@ final readonly class RuntimeConfigurationData
     /**
      * @param  array<string, bool>  $enabledTypes  keyed by RuntimeTypeEnum value; a missing type takes its default
      * @param  array<string, float>  $sampleRates  keyed by RuntimeTypeEnum value; a missing type records every event
+     * @param  list<string>  $ignoredCommands  command names or `*` patterns that `command` skips
      *
      * @throws InvalidConfigurationException
      */
@@ -66,6 +77,7 @@ final readonly class RuntimeConfigurationData
         public int $slowQueryThresholdMs = self::DEFAULT_SLOW_QUERY_THRESHOLD_MS,
         public int $bufferMaxBytes = self::DEFAULT_BUFFER_MAX_BYTES,
         public int $duplicateQueryThreshold = self::DEFAULT_DUPLICATE_QUERY_THRESHOLD,
+        public array $ignoredCommands = self::DEFAULT_IGNORED_COMMANDS,
         public ?string $serverName = null,
         public bool $isServerNameVariableInvalid = false,
     ) {

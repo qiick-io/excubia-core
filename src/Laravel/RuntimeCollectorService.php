@@ -9,6 +9,8 @@ use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyForgotten;
 use Illuminate\Cache\Events\KeyWritten;
+use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
@@ -28,6 +30,7 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Queue;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Str;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Services\RuntimeBufferService;
@@ -42,7 +45,7 @@ use WeakMap;
  * UTC minute (counts, total and maximum milliseconds or megabytes where the
  * type has them, and a latency histogram for durations) and writes the
  * aggregates to the local buffer when the request or command terminates,
- * and after each queued job or scheduled task (a queue worker terminates only
+ * and after each queued job, scheduled task or Artisan command (a queue worker terminates only
  * when it stops). Nothing is sent from here: `excubia:push-runtime` sends
  * the buffer.
  *
@@ -52,12 +55,14 @@ use WeakMap;
  * (`ScheduledTaskIdentityService`), outgoing hosts, peak memory, queue wait
  * times, cache store names and masked key prefixes, mailable, mailer, notification and
  * channel names, log levels, the source package, masked message and PHP
- * minor version of PHP deprecations, and the normalised SQL shape, connection
+ * minor version of PHP deprecations, the normalised SQL shape, connection
  * and route name or job class of queries repeated within one request or job
- * (`duplicateQuery`, #148). Never request or response bodies,
+ * (`duplicateQuery`, #148), and Artisan command names with their exit code
+ * class (`command`, #152). Never request or response bodies,
  * headers, cookies, users, IP addresses, query bindings, exception messages,
  * whole cache keys or values, recipients, log messages or context, absolute
- * paths, or the line and stack of a deprecation.
+ * paths, the line and stack of a deprecation, or command arguments and
+ * options.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -103,6 +108,19 @@ final class RuntimeCollectorService
      * being remembered, so the memo of normalised SQL stays small.
      */
     private const MAX_MEMOISED_SQL_LENGTH = 4000;
+
+    /**
+     * Environment variable the scheduler commands set for the task processes
+     * they start (#152), so a scheduled Artisan command, already counted as
+     * `scheduledTask`, is not counted again as `command`.
+     */
+    public const SCHEDULER_ENVIRONMENT_VARIABLE = 'EXCUBIA_INSIDE_SCHEDULER';
+
+    /**
+     * Commands that run scheduled tasks: the ones they start, in the same
+     * process or as child processes, are `scheduledTask`, never `command`.
+     */
+    private const SCHEDULER_COMMANDS = ['schedule:run', 'schedule:work', 'schedule:test'];
 
     private const BYTES_PER_MEGABYTE = 1048576;
 
@@ -166,6 +184,25 @@ final class RuntimeCollectorService
      * @var array<string, string>
      */
     private array $normalisedSql = [];
+
+    /**
+     * Artisan commands running in this process: 1 for the top-level one,
+     * more while it calls others through `Artisan::call()` (`command`).
+     */
+    private int $commandDepth = 0;
+
+    /**
+     * Start time of the top-level command when `command` counts it, else null
+     * (ignored, Excubia's own, or run by the scheduler).
+     */
+    private ?float $commandStartedAt = null;
+
+    /**
+     * Whether this process set SCHEDULER_ENVIRONMENT_VARIABLE for the
+     * scheduler command running now; it is removed when that command ends,
+     * so a long-lived process that called `schedule:run` keeps counting.
+     */
+    private bool $hasMarkedScheduler = false;
 
     /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
@@ -258,6 +295,11 @@ final class RuntimeCollectorService
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::OutgoingHttp)) {
             $events->listen(ResponseReceived::class, fn (ResponseReceived $event) => $collector->recordOutgoingHttp($event));
+        }
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Command)) {
+            $events->listen(CommandStarting::class, fn (CommandStarting $event) => $collector->startCommand($event));
+            $events->listen(CommandFinished::class, fn (CommandFinished $event) => $collector->recordCommand($event));
         }
 
         $application->terminating(function () use ($collector): void {
@@ -820,6 +862,119 @@ final class RuntimeCollectorService
 
             $this->flush();
         });
+    }
+
+    /**
+     * Start timing an Artisan command (`command`, #152). Only the top-level
+     * command of the process counts: one it calls through `Artisan::call()`
+     * is part of its duration, and a command called from a scheduled closure
+     * or job runs below `schedule:run`. A scheduler command marks the
+     * environment its task processes inherit, so a scheduled Artisan command
+     * (a child `php artisan …` process, top-level there) is skipped as well:
+     * it is already a `scheduledTask`. Ignored commands and Excubia's own are
+     * skipped, before the sample rate is applied.
+     */
+    public function startCommand(CommandStarting $event): void
+    {
+        $this->commandDepth++;
+
+        if ($this->commandDepth !== 1) {
+            return;
+        }
+
+        $this->commandStartedAt = null;
+
+        $this->guard(function () use ($event): void {
+            $isInsideScheduler = self::isInsideScheduler();
+
+            if (! $isInsideScheduler && in_array($event->command, self::SCHEDULER_COMMANDS, true)) {
+                self::markScheduler(true);
+                $this->hasMarkedScheduler = true;
+            }
+
+            if ($isInsideScheduler || $this->isIgnoredCommand($event->command)) {
+                return;
+            }
+
+            $this->commandStartedAt = $this->now();
+        });
+    }
+
+    /**
+     * Record the top-level command by name and exit code class, then flush:
+     * a long-lived process (Octane, a worker calling `Artisan::call()`) does
+     * not terminate after each command. In a short-lived `artisan` process
+     * the terminating flush that follows finds nothing left to write. The
+     * input (arguments and options) is never read.
+     */
+    public function recordCommand(CommandFinished $event): void
+    {
+        $this->commandDepth = max($this->commandDepth - 1, 0);
+
+        if ($this->commandDepth !== 0) {
+            return;
+        }
+
+        if ($this->hasMarkedScheduler) {
+            $this->hasMarkedScheduler = false;
+            self::markScheduler(false);
+        }
+
+        if ($this->commandStartedAt === null) {
+            return;
+        }
+
+        $startedAt = $this->commandStartedAt;
+        $this->commandStartedAt = null;
+
+        $this->guard(function () use ($event, $startedAt): void {
+            if ($this->isSampled(RuntimeTypeEnum::Command)) {
+                $this->add(RuntimeTypeEnum::Command, [
+                    'command' => $event->command !== '' ? $event->command : 'unknown',
+                    'exitCodeClass' => match ($event->exitCode) {
+                        0 => '0',
+                        1 => '1',
+                        default => 'other',
+                    },
+                ], ($this->now() - $startedAt) * 1000, $event->exitCode !== 0);
+            }
+
+            $this->flush();
+        });
+    }
+
+    /**
+     * Excubia's own commands (`excubia:*`) always, then the configured
+     * `runtime.commands.ignore` names and `*` patterns.
+     */
+    private function isIgnoredCommand(string $command): bool
+    {
+        return Str::is(['excubia:*', ...$this->configuration->ignoredCommands], $command);
+    }
+
+    /**
+     * ponytail: the marker reaches every task process the scheduler starts
+     * through Symfony Process, which inherits `$_ENV`; a task run with
+     * `->user()` goes through `sudo`, which resets the environment, so such a
+     * scheduled Artisan command is also counted as `command`. Laravel's own
+     * marker for scheduled processes would be the upgrade path, if one lands.
+     */
+    private static function markScheduler(bool $isInside): void
+    {
+        if ($isInside) {
+            $_ENV[self::SCHEDULER_ENVIRONMENT_VARIABLE] = '1';
+            putenv(self::SCHEDULER_ENVIRONMENT_VARIABLE.'=1');
+
+            return;
+        }
+
+        unset($_ENV[self::SCHEDULER_ENVIRONMENT_VARIABLE]);
+        putenv(self::SCHEDULER_ENVIRONMENT_VARIABLE);
+    }
+
+    private static function isInsideScheduler(): bool
+    {
+        return getenv(self::SCHEDULER_ENVIRONMENT_VARIABLE) === '1' || ($_ENV[self::SCHEDULER_ENVIRONMENT_VARIABLE] ?? null) === '1';
     }
 
     public function recordOutgoingHttp(ResponseReceived $event): void
