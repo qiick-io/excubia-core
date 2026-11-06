@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Two more upgrade plan steps (#176), appended after the existing ones in this order: "Update npm packages to the latest patch: …" for the `npm-outdated` packages behind on a patch without an `npm-advisories` finding (the npm twin of the Composer step from #150), then "Review dependency licenses: denied for …; strong copyleft for …." when `dependency-licenses` has a `fail` row (a denied license), naming the denied packages and any strong copyleft ones; unknown licenses are left out. Steps carry package names and versions only. Additive: the `upgradePlan` JSON shape is unchanged (only steps are added), no check id, config key or schema change; `schemaVersion` stays `1`.
+
 ## [1.0.0-beta.2] - 2026-11-06
 
 Second beta of 1.0 (D20): features competitors already have, all additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). New check ids are appended to the run order; every new runtime type is off by default; schema and protocol versions stay `1`.

@@ -136,6 +136,99 @@ it('ends with one latest-patch step for outdated packages without an advisory', 
         ->and(planMessages($snapshot, [$outdated('vendor/minor-only', null)]))->toBe([]);
 });
 
+it('appends an npm latest-patch step after the Composer one, without npm packages that have an advisory', function () {
+    $outdated = static fn (string $checkId, string $package, ?string $latestPatch): FindingData => new FindingData(
+        checkId: $checkId,
+        severity: SeverityEnum::Info,
+        status: FindingStatusEnum::Warn,
+        subject: $package,
+        message: 'Behind.',
+        fixHint: 'Update.',
+        evidenceUrl: null,
+        details: ['package' => $package, 'lockedVersion' => '1.0.0', 'latestPatch' => $latestPatch, 'latestMinor' => null, 'latestMajor' => null, 'isMajorBehind' => false],
+    );
+    $snapshot = new ProjectSnapshotData(null, null, [], [], null);
+
+    expect(planMessages($snapshot, [
+        $outdated('npm-outdated', 'vite', '6.0.11'),
+        $outdated('npm-outdated', 'axios', '1.7.9'),
+        $outdated('npm-outdated', '@scope/minor-only', null),
+        $outdated('npm-outdated', 'vendor/patched', '1.0.9'),
+        $outdated('composer-outdated', 'vendor/patched', '1.0.3'),
+        $outdated('composer-outdated', 'lodash', '4.17.21'),
+        planFinding('npm-advisories', FindingStatusEnum::Fail, 'Update axios to ≥ fixed version.', 'axios', 'GHSA-npm'),
+    ]))->toBe([
+        '1. Update axios to ≥ fixed version.',
+        '2. Update to the latest patch: vendor/patched 1.0.3, lodash 4.17.21.',
+        '3. Update npm packages to the latest patch: vite 6.0.11, vendor/patched 1.0.9.',
+    ])
+        ->and(planMessages($snapshot, [$outdated('npm-outdated', 'vite', null)]))->toBe([]);
+});
+
+it('ends with one license review step when dependency-licenses has a fail row', function () {
+    $license = static fn (string $package, FindingStatusEnum $status, SeverityEnum $severity): FindingData => new FindingData(
+        checkId: 'dependency-licenses',
+        severity: $severity,
+        status: $status,
+        subject: $package,
+        message: 'License: GPL-3.0-only.',
+        fixHint: 'Replace the package.',
+        evidenceUrl: 'https://www.npmjs.com/package/'.$package,
+        details: ['package' => $package, 'lockedVersion' => '1.0.0', 'licenses' => ['GPL-3.0-only'], 'ecosystem' => 'npm'],
+    );
+    $snapshot = new ProjectSnapshotData(null, null, [], [], null);
+    $copyleft = $license('vendor/copyleft', FindingStatusEnum::Warn, SeverityEnum::Medium);
+    $unknown = $license('vendor/unknown', FindingStatusEnum::Warn, SeverityEnum::Low);
+
+    expect(planMessages($snapshot, [
+        $license('vendor/denied', FindingStatusEnum::Fail, SeverityEnum::High),
+        $copyleft,
+        $unknown,
+        $license('vendor/second-denied', FindingStatusEnum::Fail, SeverityEnum::High),
+        planFinding('composer-advisories', FindingStatusEnum::Fail, 'Update vendor/vulnerable to 1.0.5.', 'vendor/vulnerable', 'GHSA-1'),
+    ]))->toBe([
+        '1. Update vendor/vulnerable to 1.0.5.',
+        '2. Review dependency licenses: denied for vendor/denied, vendor/second-denied; strong copyleft for vendor/copyleft. Replace the packages or clear the licenses after a legal review.',
+    ])
+        ->and(planMessages($snapshot, [$license('vendor/denied', FindingStatusEnum::Fail, SeverityEnum::High)]))->toBe([
+            '1. Review dependency licenses: denied for vendor/denied. Replace the packages or clear the licenses after a legal review.',
+        ])
+        ->and(planMessages($snapshot, [$copyleft, $unknown]))->toBe([]);
+});
+
+it('puts only package names and versions in the npm and license steps', function () {
+    $snapshot = new ProjectSnapshotData(null, null, [], [], null);
+    $steps = implode("\n", planMessages($snapshot, [
+        new FindingData(
+            checkId: 'npm-outdated',
+            severity: SeverityEnum::Info,
+            status: FindingStatusEnum::Warn,
+            subject: 'vite',
+            message: 'Behind on a patch: 6.0.11 is available.',
+            fixHint: 'Update to 6.0.11.',
+            evidenceUrl: 'https://www.npmjs.com/package/vite',
+            details: ['package' => 'vite', 'lockedVersion' => '6.0.1', 'latestPatch' => '6.0.11', 'latestMinor' => '6.0.11', 'latestMajor' => null, 'isMajorBehind' => false],
+        ),
+        new FindingData(
+            checkId: 'dependency-licenses',
+            severity: SeverityEnum::High,
+            status: FindingStatusEnum::Fail,
+            subject: 'vendor/denied',
+            message: 'License denied by checks.dependency-licenses.denied: GPL-3.0-only.',
+            fixHint: 'Replace the package.',
+            evidenceUrl: 'https://packagist.org/packages/vendor/denied',
+            details: ['package' => 'vendor/denied', 'lockedVersion' => '1.0.0', 'licenses' => ['GPL-3.0-only'], 'ecosystem' => 'composer'],
+        ),
+    ]));
+
+    expect($steps)->toContain('vite 6.0.11')
+        ->toContain('vendor/denied')
+        ->not->toContain('https://')
+        ->not->toContain('GPL')
+        ->not->toContain('6.0.1,')
+        ->not->toContain('/Users/');
+});
+
 it('does not change the exit code', function () {
     $steps = (new UpgradePlanService)->plan(
         new ProjectSnapshotData(null, 'v12.0.0', [], [], null),
