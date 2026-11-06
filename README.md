@@ -75,7 +75,6 @@ vendor/bin/excubia --version
 | `composer-abandoned` | Abandoned packages | Packagist | Abandoned direct dependency (high); abandoned transitive dependency (medium) |
 | `composer-stale` | Stale packages | Packagist, GitHub | Repository archived (high); no release for more than 24 months (low) |
 | `laravel-next-blocker` | Next-major blockers | Packagist | The latest release of a direct dependency does not allow the next Laravel major (medium), or only in a pre-release (low) |
-| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
 | `laravel-debug-mode` | Debug mode | Booted app | `app.debug` on outside `local` / `testing` (high) |
 | `laravel-production-caches` | Production caches | Booted app | Config, route or event cache missing in `production` (low, one row per cache) |
 | `laravel-pending-migrations` | Pending migrations | Migrator | Migrations have not run (medium) |
@@ -88,9 +87,10 @@ vendor/bin/excubia --version
 | `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
+| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
 
 - `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
-- The twelve `laravel-*` posture checks after `dependency-licenses` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
+- The twelve `laravel-*` posture checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - For `laravel-scheduler-heartbeat`, the service provider schedules `php artisan excubia:heartbeat` every minute. It stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store. Keep the usual `* * * * * php artisan schedule:run` cron (or `schedule:work`), and use a shared cache store (database, Redis) when the scheduler and `excubia:check` run on different machines.
 - Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements. It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`.
 - Thresholds (180 days, 24 months, 10 minutes, 24 hours) are configurable in [`excubia.json`](./docs/guides/configuration.md#checks). Full severity rules: [`docs/SPEC.md`](./docs/SPEC.md) section 3.
@@ -120,13 +120,13 @@ The JSON report also carries, as optional fields of schema version 1:
 | `composer-abandoned` | `package`, `lockedVersion`, `replacement` (or `null`) |
 | `composer-stale` | `package`, `lockedVersion` |
 | `laravel-next-blocker` | `package`, `lockedVersion`, `targetMajor` (integer) |
-| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`) |
 | `laravel-pending-migrations` | `count` |
 | `laravel-failed-jobs` | `count`, `oldestAgeHours` (or `null`) |
 | `laravel-scheduler-heartbeat` | `minutesSinceLastRun` (`null`: never ran) |
 | `laravel-cors-wildcard` | `hasCredentials` |
 | `laravel-production-drivers` | `component` (`queue`, `cache`, `session`, `mail`), `driver` |
 | `laravel-dev-packages` | `package` |
+| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`) |
 | private packages row of the five checks that send names | `count` |
 
 `laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-log-level` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).

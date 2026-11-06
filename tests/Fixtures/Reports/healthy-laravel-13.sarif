@@ -73,14 +73,6 @@
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         },
                         {
-                            "id": "dependency-licenses",
-                            "name": "Dependency licenses",
-                            "shortDescription": {
-                                "text": "Dependency licenses"
-                            },
-                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
-                        },
-                        {
                             "id": "laravel-debug-mode",
                             "name": "Debug mode",
                             "shortDescription": {
@@ -173,6 +165,14 @@
                             "name": "Development packages",
                             "shortDescription": {
                                 "text": "Development packages"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "dependency-licenses",
+                            "name": "Dependency licenses",
+                            "shortDescription": {
+                                "text": "Dependency licenses"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }

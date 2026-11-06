@@ -35,7 +35,6 @@
         "composer-abandoned",
         "composer-stale",
         "laravel-next-blocker",
-        "dependency-licenses",
         "laravel-debug-mode",
         "laravel-production-caches",
         "laravel-pending-migrations",
@@ -47,7 +46,8 @@
         "laravel-cors-wildcard",
         "laravel-production-drivers",
         "laravel-log-level",
-        "laravel-dev-packages"
+        "laravel-dev-packages",
+        "dependency-licenses"
     ],
     "sarif": {
         "fingerprintKeys": [

@@ -213,7 +213,6 @@ final class HealthCheckRunnerService
             new ComposerAbandonedCheck($packagist),
             new ComposerStaleCheck($packagist, new GitHubRepositoryApiService($this->httpClient, $cache), $this->today),
             new LaravelNextMajorBlockerCheck($packagist, $constraints),
-            new DependencyLicensesCheck(new SpdxExpressionService),
             new LaravelDebugModeCheck,
             new LaravelProductionCachesCheck,
             new LaravelPendingMigrationsCheck,
@@ -226,6 +225,7 @@ final class HealthCheckRunnerService
             new LaravelProductionDriversCheck,
             new LaravelLogLevelCheck,
             new LaravelDevPackagesCheck,
+            new DependencyLicensesCheck(new SpdxExpressionService),
         ];
     }
 }
