@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Configuration;
 
+use Qiick\Excubia\Data\DependencyLicensesConfigurationData;
 use Qiick\Excubia\Data\ExceptionConfigurationData;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -77,6 +78,32 @@ final class ExcubiaConfigurationLoader
             exceptions: $this->exceptions($document['exceptions'] ?? []),
             skippedPackagePatterns: $this->skippedPackagePatterns($document['privacy'] ?? []),
             release: $this->release($document),
+            dependencyLicenses: $this->dependencyLicenses($document['checks'] ?? []),
+        );
+    }
+
+    /**
+     * `checks.dependency-licenses`: `allowed` and `denied` license globs
+     * and `includeDev` (default false; `--no-dev` and the top-level
+     * `includeDev` still drop Composer dev packages from the snapshot).
+     * The glob syntax is checked by the data object.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function dependencyLicenses(mixed $checks): DependencyLicensesConfigurationData
+    {
+        $settings = is_array($checks) ? ($checks['dependency-licenses'] ?? []) : [];
+
+        if (! is_array($settings)) {
+            throw new InvalidConfigurationException('checks.dependency-licenses must be an object.');
+        }
+
+        $this->rejectUnknownKeys($settings, ['allowed', 'denied', 'includeDev'], 'checks.dependency-licenses');
+
+        return new DependencyLicensesConfigurationData(
+            allowedLicenses: $this->stringList($settings['allowed'] ?? [], 'checks.dependency-licenses.allowed'),
+            deniedLicenses: $this->stringList($settings['denied'] ?? [], 'checks.dependency-licenses.denied'),
+            isDevelopmentDependencyIncluded: array_key_exists('includeDev', $settings) ? $this->boolean($settings['includeDev'], 'checks.dependency-licenses.includeDev') : false,
         );
     }
 
@@ -273,7 +300,7 @@ final class ExcubiaConfigurationLoader
             throw new InvalidConfigurationException('checks must be an object.');
         }
 
-        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs'], 'checks');
+        $this->rejectUnknownKeys($checks, ['composer-stale', 'php-eol', 'laravel-eol', 'node-eol', 'laravel-scheduler-heartbeat', 'laravel-failed-jobs', 'dependency-licenses'], 'checks');
 
         return [
             'staleAfterMonths' => $this->integerSetting($checks, 'composer-stale', 'staleAfterMonths', $defaults->staleAfterMonths),

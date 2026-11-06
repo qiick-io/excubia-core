@@ -87,7 +87,9 @@ vendor/bin/excubia --version
 | `laravel-production-drivers` | Production drivers | Booted app | In `production`: queue `sync`, cache `array` / `null`, session `array`, mail `log` / `array` (medium, one row per driver) |
 | `laravel-log-level` | Log level | Booted app | In `production`: the default log channel logs at `debug` (low) |
 | `laravel-dev-packages` | Development packages | `composer.json`, booted app | In `production`: `laravel/telescope`, `barryvdh/laravel-debugbar`, `spatie/laravel-ray`, `laravel/pail` or `itsgoingd/clockwork` is in `require` (not `require-dev`) and enabled (medium, one row per package) |
+| `dependency-licenses` | Dependency licenses | `composer.lock`, `package-lock.json` (no request) | A license in `checks.dependency-licenses.denied` (fail, high); a strong copyleft license such as GPL, AGPL, SSPL or EUPL (medium); a missing or unknown license (low). Development dependencies only with `includeDev` |
 
+- `dependency-licenses` reads the licenses the lockfiles already record and sends nothing. An SPDX expression such as `MIT OR GPL-3.0-only` passes when any option is fine; `AND` needs every part to be. Allow or deny licenses in [`excubia.json`](./docs/guides/configuration.md#dependency-licenses).
 - The twelve `laravel-*` posture checks after `laravel-next-blocker` need the booted app, so only `php artisan excubia:check` and `excubia:push` run them. `vendor/bin/excubia` reports them as `skipped` ("requires Artisan").
 - For `laravel-scheduler-heartbeat`, the service provider schedules `php artisan excubia:heartbeat` every minute. It stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store. Keep the usual `* * * * * php artisan schedule:run` cron (or `schedule:work`), and use a shared cache store (database, Redis) when the scheduler and `excubia:check` run on different machines.
 - Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements. It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`.
@@ -107,6 +109,7 @@ In the JSON report every `skipped` finding has a `skipReason`: `data-source-fail
 The JSON report also carries, as optional fields of schema version 1:
 
 - top level: `generatedAt` (UTC, `Y-m-d\TH:i:s\Z`), `excubiaVersion` (the value of `--version`) and `project` with `php`, `laravel` and `node`, each `{version, cycle, securitySupportEndsOn, activeSupportEndsOn}` or `null` when not declared (no name, path or hostname). The cycle and the `Y-m-d` dates come from the endoflife.date data the EOL checks already read, also when they pass; they are `null` when that check was skipped or did not run;
+- top level, when `dependency-licenses` ran: `licenses`, the license inventory without package names: `packageCount`, `byLicense` (list of `{license, packageCount}`, `NOASSERTION` for packages that declare none) and `byEcosystem` with the same counts for `composer` and `npm`;
 - per finding: `fingerprint` (sha256 of `checkId`, `subject` and `advisoryId` joined by a NUL byte, the same value as the SARIF `partialFingerprints`, stable across runs), `advisoryId` on advisory findings, and `details` with check-specific values so you do not parse `message`:
 
 | `checkId` | `details` keys |
@@ -123,6 +126,7 @@ The JSON report also carries, as optional fields of schema version 1:
 | `laravel-cors-wildcard` | `hasCredentials` |
 | `laravel-production-drivers` | `component` (`queue`, `cache`, `session`, `mail`), `driver` |
 | `laravel-dev-packages` | `package` |
+| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`) |
 | private packages row of the five checks that send names | `count` |
 
 `laravel-debug-mode`, `laravel-production-caches`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-log-level` and other skipped rows have no `details`. The exact rules are in [`docs/report-schema.json`](./docs/report-schema.json).

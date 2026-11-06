@@ -50,6 +50,19 @@ it('checks the application base path and exits by --fail-on', function (string $
     'none passes' => ['none', 0],
 ]);
 
+it('runs dependency-licenses from the lockfiles in Artisan', function () {
+    $this->app->setBasePath(dirname(__DIR__).'/Fixtures/Projects/licenses');
+
+    $this->artisan('excubia:check', [
+        '--only' => 'dependency-licenses',
+        '--offline' => true,
+        '--fail-on' => 'high',
+        '--no-banner' => true,
+    ])
+        ->expectsOutputToContain('License denied by checks.dependency-licenses.denied: SSPL-1.0.')
+        ->assertExitCode(1);
+});
+
 it('exits 2 when the application has no composer.lock', function () {
     $this->app->setBasePath(temporaryProject([]));
 

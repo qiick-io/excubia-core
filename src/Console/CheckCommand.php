@@ -274,6 +274,7 @@ final class CheckCommand extends Command
             exceptions: $loaded->exceptions,
             skippedPackagePatterns: $loaded->skippedPackagePatterns,
             release: $loaded->release,
+            dependencyLicenses: $loaded->dependencyLicenses,
         );
     }
 

@@ -74,7 +74,7 @@ it('adds the release from the environment to the JSON report, after excubiaVersi
     $report = releaseJsonReport(releaseProject(), ['GITHUB_SHA' => DEPLOY_COMMIT]);
 
     expect($report['release'])->toBe(DEPLOY_COMMIT)
-        ->and(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'project', 'checks', 'upgradePlan'])
+        ->and(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'project', 'checks', 'upgradePlan', 'licenses'])
         ->and(releaseReportSchemaErrors($report))->toBe([]);
 });
 
@@ -131,7 +131,7 @@ it('sends deployedAt and the release with push --deploy', function () {
     expect($tester->getStatusCode())->toBe(0)
         ->and($report['release'])->toBe('v1.4.0')
         ->and($report['deployedAt'])->toBe('2026-11-06T09:30:00Z')
-        ->and(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan'])
+        ->and(array_keys($report))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses'])
         ->and(releaseReportSchemaErrors($report))->toBe([])
         ->and($tester->getDisplay())->toContain('Deploy marker and report sent to excubia-app (batch ')
         ->and($tester->getDisplay())->not->toContain('No release identifier');

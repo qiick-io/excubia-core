@@ -30,7 +30,8 @@ qiick-io/excubia-core
 │   │   ├── LaravelCorsWildcardCheck.php    (laravel-cors-wildcard)
 │   │   ├── LaravelProductionDriversCheck.php (laravel-production-drivers)
 │   │   ├── LaravelLogLevelCheck.php        (laravel-log-level)
-│   │   └── LaravelDevPackagesCheck.php     (laravel-dev-packages)
+│   │   ├── LaravelDevPackagesCheck.php     (laravel-dev-packages)
+│   │   └── DependencyLicensesCheck.php     (dependency-licenses)          # lockfile licenses, no request
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
