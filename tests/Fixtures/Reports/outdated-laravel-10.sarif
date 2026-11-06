@@ -239,6 +239,14 @@
                                 "text": "Outdated packages"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-queue-workers",
+                            "name": "Queue workers",
+                            "shortDescription": {
+                                "text": "Queue workers"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

@@ -283,6 +283,7 @@ final class CheckCommand extends Command
             queueBacklogMaxPendingJobs: $loaded->queueBacklogMaxPendingJobs,
             queueBacklogQueueNames: $loaded->queueBacklogQueueNames,
             envExampleSync: $loaded->envExampleSync,
+            queueWorkersStaleAfterMinutes: $loaded->queueWorkersStaleAfterMinutes,
         );
     }
 

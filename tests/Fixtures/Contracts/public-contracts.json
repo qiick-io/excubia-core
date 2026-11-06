@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "abc21b72be6ef2d27914f616edf1630008567ebb8b64508a1542172f4fcaed01"
+            "sha256": "9e39868027f2eb426a5965b7fd05942c22e36fdda5a854eae74a1c2329891468"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "f4de7232b39bae802bf3d3545705b0c1488814c538fd0c24e72f8e893a9cc9ef"
+            "sha256": "849a70bf9c29ede195a407b1afe7afd451bd65251144f6f11ffc874151d6f07b"
         }
     },
     "checkIds": [
@@ -55,7 +55,8 @@
         "laravel-queue-backlog",
         "php-platform-requirements",
         "env-example-sync",
-        "composer-outdated"
+        "composer-outdated",
+        "laravel-queue-workers"
     ],
     "sarif": {
         "fingerprintKeys": [
@@ -151,7 +152,8 @@
                 "options": []
             }
         },
-        "heartbeatCacheKey": "excubia:scheduler-heartbeat"
+        "heartbeatCacheKey": "excubia:scheduler-heartbeat",
+        "workerHeartbeatCacheKeyPrefix": "excubia:worker-heartbeat:"
     },
     "environmentVariables": [
         "EXCUBIA_APP_TOKEN",

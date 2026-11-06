@@ -208,12 +208,16 @@ it('accepts every documented details shape and rejects one that does not fit its
         $finding('php-platform-requirements', ['requirement' => 'ext-intl', 'requiredBy' => ['laravel/framework'], 'checkedPhpVersion' => '8.4.1', 'isStandaloneCli' => true]),
         $finding('composer-outdated', $package + ['latestPatch' => '1.0.3', 'latestMinor' => '1.2.0', 'latestMajor' => null, 'isMajorBehind' => false]),
         $finding('composer-outdated', ['count' => 2]),
+        $finding('laravel-queue-workers', ['connection' => 'redis', 'queue' => 'emails', 'minutesSinceLastSeen' => null]),
+        $finding('laravel-queue-workers', ['status' => 'paused', 'processes' => 4, 'supervisors' => ['supervisor-1']]),
     ]);
     $invalid = $render([
         $finding('php-eol', $package),
         $finding('laravel-failed-jobs', ['count' => 3, 'payload' => 'secret']),
         $finding('laravel-database', ['connection' => 'mysql', 'host' => 'db.internal']),
         $finding('laravel-storage', ['directory' => '/srv/app/storage']),
+        $finding('laravel-queue-workers', ['connection' => 'redis', 'queue' => 'emails', 'minutesSinceLastSeen' => 3, 'host' => 'worker-1.internal']),
+        $finding('laravel-queue-workers', ['status' => 'running', 'processes' => 4, 'supervisors' => []]),
     ]);
 
     $invalidOutdated = $render([

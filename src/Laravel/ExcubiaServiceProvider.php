@@ -13,8 +13,10 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 /**
  * Registers `php artisan excubia:check`, `excubia:push`, `excubia:heartbeat` and
  * `excubia:push-runtime` when this package is installed in a Laravel app, schedules
- * the heartbeat every minute for the `laravel-scheduler-heartbeat` check, and
- * registers the opt-in health endpoint, the opt-in runtime monitoring and the
+ * the heartbeat every minute for the `laravel-scheduler-heartbeat` check, always
+ * listens to the `Looping` event of a queue worker (once one is built) for the
+ * `laravel-queue-workers` heartbeat (`QueueWorkerHeartbeatService`, one throttled cache write a minute
+ * per worker queue), and registers the opt-in health endpoint, the opt-in runtime monitoring and the
  * opt-in exception capture. The provider does not boot the scanned project.
  *
  * The endpoint route exists only when `excubia.json` has `healthEndpoint.enabled: true` and
@@ -43,6 +45,8 @@ final class ExcubiaServiceProvider extends ServiceProvider
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
             $schedule->command('excubia:heartbeat')->everyMinute();
         });
+
+        QueueWorkerHeartbeatService::register($this->app);
 
         $configuration = $this->configuration();
 

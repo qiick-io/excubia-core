@@ -38,6 +38,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  * and falls back to the environment when it is null.
  * `dependencyLicenses` holds the `checks.dependency-licenses` keys and
  * `envExampleSync` the `checks.env-example-sync` keys.
+ * `queueWorkersStaleAfterMinutes` is `checks.laravel-queue-workers.staleAfterMinutes`:
+ * a queue with pending jobs warns when no worker heartbeat is newer (default 5).
  */
 final readonly class ExcubiaConfigurationData
 {
@@ -87,6 +89,7 @@ final readonly class ExcubiaConfigurationData
         public int $queueBacklogMaxPendingJobs = 1000,
         public array $queueBacklogQueueNames = [],
         public EnvExampleSyncConfigurationData $envExampleSync = new EnvExampleSyncConfigurationData,
+        public int $queueWorkersStaleAfterMinutes = 5,
         public int $schedulerLateAfterMinutes = 5,
     ) {
         if ($this->staleAfterMonths < 1) {
@@ -99,6 +102,10 @@ final readonly class ExcubiaConfigurationData
 
         if ($this->schedulerHeartbeatStaleAfterMinutes < 1) {
             throw new InvalidConfigurationException('staleAfterMinutes must be at least 1.');
+        }
+
+        if ($this->queueWorkersStaleAfterMinutes < 1) {
+            throw new InvalidConfigurationException('checks.laravel-queue-workers.staleAfterMinutes must be at least 1.');
         }
 
         if ($this->schedulerLateAfterMinutes < 1) {

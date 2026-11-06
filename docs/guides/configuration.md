@@ -28,7 +28,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "laravel-database": { "connections": [] },
     "laravel-disk-space": { "warnAtPercentUsed": 80, "failAtPercentUsed": 90 },
     "laravel-queue-backlog": { "maxOldestAgeMinutes": 15, "maxPendingJobs": 1000, "queues": [] },
-    "env-example-sync": { "ignoreKeys": [], "useDefaultIgnoreKeys": true }
+    "env-example-sync": { "ignoreKeys": [], "useDefaultIgnoreKeys": true },
+    "laravel-queue-workers": { "staleAfterMinutes": 5 }
   },
   "ignore": [
     {
@@ -127,6 +128,8 @@ The value is up to 100 characters of `A-Z a-z 0-9 . _ + / @ -`. Anything else is
 | `checks.env-example-sync` | object | | Settings of `env-example-sync`, see [below](#env-example-sync). |
 | `checks.env-example-sync.ignoreKeys` | list of strings | `[]` | Environment key names or globs that are never reported, neither as missing from `.env.example` nor as unused, for example `"STRIPE_*"`. Added to the default list unless `useDefaultIgnoreKeys` is `false`. |
 | `checks.env-example-sync.useDefaultIgnoreKeys` | boolean | `true` | Keep the default list of optional Laravel keys. `false` makes `ignoreKeys` replace it. |
+| `checks.laravel-queue-workers` | object | | Settings of `laravel-queue-workers`. |
+| `checks.laravel-queue-workers.staleAfterMinutes` | integer ≥ 1 | `5` | Without Laravel Horizon: warn (medium) for a queue that has pending jobs when no worker heartbeat (`excubia:worker-heartbeat:<connection>:<queue>`) is newer than this many minutes. Ignored when Horizon is installed: its own status is read instead. |
 
 ### Dependency licenses
 

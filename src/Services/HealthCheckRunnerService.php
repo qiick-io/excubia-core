@@ -28,6 +28,7 @@ use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
 use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
 use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
 use Qiick\Excubia\Checks\LaravelQueueBacklogCheck;
+use Qiick\Excubia\Checks\LaravelQueueWorkersCheck;
 use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
 use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
 use Qiick\Excubia\Checks\LaravelStorageCheck;
@@ -244,6 +245,7 @@ final class HealthCheckRunnerService
             new PhpPlatformRequirementsCheck($constraints),
             new EnvExampleSyncCheck,
             new ComposerOutdatedCheck($packagist, $constraints),
+            new LaravelQueueWorkersCheck,
         ];
     }
 }

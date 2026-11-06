@@ -19,6 +19,7 @@ use Qiick\Excubia\Laravel\ExcubiaHeartbeatCommand;
 use Qiick\Excubia\Laravel\ExcubiaPushCommand;
 use Qiick\Excubia\Laravel\ExcubiaPushRuntimeCommand;
 use Qiick\Excubia\Laravel\HealthEndpointService;
+use Qiick\Excubia\Laravel\QueueWorkerHeartbeatService;
 use Qiick\Excubia\Renderers\OhDearHealthRenderer;
 use Qiick\Excubia\Renderers\SarifRenderer;
 use Qiick\Excubia\Services\ReportPushService;
@@ -193,7 +194,7 @@ it('freezes the bin/excubia commands and their options', function (): void {
     expect($commands)->toBe(contractSnapshot('cli'), CONTRACT_CHANGE_MESSAGE);
 });
 
-it('freezes the Artisan commands, their options and the heartbeat cache key', function (): void {
+it('freezes the Artisan commands, their options and the heartbeat cache keys', function (): void {
     $commands = [];
 
     foreach ([new ExcubiaCheckCommand, new ExcubiaPushCommand, new ExcubiaPushRuntimeCommand, new ExcubiaHeartbeatCommand] as $command) {
@@ -203,6 +204,7 @@ it('freezes the Artisan commands, their options and the heartbeat cache key', fu
     expect([
         'commands' => $commands,
         'heartbeatCacheKey' => ExcubiaHeartbeatCommand::CACHE_KEY,
+        'workerHeartbeatCacheKeyPrefix' => QueueWorkerHeartbeatService::CACHE_KEY_PREFIX,
     ])->toBe(contractSnapshot('artisan'), CONTRACT_CHANGE_MESSAGE);
 });
 

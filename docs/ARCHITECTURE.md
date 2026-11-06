@@ -39,7 +39,8 @@ qiick-io/excubia-core
 │   │   ├── LaravelQueueBacklogCheck.php    (laravel-queue-backlog)
 │   │   ├── PhpPlatformRequirementsCheck.php (php-platform-requirements)   # composer.lock vs running PHP, also standalone
 │   │   ├── EnvExampleSyncCheck.php         (env-example-sync)             # .env.example vs config/*.php env() keys, names only
-│   │   └── ComposerOutdatedCheck.php       (composer-outdated)            # direct deps vs newest stable, same p2 metadata
+│   │   ├── ComposerOutdatedCheck.php       (composer-outdated)            # direct deps vs newest stable, same p2 metadata
+│   │   └── LaravelQueueWorkersCheck.php    (laravel-queue-workers)        # Horizon status, or worker heartbeat per queue with pending jobs
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string
@@ -98,11 +99,12 @@ qiick-io/excubia-core
 │   │   ├── PushCommand.php                  # excubia push: CheckCommand::scan() + ReportPushService
 │   │   └── ClearCacheCommand.php
 │   ├── Laravel/
-│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
+│   │   ├── ExcubiaServiceProvider.php       # auto-discovered; Artisan commands, opt-in health route, schedules excubia:heartbeat every minute, queue worker heartbeat, opt-in runtime listeners, opt-in exception reportable(), excubia:push-runtime schedule
 │   │   ├── HealthEndpointService.php        # Oh Dear health route action + result recording (docs/health-endpoint.md)
 │   │   ├── ExcubiaCheckCommand.php          # php artisan excubia:check → same runner + posture
 │   │   ├── ExcubiaPushCommand.php           # php artisan excubia:push → PushCommand + posture
 │   │   ├── ExcubiaHeartbeatCommand.php      # php artisan excubia:heartbeat → cache key excubia:scheduler-heartbeat
+│   │   ├── QueueWorkerHeartbeatService.php  # worker Looping listener → cache key excubia:worker-heartbeat:<connection>:<queue>, once a minute
 │   │   ├── ExcubiaPushRuntimeCommand.php    # php artisan excubia:push-runtime → both buffers + ReportPushService
 │   │   ├── RuntimeCollectorService.php      # runtime event listeners, in-memory aggregates, flush on terminating
 │   │   ├── ExceptionCollectorService.php    # reportable() callback, context (job/route/command), in-memory groups, flush
