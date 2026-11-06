@@ -73,6 +73,18 @@ it('loads the posture thresholds and defaults them to 10 minutes and 24 hours', 
         ->and(ExcubiaConfigurationData::defaults()->failedJobHighSeverityAfterHours)->toBe(24);
 });
 
+it('loads the late-run grace for excubia-app and defaults it to 5 minutes', function () {
+    $root = temporaryProject([
+        'excubia.json' => '{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 30, "lateAfterMinutes": 15}}}',
+    ]);
+
+    $configuration = (new ExcubiaConfigurationLoader)->load(null, $root);
+
+    expect($configuration->schedulerLateAfterMinutes)->toBe(15)
+        ->and($configuration->schedulerHeartbeatStaleAfterMinutes)->toBe(30)
+        ->and(ExcubiaConfigurationData::defaults()->schedulerLateAfterMinutes)->toBe(5);
+});
+
 it('rejects posture thresholds below one and unknown posture keys', function (string $document, string $message) {
     $root = temporaryProject(['excubia.json' => $document]);
 
@@ -80,6 +92,9 @@ it('rejects posture thresholds below one and unknown posture keys', function (st
         ->toThrow(InvalidConfigurationException::class, $message);
 })->with([
     'heartbeat zero' => ['{"checks": {"laravel-scheduler-heartbeat": {"staleAfterMinutes": 0}}}', 'staleAfterMinutes must be at least 1.'],
+    'late grace zero' => ['{"checks": {"laravel-scheduler-heartbeat": {"lateAfterMinutes": 0}}}', 'lateAfterMinutes must be at least 1.'],
+    'late grace not an integer' => ['{"checks": {"laravel-scheduler-heartbeat": {"lateAfterMinutes": "5"}}}', 'checks.laravel-scheduler-heartbeat.lateAfterMinutes'],
+    'unknown heartbeat key' => ['{"checks": {"laravel-scheduler-heartbeat": {"missedAfterMinutes": 3}}}', 'Unknown checks.laravel-scheduler-heartbeat key [missedAfterMinutes].'],
     'failed jobs zero' => ['{"checks": {"laravel-failed-jobs": {"highSeverityAfterHours": 0}}}', 'highSeverityAfterHours must be at least 1.'],
     'unknown key' => ['{"checks": {"laravel-failed-jobs": {"maxCount": 3}}}', 'Unknown checks.laravel-failed-jobs key [maxCount].'],
 ]);

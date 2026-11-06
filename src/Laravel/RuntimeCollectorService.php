@@ -9,7 +9,6 @@ use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyForgotten;
 use Illuminate\Cache\Events\KeyWritten;
-use Illuminate\Console\Application as ArtisanApplication;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
@@ -49,9 +48,9 @@ use WeakMap;
  *
  * What is kept: route names (or `unnamed`), HTTP methods and status classes,
  * SQL text without bindings (quoted literals masked) and the connection name,
- * job class, queue and connection names, scheduled task descriptions or
- * Artisan commands, outgoing hosts, peak memory, queue wait times, cache
- * store names and masked key prefixes, mailable, mailer, notification and
+ * job class, queue and connection names, scheduled task names and ids
+ * (`ScheduledTaskIdentityService`), outgoing hosts, peak memory, queue wait
+ * times, cache store names and masked key prefixes, mailable, mailer, notification and
  * channel names, log levels, the source package, masked message and PHP
  * minor version of PHP deprecations, and the normalised SQL shape, connection
  * and route name or job class of queries repeated within one request or job
@@ -809,8 +808,12 @@ final class RuntimeCollectorService
                 // ScheduledTaskFailed carries no runtime on Laravel 12.
                 $runtimeSeconds = $event instanceof ScheduledTaskSkipped ? null : ($event->runtime ?? null);
 
+                $task = ScheduledTaskIdentityService::name($event->task, $this->basePath);
+                $expression = $event->task->expression ?? null;
+                $dimensions = is_string($expression) ? ['task' => $task, 'taskId' => ScheduledTaskIdentityService::id($task, $expression)] : ['task' => $task];
+
                 $this->add(RuntimeTypeEnum::ScheduledTask, [
-                    'task' => $this->taskName($event->task),
+                    ...$dimensions,
                     'outcome' => $outcome,
                 ], is_numeric($runtimeSeconds) ? (float) $runtimeSeconds * 1000 : 0.0, $outcome === 'failed');
             }
@@ -978,62 +981,9 @@ final class RuntimeCollectorService
         return $sampleRate > 0.0 && mt_rand() / mt_getrandmax() < $sampleRate;
     }
 
-    /**
-     * The task description, else `artisan <command name>` for an Artisan
-     * command, else the executable's file name for an `exec()` task, else
-     * `Closure`. Arguments are dropped: they can carry secrets in forms no
-     * mask recognises (`-pSECRET`, a positional token) and every distinct
-     * value would be a new aggregate. The developer's description keeps its
-     * text, with paths made relative and the exception message masks applied.
-     */
-    private function taskName(object $task): string
-    {
-        $description = $task->description ?? null;
-
-        if (is_string($description) && $description !== '') {
-            return ExceptionPayloadService::mask($this->relative($description), $this->basePath);
-        }
-
-        $command = $task->command ?? null;
-
-        if (! is_string($command) || $command === '') {
-            return 'Closure';
-        }
-
-        $artisanPrefix = ArtisanApplication::formatCommandString('');
-
-        if (str_starts_with($command, $artisanPrefix)) {
-            return 'artisan '.self::firstWord(substr($command, strlen($artisanPrefix)));
-        }
-
-        // Leading environment assignments (`APP_KEY=… backup.sh`) are not the executable.
-        $executable = self::firstWord(preg_replace('/^\s*(?:\w+=(?:\'[^\']*\'|"[^"]*"|\S*)\s+)*/', '', $command) ?? '');
-
-        return basename(str_replace('\\', '/', $executable));
-    }
-
-    /**
-     * The first shell word, without its quotes (`'/opt/my tools/run.sh' --x`
-     * gives `/opt/my tools/run.sh`). An empty command gives `unknown`.
-     */
-    private static function firstWord(string $command): string
-    {
-        $command = ltrim($command);
-
-        if (preg_match('/^(?:\'([^\']*)\'|"([^"]*)"|(\S+))/', $command, $matches) !== 1) {
-            return 'unknown';
-        }
-
-        $word = $matches[3] ?? $matches[2] ?? $matches[1];
-
-        return $word === '' ? 'unknown' : $word;
-    }
-
     private function relative(string $value): string
     {
-        $withoutBasePath = str_replace([$this->basePath.DIRECTORY_SEPARATOR, $this->basePath], '', $value);
-
-        return preg_replace('#(?<![\w.-])/(?:[^\s\'"/]+/)+([^\s\'"/]+)#', '$1', $withoutBasePath) ?? $withoutBasePath;
+        return ScheduledTaskIdentityService::relative($value, $this->basePath);
     }
 
     /**

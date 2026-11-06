@@ -6,6 +6,7 @@ namespace Qiick\Excubia\Laravel;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\DatabaseManager;
@@ -144,6 +145,7 @@ final class LaravelPostureService
             queueWorkerHeartbeats: $this->queueWorkerHeartbeats($application, $config, $queueBacklogs),
             isHorizonInstalled: $isHorizonInstalled,
             horizonStatus: $isHorizonInstalled ? $this->horizonStatus($application) : null,
+            scheduledTasks: $this->scheduledTasks($application, $configuration->schedulerLateAfterMinutes),
         );
     }
 
@@ -618,6 +620,50 @@ final class LaravelPostureService
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /**
+     * The schedule inventory (#146): every event of the app's schedule, in
+     * schedule order, named as the runtime `scheduledTask` aggregates name
+     * it, with its `taskId`. Only names, the cron expression, the timezone
+     * name, the flags and the environment names: never arguments, the
+     * command line or the output path. A task without a timezone runs in
+     * the PHP default one, which Laravel sets from `app.timezone`. Each entry
+     * carries the user's late-run grace
+     * (`checks.laravel-scheduler-heartbeat.lateAfterMinutes`) for the app.
+     * Null when the schedule could not be read.
+     *
+     * @return list<array{taskId: string, task: string, expression: string, timezone: string, withoutOverlapping: bool, onOneServer: bool, runsInMaintenanceMode: bool, environments: list<string>, lateAfterMinutes: int}>|null
+     */
+    private function scheduledTasks(Application $application, int $lateAfterMinutes): ?array
+    {
+        try {
+            $events = $application->make(Schedule::class)->events();
+        } catch (Throwable) {
+            return null;
+        }
+
+        $tasks = [];
+
+        foreach ($events as $event) {
+            $task = ScheduledTaskIdentityService::name($event, $application->basePath());
+            $expression = (string) $event->expression;
+            $timezone = $event->timezone;
+
+            $tasks[] = [
+                'taskId' => ScheduledTaskIdentityService::id($task, $expression),
+                'task' => $task,
+                'expression' => $expression,
+                'timezone' => $timezone instanceof DateTimeZone ? $timezone->getName() : (is_string($timezone) && $timezone !== '' ? $timezone : date_default_timezone_get()),
+                'withoutOverlapping' => (bool) $event->withoutOverlapping,
+                'onOneServer' => (bool) $event->onOneServer,
+                'runsInMaintenanceMode' => (bool) $event->evenInMaintenanceMode,
+                'environments' => array_values(array_filter(array_map(strval(...), (array) $event->environments), static fn (string $name): bool => $name !== '')),
+                'lateAfterMinutes' => $lateAfterMinutes,
+            ];
+        }
+
+        return $tasks;
     }
 
     /**
