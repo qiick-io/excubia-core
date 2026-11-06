@@ -13,7 +13,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 | Exit codes of `check`, `push`, `excubia:push-runtime` (below) | `src/Enums/ExitCodeEnum.php`, `src/Console/CheckCommand.php`, `src/Console/PushCommand.php`, `src/Laravel/ExcubiaPushRuntimeCommand.php` | — | stable | `PublicContractsTest` (`exitCodes`), `tests/Feature/StrictModeTest.php` (precedence), `tests/Feature/PushCommandTest.php`, `tests/Laravel/PushRuntimeCommandTest.php` |
 | `bin/excubia` commands, arguments and options | `bin/excubia`, `src/Console/CheckCommand.php`, `src/Console/PushCommand.php`, `src/Console/ClearCacheCommand.php` | — | stable | `PublicContractsTest` (`cli`), `tests/Feature/CliTest.php` |
 | Artisan commands and options | `src/Laravel/ExcubiaCheckCommand.php`, `ExcubiaPushCommand.php`, `ExcubiaPushRuntimeCommand.php`, `ExcubiaHeartbeatCommand.php` | — | stable | `PublicContractsTest` (`artisan`), `tests/Laravel/ArtisanCommandsTest.php` |
-| Scheduled entries and the heartbeat cache key | `src/Laravel/ExcubiaServiceProvider.php`, `src/Laravel/ExcubiaHeartbeatCommand.php` | — | stable | `tests/Laravel/ScheduleAndRouteContractTest.php` (`laravel`), `PublicContractsTest` (`artisan.heartbeatCacheKey`) |
+| Scheduled entries and the heartbeat cache keys | `src/Laravel/ExcubiaServiceProvider.php`, `src/Laravel/ExcubiaHeartbeatCommand.php`, `src/Laravel/QueueWorkerHeartbeatService.php` | — | stable | `tests/Laravel/ScheduleAndRouteContractTest.php` (`laravel`), `PublicContractsTest` (`artisan.heartbeatCacheKey`, `artisan.workerHeartbeatCacheKeyPrefix`) |
 | `excubia.json` keys | [`excubia.schema.json`](../excubia.schema.json), `src/Configuration/ExcubiaConfigurationLoader.php` | `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash), `tests/Feature/ExcubiaConfigurationLoaderTest.php`, `DocumentationCoverageTest` |
 | Environment variables | `src/Console/PushCommand.php`, `src/Laravel/HealthEndpointService.php`, `src/Laravel/ExcubiaPushRuntimeCommand.php`, `src/Services/GitHubRepositoryApiService.php`, `src/Services/ReleaseService.php` | — | stable | `PublicContractsTest` (`environmentVariables`), `DocumentationCoverageTest` |
 | Push envelope and endpoints | [`docs/push-schema.json`](./push-schema.json), `src/Services/ReportPushService.php` | `protocolVersion` (`1`), schema `x-excubia-version` `1` | stable | `PublicContractsTest` (schema hash, `push`), `ReportSchemaTest`, `PushCommandTest` |
@@ -28,7 +28,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 
 ### Check ids
 
-In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements`, `env-example-sync`, `composer-outdated` (the last fifteen added in 1.0.0-beta.2, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
+In run order: `php-eol`, `laravel-eol`, `node-eol`, `composer-advisories`, `npm-advisories`, `composer-abandoned`, `composer-stale`, `laravel-next-blocker`, `laravel-debug-mode`, `laravel-production-caches`, `laravel-pending-migrations`, `laravel-failed-jobs`, `laravel-scheduler-heartbeat`, `laravel-maintenance-mode`, `laravel-app-key`, `laravel-session-security`, `laravel-cors-wildcard`, `laravel-production-drivers`, `laravel-log-level`, `laravel-dev-packages`, `dependency-licenses`, `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `php-platform-requirements`, `env-example-sync`, `composer-outdated`, `laravel-queue-workers` (the last sixteen added in 1.0.0-beta.2, additive). The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
 
 ### Exit codes
 
@@ -53,9 +53,11 @@ Precedence when several apply: `2` > `1` > `3`. The Artisan aliases `excubia:che
 
 Symfony Console's global options (`-q`, `-v`, `--version`, …) come with the framework and are not frozen by Excubia.
 
-### Scheduled entries
+### Scheduled entries and heartbeat keys
 
 The service provider schedules `excubia:heartbeat` every minute (`* * * * *`), always, and `excubia:push-runtime` every minute when `runtime.enabled` or `exceptions.enabled` is true. The heartbeat stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store.
+
+The provider also always registers the queue worker heartbeat (#151, additive): a queue worker stores the Unix time under `excubia:worker-heartbeat:<connection>:<queue>` in the default cache store, at most once a minute per connection and queue, for `laravel-queue-workers`. The prefix `excubia:worker-heartbeat:` is in the snapshot (`artisan.workerHeartbeatCacheKeyPrefix`).
 
 ### Configuration and environment
 

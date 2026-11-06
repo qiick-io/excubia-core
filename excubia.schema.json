@@ -184,6 +184,17 @@
                             "description": "Keep the default list of optional Laravel keys. false makes ignoreKeys replace it. Default true."
                         }
                     }
+                },
+                "laravel-queue-workers": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "staleAfterMinutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Without Laravel Horizon: warn (medium) for a queue that has pending jobs when no worker heartbeat is newer than this many minutes. Default 5."
+                        }
+                    }
                 }
             }
         },

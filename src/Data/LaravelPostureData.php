@@ -42,6 +42,9 @@ final readonly class LaravelPostureData
      * @param  list<string>  $unwritableDirectoryNames  `storage` and / or `bootstrap/cache` when not a writable directory
      * @param  int|null  $diskUsedPercent  used share of the disk holding `storage/`; null when it could not be measured
      * @param  list<array{queue: string, pendingCount: int, oldestAgeMinutes: int|null}>|null  $queueBacklogs  pending jobs per queue of the default queue connection; null when the driver is not database or redis, or the store could not be read
+     * @param  list<array{connection: string, queue: string, lastSeenAt: DateTimeImmutable|null}>|null  $queueWorkerHeartbeats  last worker heartbeat per queue of `$queueBacklogs` (#151); null when the backlog or the cache store could not be read
+     * @param  bool  $isHorizonInstalled  Laravel Horizon's master supervisor repository is bound in the container
+     * @param  array{status: string, processes: int, supervisors: list<string>}|null  $horizonStatus  Horizon's `inactive`, `paused` or `running` status, its worker process count and its supervisor names (without the host prefix); null when Horizon is missing or could not be read
      */
     public function __construct(
         public string $environment,
@@ -71,5 +74,8 @@ final readonly class LaravelPostureData
         public array $unwritableDirectoryNames = [],
         public ?int $diskUsedPercent = null,
         public ?array $queueBacklogs = null,
+        public ?array $queueWorkerHeartbeats = null,
+        public bool $isHorizonInstalled = false,
+        public ?array $horizonStatus = null,
     ) {}
 }
