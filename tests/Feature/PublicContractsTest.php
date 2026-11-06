@@ -11,6 +11,7 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\FindingStatusEnum;
+use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Enums\SkipReasonEnum;
 use Qiick\Excubia\Laravel\ExcubiaCheckCommand;
@@ -232,7 +233,24 @@ it('freezes the push protocol version, types and endpoints', function (): void {
         ],
         'types' => [ReportPushService::RUNTIME_TYPE, ReportPushService::EXCEPTIONS_TYPE],
         'runtimeBucketSeconds' => ReportPushService::RUNTIME_BUCKET_SECONDS,
+        'runtimeHistogramBoundsMs' => RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS,
     ])->toBe(contractSnapshot('push'), CONTRACT_CHANGE_MESSAGE);
+});
+
+it('documents the runtime histogram bounds in the runtime schema, from the one constant', function (): void {
+    $schema = json_decode((string) file_get_contents(dirname(__DIR__, 2).'/docs/runtime-schema.json'), true, 512, JSON_THROW_ON_ERROR);
+    $histogram = $schema['$defs']['histogram'];
+    $durationTypes = array_keys(array_filter($schema['$defs'], static fn (array $definition): bool => isset($definition['properties']['maxMs'])));
+
+    expect($histogram['x-excubia-bucket-bounds-ms'])->toBe(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS)
+        ->and($histogram['minItems'])->toBe(count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1)
+        ->and($histogram['maxItems'])->toBe(count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1)
+        ->and($durationTypes)->toEqualCanonicalizing(['request', 'slowQuery', 'job', 'scheduledTask', 'outgoingHttp', 'queueWait']);
+
+    foreach ($durationTypes as $type) {
+        expect($schema['$defs'][$type]['properties']['histogram'])->toBe(['$ref' => '#/$defs/histogram'])
+            ->and($schema['$defs'][$type]['required'])->not->toContain('histogram');
+    }
 });
 
 it('freezes the health endpoint header, path default and response shape', function (): void {

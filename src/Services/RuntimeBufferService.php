@@ -53,10 +53,21 @@ final class RuntimeBufferService
     private const MAXIMUM_FIELDS = ['maxMs', 'maxMb'];
 
     /**
+     * Metric fields that hold one number each.
+     */
+    private const NUMBER_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS];
+
+    /**
+     * Latency histogram of the duration types (#147): a list of counts, one
+     * per bucket of `RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS` plus overflow.
+     */
+    private const HISTOGRAM_FIELD = 'histogram';
+
+    /**
      * Every metric field. Every other field is a dimension and part of the
      * merge key.
      */
-    private const METRIC_FIELDS = [...self::COUNTER_FIELDS, ...self::TOTAL_FIELDS, ...self::MAXIMUM_FIELDS];
+    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, self::HISTOGRAM_FIELD];
 
     public function __construct(
         private readonly string $directory,
@@ -181,7 +192,8 @@ final class RuntimeBufferService
 
     /**
      * Merge aggregates that share every dimension (type, bucket, sample rate
-     * and the type's keys): counts and totals add up, maxima take the larger.
+     * and the type's keys): counts and totals add up, maxima take the larger,
+     * histograms add up element by element (see `combine()`).
      *
      * @param  list<array<string, mixed>>  $aggregates
      * @return list<array<string, mixed>>
@@ -222,6 +234,11 @@ final class RuntimeBufferService
      * Add one aggregate's metrics to another with the same dimensions.
      * Only the metric fields present in either side are written.
      *
+     * Histograms add up element by element. When only one side has a
+     * histogram, or the two have a different number of buckets (written by
+     * versions with other bounds), the merged aggregate has none: its counts
+     * would no longer add up to `count`, and the histogram is optional.
+     *
      * @param  array<string, mixed>  $into
      * @param  array<string, mixed>  $from
      * @return array<string, mixed>
@@ -246,12 +263,62 @@ final class RuntimeBufferService
             }
         }
 
+        if (array_key_exists(self::HISTOGRAM_FIELD, $into) || array_key_exists(self::HISTOGRAM_FIELD, $from)) {
+            $histogram = self::sumHistograms($into[self::HISTOGRAM_FIELD] ?? null, $from[self::HISTOGRAM_FIELD] ?? null);
+
+            if ($histogram === null) {
+                unset($into[self::HISTOGRAM_FIELD]);
+            } else {
+                $into[self::HISTOGRAM_FIELD] = $histogram;
+            }
+        }
+
         return $into;
     }
 
     /**
+     * Element-by-element sum of two histograms, or null when either is
+     * missing or they differ in length.
+     *
+     * @return list<int>|null
+     */
+    private static function sumHistograms(mixed $first, mixed $second): ?array
+    {
+        if (! self::isHistogram($first) || ! self::isHistogram($second) || count($first) !== count($second)) {
+            return null;
+        }
+
+        $sum = [];
+
+        foreach ($first as $index => $bucketCount) {
+            $sum[] = $bucketCount + $second[$index];
+        }
+
+        return $sum;
+    }
+
+    /**
+     * @phpstan-assert-if-true list<int> $value
+     */
+    private static function isHistogram(mixed $value): bool
+    {
+        if (! is_array($value) || $value === [] || ! array_is_list($value)) {
+            return false;
+        }
+
+        foreach ($value as $bucketCount) {
+            if (! is_int($bucketCount) || $bucketCount < 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Every aggregate has a type, a bucket, `count` and `errorCount`; any
-     * other metric field it carries is a number.
+     * other metric field it carries is a number, and a histogram is a list
+     * of non-negative counts.
      *
      * @param  array<mixed>  $aggregate
      */
@@ -264,13 +331,13 @@ final class RuntimeBufferService
             return false;
         }
 
-        foreach (self::METRIC_FIELDS as $field) {
+        foreach (self::NUMBER_FIELDS as $field) {
             if (array_key_exists($field, $aggregate) && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
                 return false;
             }
         }
 
-        return true;
+        return ! array_key_exists(self::HISTOGRAM_FIELD, $aggregate) || self::isHistogram($aggregate[self::HISTOGRAM_FIELD]);
     }
 
     private static function integerValue(mixed $value): int

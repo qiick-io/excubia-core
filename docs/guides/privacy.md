@@ -52,7 +52,7 @@ Each check that would send names (`composer-advisories`, `npm-advisories`, `comp
 
 ## Runtime monitoring
 
-Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs` and its `sampleRate` (`docs/runtime-schema.json`):
+Off until `runtime.enabled` is true. Sends only these aggregates per UTC minute, each with `count`, `errorCount`, `totalMs`, `maxMs`, a latency `histogram` (counts per fixed duration bucket, no individual timings) and its `sampleRate` (`docs/runtime-schema.json`):
 
 - requests: route name (or `unnamed`), HTTP method, status class (`2xx`, …);
 - slow queries: SQL text without bindings, with inline literals (single-quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`; double-quoted and backtick-quoted identifiers stay, and the connection name;

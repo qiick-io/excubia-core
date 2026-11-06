@@ -24,7 +24,8 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
  *     vendor/bin/pest --group=benchmark
  *
  * It prints the numbers and fails only if the collector cost per request
- * with every type on, at the default sample rate, is above 1 ms. The
+ * with every type on, at the default sample rate, is above 1 ms. It also
+ * prints the cost of one latency histogram sample (#147). The
  * benchmark route reads and writes the cache three times and logs once, so
  * the cache and log level listeners run as in a typical request.
  */
@@ -100,8 +101,19 @@ it('adds less than 1 ms per request with every type on at the default sample rat
 
     $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / BENCHMARK_REQUESTS;
 
+    // One latency histogram sample (#147): find the bucket and increment it, as the collector does per timed event.
+    $histogram = array_fill(0, count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1, 0);
+    $samples = 100 * BENCHMARK_REQUESTS;
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $samples; $i++) {
+        $histogram[RuntimeTypeEnum::histogramBucket((float) ($i % 12000))]++;
+    }
+
+    $perHistogramSample = (hrtime(true) - $startedAt) / 1e6 / $samples;
+
     fwrite(STDERR, sprintf(
-        "\nRuntime overhead over %d requests (PHP %s, Laravel %s)\n  disabled:      %.3f ms/request\n  default types: %.3f ms/request (delta %.3f ms)\n  all types:     %.3f ms/request (delta %.3f ms)\n  collector:     %.3f ms/request (all listeners + flush)\n",
+        "\nRuntime overhead over %d requests (PHP %s, Laravel %s)\n  disabled:      %.3f ms/request\n  default types: %.3f ms/request (delta %.3f ms)\n  all types:     %.3f ms/request (delta %.3f ms)\n  collector:     %.3f ms/request (all listeners + flush)\n  histogram:     %.5f ms/sample (bucket lookup + increment)\n",
         BENCHMARK_REQUESTS,
         PHP_VERSION,
         Application::VERSION,
@@ -111,9 +123,11 @@ it('adds less than 1 ms per request with every type on at the default sample rat
         $enabled,
         $enabled - $disabled,
         $collectorOnly,
+        $perHistogramSample,
     ));
 
-    expect($collectorOnly)->toBeLessThan(1.0);
+    expect($collectorOnly)->toBeLessThan(1.0)
+        ->and(array_sum($histogram))->toBe($samples);
 })->group('benchmark');
 
 it('costs nothing on a request that raises no deprecation, with deprecations on', function () {
