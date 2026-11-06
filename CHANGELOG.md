@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.3] - 2026-11-06
+
+Third beta of 1.0 (D20), additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). The new `health` runtime type is off by default; schema and protocol versions stay `1`.
+
 ### Changed
 
 - The `mail` runtime type counts failed sends without exception capture (#175): a `MessageSending` with no `MessageSent` by the end of its scope (the next send, the end of a queued job or attempt such as a failed `SendQueuedMailable`, the end of an Artisan command, or terminate) is one failed mail. This is now the only source of mail failures: the exception capture hook no longer counts them, so a send is counted once with capture on, and a reported transport exception without a `MessageSending` (a Symfony transport used directly) is no longer counted as an `unknown` mail. Limits are in the runtime monitoring guide. No field, config key or schema change; `x-excubia-version` and `protocolVersion` stay `1`.
@@ -131,7 +135,8 @@ First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [
 
 - Initial `qiick/excubia-core` release: standalone `vendor/bin/excubia check` CLI, optional Artisan alias `excubia:check`, nine health checks, `table` / `json` / `markdown` formats, `excubia.json` config, and local response cache.
 
-[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.2...HEAD
+[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.3...HEAD
+[1.0.0-beta.3]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.1...v1.0.0-beta.1
 [0.1.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.0...v0.1.1
