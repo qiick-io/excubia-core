@@ -168,6 +168,23 @@ final class HealthCheckRunnerService
     }
 
     /**
+     * Runs one check on a snapshot and drops its ignored findings, for the
+     * `health` runtime type (#188). The response cache is offline, so even
+     * a check that reads a data source could not send a request; the
+     * `health` type only allows checks that never do.
+     *
+     * @throws InvalidConfigurationException for an unknown check id
+     */
+    public function runCheck(ProjectSnapshotData $snapshot, ExcubiaConfigurationData $configuration, string $checkId): CheckResultData
+    {
+        $cache = new ResponseCacheService(null, $configuration->cacheTtlHours, true, false);
+        $healthCheck = (new HealthCheckRegistry($this->healthChecks($cache)))->healthChecksFor([$checkId], null)[0];
+        $report = (new HealthReportData([$healthCheck->run($snapshot, $configuration)], []))->withoutIgnoredFindings($configuration, $this->today);
+
+        return $report->checkResults[0];
+    }
+
+    /**
      * The installed package version, the same value `bin/excubia --version`
      * prints; `dev` when Composer does not know it.
      */

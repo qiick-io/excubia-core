@@ -51,7 +51,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "deprecations": { "enabled": true },
     "duplicateQueries": { "enabled": true, "threshold": 5 },
     "server": { "enabled": true },
-    "commands": { "enabled": true }
+    "commands": { "enabled": true },
+    "health": { "enabled": true }
   }
 }
 ```
@@ -105,20 +106,21 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `jobMemory` | `JobProcessing` (peak reset) / `JobProcessed` / `JobFailed` | — |
 | `queueWait` | `JobProcessing`, first attempts only | — |
 | `cache` | `CacheHit` / `CacheMissed` / `KeyWritten` / `KeyForgotten` | — |
-| `mail` | `MessageSending` / `MessageSent`, and the exception capture hook | A reported mail transport exception |
+| `mail` | `MessageSending` / `MessageSent`, settled at the next send, `JobProcessed` / `JobExceptionOccurred` / `JobFailed`, `CommandFinished` and terminate | A `MessageSending` with no `MessageSent` |
 | `notifications` | `NotificationSent` / `NotificationFailed` | The notification failed |
 | `logLevels` | `MessageLogged`, with the channel from a logging tap (#174) | — |
 | `deprecations` | A PHP error handler for `E_DEPRECATED` / `E_USER_DEPRECATED`, chained in front of Laravel's | — |
 | `duplicateQueries` | `QueryExecuted`, evaluated at `RequestHandled` or when a job ends (`JobProcessed` / `JobFailed` / `JobExceptionOccurred`) | — |
 | `server` | One sample per `excubia:push-runtime` run, on each server | — |
 | `commands` | `CommandStarting` / `CommandFinished`, top-level commands only | Non-zero exit code |
+| `health` | One sample of the fast Artisan checks per `excubia:push-runtime` run, at most once a minute, on each server | The check failed |
 
 Notes on the newer types:
 
 - **Memory** is PHP's peak (`memory_get_peak_usage()`) in MiB; the average is `totalMb / count`. `jobMemory` resets the peak when each job starts, so it reports the job's own peak; a request that runs sync jobs still reports its whole peak. Under Octane the request peak only grows across requests.
 - **Queue wait** needs the push time. With `queueWait` on, Excubia adds an `excubiaQueuedAt` timestamp to every job payload pushed by the app; Horizon's `pushedAt` is used when that key is missing. The job's delay is subtracted, retries are not counted, and clock differences between the pushing server and the worker show up in the wait.
 - **Cache** keys are never sent. Only the store name and the prefix before the first `:` or `.` are kept, through the exception message masks; a prefix that still looks like an id, a token or personal data becomes `[masked]`. Use prefixes such as `users:` or `reports.` in your keys to get useful rows.
-- **Mail failures**: Laravel has no event for a failed mail. A failure is counted only when [exception capture](./exception-capture.md) is on and sees a reported Symfony Mailer transport exception (also counted when `exceptions.ignore` lists it). A failure your code catches without reporting is not counted, and without exception capture the failed count stays 0.
+- **Mail failures** (#175): Laravel has no event for a failed mail, but its mailer fires `MessageSent` right after the transport returns. A `MessageSending` with no `MessageSent` by the end of its scope is counted as one failed mail: the scope ends at the next send in the same process, when the queued job or job attempt ends (`JobProcessed`, `JobExceptionOccurred`, `JobFailed`, so a failed `SendQueuedMailable` or queued mail notification counts once per attempt), when an Artisan command ends, and when the request or process terminates. This works with [exception capture](./exception-capture.md) off and does not depend on it: with capture on, the reported transport exception is not counted again, and a failure your code catches is still counted. Limits: only sends through Laravel's mailer are seen (a Symfony transport used directly is not); a `MessageSending` listener of your own that cancels the send by returning `false` or throws is counted as a failed mail when it runs after Excubia's; a queued listener on the sync driver that runs inside `MessageSending` counts that send as failed and then as sent; a worker killed by a job timeout during the send loses it.
 - **Log levels** are counted per level and log channel (#174). Laravel's `MessageLogged` event does not say which channel logged, so Excubia appends a `tap` to each channel in `logging.channels` (your own taps stay and run first) and watches the channels already resolved when it boots. The tap pushes a Monolog processor that only remembers the channel name for the next `MessageLogged`; it returns the record unchanged and never reads the message or the context. A stack reports the stack's name (`stack`), not the channels inside it. Entries from on-demand channels (`Log::build()`, `Log::stack([...])`) and from a `MessageLogged` fired by hand have no `channel`. It costs about 0.0002 ms per log entry (`vendor/bin/pest --group=benchmark`). Excubia never logs, and messages logged while its listener runs are ignored, so the listener cannot loop.
 - **Deprecations** feed upgrade readiness in excubia-app: how many deprecations the code really triggers on this PHP version, and where. When the provider boots, Excubia puts an error handler in front of the current one (Laravel's). It counts `E_DEPRECATED` and `E_USER_DEPRECATED` and then always calls the previous handler with the same arguments, so Laravel still writes deprecations to its `deprecations` log channel when you configured one, still turns warnings into exceptions, and Sentry, Flare or any other handler still sees everything. Each row is the source (`app` for a file in your project outside `vendor/`, `vendor/<vendor>/<package>` for a dependency, `unknown` outside the project), the message through the exception message masks and cut to 300 characters, and the PHP version (`8.4`). Never the file path, the line or the stack. A request that raises no deprecation never calls the handler, so it costs nothing (`vendor/bin/pest --group=benchmark`: the difference is run-to-run noise and the handler is called zero times; about 0.01 ms per deprecation raised). Things to know: silenced deprecations (`@trigger_error()`, the Symfony convention) are counted too, as Laravel logs them; for `E_USER_DEPRECATED` the source is the package that calls `trigger_error()`, not your code that called it; deprecations PHP raises while compiling a file (such as an implicitly nullable parameter) appear only when the file is compiled, so with OPcache they are counted once per cache fill; deprecations raised before the provider boots are not seen; and a handler set after Excubia's that does not forward to the previous one hides them from Excubia. The Laravel log channel is not used as the source: `MessageLogged` does not say which channel logged, and Laravel skips that channel in some cases.
 - **Duplicate queries** find N+1 problems, as debug bars and APM tools do: the same query shape run many times within one request or job, usually a relation loaded in a loop. Every query of the request or job is grouped by its normalised SQL and connection name: inline literals become `?` (as for slow queries), `IN (?, ?, …)` lists of any length become `IN (…)`, and whitespace is collapsed; bindings are never read. When a shape runs at least `runtime.duplicateQueries.threshold` times (default `5`, at least `2`), it is recorded once for that request or job, under `origin` `request` with the route name (or `unnamed`) or `origin` `job` with the job class. `count` is how many requests or jobs had it; `totalRepeats` adds up the executions over those requests or jobs (the average is `totalRepeats / count`) and `maxRepeats` is the most in a single one. The counts are cleared after each request and each job; a sync job dispatched inside a request is counted on its own. At most 200 distinct shapes are counted per request or job, so memory stays bounded; later shapes are ignored. `sampleRate` is the share of requests and jobs evaluated. Queries in Artisan commands and scheduled tasks are not evaluated. Cost (`vendor/bin/pest --group=benchmark`): about 0.0002 ms per repeated query, since each raw SQL string is normalised once, and about 0.004 ms the first time a query is seen.
@@ -132,13 +134,13 @@ Notes on the newer types:
 
 ### Server metrics
 
-With `runtime.server.enabled`, every `excubia:push-runtime` run (each minute, on every server that runs the scheduler) first takes one sample of the machine and sends it with the batch, as `server` aggregates (1.0.0-beta.3, #149):
+With `runtime.server.enabled`, every `excubia:push-runtime` run (each minute, on every server that runs the scheduler) first takes one sample of the machine and sends it with the batch, as `server` aggregates (1.0.0-beta.2, #149):
 
 | Field | Linux | macOS and others |
 | --- | --- | --- |
 | `loadAverage1`, `loadAverage5`, `loadAverage15` | `/proc/loadavg` | `sys_getloadavg()` |
 | `cpuCores` | `processor` entries of `/proc/cpuinfo` | `null` |
-| `cpuLimit` (cores, 1.0.0-beta.3, #173) | the cgroup CPU quota: `cpu.max`, or `cpu.cfs_quota_us / cpu.cfs_period_us` in cgroup v1; `null` without a quota | `null` |
+| `cpuLimit` (cores, 1.0.0-beta.2, #173) | the cgroup CPU quota: `cpu.max`, or `cpu.cfs_quota_us / cpu.cfs_period_us` in cgroup v1; `null` without a quota | `null` |
 | `memoryUsedMb`, `memoryTotalMb` (MiB) | `/proc/meminfo`: `MemTotal - MemAvailable`; in a container with a memory limit, the cgroup's usage minus inactive page cache, out of the limit | `null` |
 | `diskUsedGb`, `diskTotalGb` (GiB) | the disk that holds `storage/` | the same |
 | `isContainer` (#173) | `true` when a cgroup memory limit or CPU quota applies | `false` |
@@ -154,6 +156,30 @@ EXCUBIA_SERVER_NAME=web-1
 ```
 
 Set `EXCUBIA_SERVER_NAME` in each server's environment (`.env`, Forge, the process manager that runs the scheduler): `excubia.json` is usually the same committed file on every server. The variable wins over the `runtime.server.name` key, which still works for a single server. Both take 1 to 64 letters, digits, `.`, `_` or `-`. An invalid `EXCUBIA_SERVER_NAME` does not stop the push: the server is sent as its hashed id and `excubia:push-runtime` prints a warning on stderr. Without a name the server is the first 12 hex characters of sha256(hostname + sha256(app key)): stable for one machine and app, and not reversible to the hostname. The hostname and the storage path are never sent.
+
+### Health samples
+
+`excubia:push` sends the full report once a day, so excubia-app learns that the database or the queue is down hours late. With `runtime.health.enabled` (1.0.0-beta.3, #188), every `excubia:push-runtime` run, at most once per UTC minute on each server, also runs the fast Artisan checks and sends one `health` aggregate per check, so the app can alert within a minute or two:
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "health": {
+      "enabled": true,
+      "checks": ["laravel-database", "laravel-cache", "laravel-queue-backlog"],
+      "checkBudgetMs": 3000,
+      "totalBudgetMs": 15000
+    }
+  }
+}
+```
+
+- `checks` defaults to all nine checks that only probe local services: `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `laravel-queue-workers`, `laravel-scheduler-heartbeat`, `laravel-redis-memory` and `laravel-maintenance-mode`. No other id is allowed, so a sample never calls Packagist, OSV, endoflife.date, GitHub or npm. Their `checks.<id>` settings and your `ignore` rules apply, as in the report.
+- Each check runs alone, with only the probes it reads (a `select 1`, a cache write and read, the disk, the queue backlog, the worker and scheduler heartbeats, Redis `INFO memory`, the maintenance file). The sample holds `checkId`, `status` (`pass`, `warn`, `fail` or `skipped`), the most serious `severity`, `findingCount` and the `fingerprints` of its warn and fail findings: the same values as the report's finding `fingerprint`, never a message or a name.
+- Budgets: a check starts only while `checkBudgetMs` (default 3000) is still left of `totalBudgetMs` (default 15000), counted from the start of the run; the rest are sent as `skipped`. A check whose probe throws is `skipped` too, and the push always goes on. A running probe cannot be interrupted: a database the probe opens has a 3 s connect timeout, other clients keep their own.
+- Two samples of one check, server and minute merge with the worst status (fail, then warn, then pass, then skipped: a skipped sample has no reading and never hides one).
+- The server is named as for [server metrics](#server-metrics): `EXCUBIA_SERVER_NAME`, else `runtime.server.name`, else a hashed id.
 
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 

@@ -257,11 +257,15 @@ final class ExcubiaConfigurationLoader
         $duplicateQueryThreshold = RuntimeConfigurationData::DEFAULT_DUPLICATE_QUERY_THRESHOLD;
         $ignoredCommands = RuntimeConfigurationData::DEFAULT_IGNORED_COMMANDS;
         $serverName = null;
+        $healthCheckIds = RuntimeConfigurationData::HEALTH_CHECK_IDS;
+        $healthCheckBudgetMs = RuntimeConfigurationData::DEFAULT_HEALTH_CHECK_BUDGET_MS;
+        $healthTotalBudgetMs = RuntimeConfigurationData::DEFAULT_HEALTH_TOTAL_BUDGET_MS;
         $extraKeys = [
             RuntimeTypeEnum::SlowQuery->value => ['thresholdMs'],
             RuntimeTypeEnum::DuplicateQuery->value => ['threshold'],
             RuntimeTypeEnum::Server->value => ['name'],
             RuntimeTypeEnum::Command->value => ['ignore'],
+            RuntimeTypeEnum::Health->value => ['checks', 'checkBudgetMs', 'totalBudgetMs'],
         ];
 
         foreach (RuntimeTypeEnum::cases() as $type) {
@@ -298,6 +302,18 @@ final class ExcubiaConfigurationLoader
                 $ignoredCommands = $this->stringList($settings['ignore'], $label.'.ignore');
             }
 
+            if (array_key_exists('checks', $settings)) {
+                $healthCheckIds = $this->stringList($settings['checks'], $label.'.checks');
+            }
+
+            if (array_key_exists('checkBudgetMs', $settings)) {
+                $healthCheckBudgetMs = $this->integer($settings['checkBudgetMs'], $label.'.checkBudgetMs');
+            }
+
+            if (array_key_exists('totalBudgetMs', $settings)) {
+                $healthTotalBudgetMs = $this->integer($settings['totalBudgetMs'], $label.'.totalBudgetMs');
+            }
+
             if (array_key_exists('name', $settings)) {
                 if (! is_string($settings['name'])) {
                     throw new InvalidConfigurationException($label.'.name must be a string.');
@@ -324,6 +340,9 @@ final class ExcubiaConfigurationLoader
             ignoredCommands: $ignoredCommands,
             serverName: $serverName,
             isServerNameVariableInvalid: $isServerNameVariableInvalid,
+            healthCheckIds: $healthCheckIds,
+            healthCheckBudgetMs: $healthCheckBudgetMs,
+            healthTotalBudgetMs: $healthTotalBudgetMs,
         );
     }
 

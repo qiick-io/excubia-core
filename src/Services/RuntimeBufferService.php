@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Qiick\Excubia\Services;
 
+use Qiick\Excubia\Enums\FindingStatusEnum;
+use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
 /**
@@ -55,9 +57,23 @@ final class RuntimeBufferService
 
     /**
      * Integer metric fields that keep the larger value when two aggregates
-     * merge, and stay integers (`maxRepeats` of `duplicateQuery`, #148).
+     * merge, and stay integers (`maxRepeats` of `duplicateQuery`, #148,
+     * `findingCount` of `health`, #188).
      */
-    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats'];
+    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats', 'findingCount'];
+
+    /**
+     * Outcome fields of the `health` type (#188). Two samples of one check
+     * in one minute keep the worst `status` (FindingStatusEnum::sampleRank():
+     * fail, then warn, then pass, then skipped), the most serious `severity`,
+     * and the union of `fingerprints`, sorted and cut to
+     * HealthSampleService::MAX_FINGERPRINTS.
+     */
+    private const STATUS_FIELD = 'status';
+
+    private const SEVERITY_FIELD = 'severity';
+
+    private const FINGERPRINTS_FIELD = 'fingerprints';
 
     /**
      * Gauges of the `server` type (#149): a reading, not a count, and null
@@ -89,7 +105,7 @@ final class RuntimeBufferService
      * Every metric field. Every other field is a dimension and part of the
      * merge key.
      */
-    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, ...self::FLAG_FIELDS, self::HISTOGRAM_FIELD];
+    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, ...self::FLAG_FIELDS, self::HISTOGRAM_FIELD, self::STATUS_FIELD, self::SEVERITY_FIELD, self::FINGERPRINTS_FIELD];
 
     public function __construct(
         private readonly string $directory,
@@ -215,8 +231,8 @@ final class RuntimeBufferService
     /**
      * Merge aggregates that share every dimension (type, bucket, sample rate
      * and the type's keys): counts and totals add up, maxima take the larger,
-     * histograms add up element by element, gauges keep the larger reading
-     * (see `combine()`).
+     * histograms add up element by element, gauges keep the larger reading,
+     * and a `health` sample keeps the worst status (see `combine()`).
      *
      * @param  list<array<string, mixed>>  $aggregates
      * @return list<array<string, mixed>>
@@ -304,6 +320,21 @@ final class RuntimeBufferService
             }
         }
 
+        if (is_string($into[self::STATUS_FIELD] ?? null) && is_string($from[self::STATUS_FIELD] ?? null)) {
+            $into[self::STATUS_FIELD] = self::worse(FindingStatusEnum::from($into[self::STATUS_FIELD]), FindingStatusEnum::from($from[self::STATUS_FIELD]))->value;
+        }
+
+        if (is_string($into[self::SEVERITY_FIELD] ?? null) && is_string($from[self::SEVERITY_FIELD] ?? null)
+            && SeverityEnum::from($from[self::SEVERITY_FIELD])->weight() > SeverityEnum::from($into[self::SEVERITY_FIELD])->weight()) {
+            $into[self::SEVERITY_FIELD] = $from[self::SEVERITY_FIELD];
+        }
+
+        if (self::isStringList($into[self::FINGERPRINTS_FIELD] ?? null) && self::isStringList($from[self::FINGERPRINTS_FIELD] ?? null)) {
+            $fingerprints = array_values(array_unique([...$into[self::FINGERPRINTS_FIELD], ...$from[self::FINGERPRINTS_FIELD]]));
+            sort($fingerprints, SORT_STRING);
+            $into[self::FINGERPRINTS_FIELD] = array_slice($fingerprints, 0, HealthSampleService::MAX_FINGERPRINTS);
+        }
+
         if (array_key_exists(self::HISTOGRAM_FIELD, $into) || array_key_exists(self::HISTOGRAM_FIELD, $from)) {
             $histogram = self::sumHistograms($into[self::HISTOGRAM_FIELD] ?? null, $from[self::HISTOGRAM_FIELD] ?? null);
 
@@ -315,6 +346,11 @@ final class RuntimeBufferService
         }
 
         return $into;
+    }
+
+    private static function worse(FindingStatusEnum $first, FindingStatusEnum $second): FindingStatusEnum
+    {
+        return $second->sampleRank() > $first->sampleRank() ? $second : $first;
     }
 
     /**
@@ -369,7 +405,8 @@ final class RuntimeBufferService
     /**
      * Every aggregate has a type, a bucket, `count` and `errorCount`; any
      * other metric field it carries is a number, a gauge is a number or
-     * null, a flag is a boolean, and a histogram is a list of non-negative counts.
+     * null, a flag is a boolean, a histogram is a list of non-negative counts,
+     * and a `health` status, severity and fingerprint list are known values.
      *
      * @param  array<mixed>  $aggregate
      */
@@ -400,7 +437,27 @@ final class RuntimeBufferService
             }
         }
 
+        if (array_key_exists(self::STATUS_FIELD, $aggregate) && (! is_string($aggregate[self::STATUS_FIELD]) || FindingStatusEnum::tryFrom($aggregate[self::STATUS_FIELD]) === null)) {
+            return false;
+        }
+
+        if (array_key_exists(self::SEVERITY_FIELD, $aggregate) && (! is_string($aggregate[self::SEVERITY_FIELD]) || SeverityEnum::tryFrom($aggregate[self::SEVERITY_FIELD]) === null)) {
+            return false;
+        }
+
+        if (array_key_exists(self::FINGERPRINTS_FIELD, $aggregate) && ! self::isStringList($aggregate[self::FINGERPRINTS_FIELD])) {
+            return false;
+        }
+
         return ! array_key_exists(self::HISTOGRAM_FIELD, $aggregate) || self::isHistogram($aggregate[self::HISTOGRAM_FIELD]);
+    }
+
+    /**
+     * @phpstan-assert-if-true list<string> $value
+     */
+    private static function isStringList(mixed $value): bool
+    {
+        return is_array($value) && array_is_list($value) && array_filter($value, is_string(...)) === $value;
     }
 
     private static function integerValue(mixed $value): int

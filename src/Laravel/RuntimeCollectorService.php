@@ -39,7 +39,6 @@ use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Services\RuntimeBufferService;
-use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Throwable;
 use WeakMap;
 use WeakReference;
@@ -149,8 +148,8 @@ final class RuntimeCollectorService
 
     /**
      * Mailable and mailer of the message being sent: `MessageSending` sets
-     * it, `MessageSent` clears it, and a transport failure reported in
-     * between is counted against it.
+     * it, `MessageSent` clears it, and one still set when its scope ends is
+     * a failed send (`settlePendingMail()`).
      *
      * @var array{mailable: string, mailer: string}|null
      */
@@ -268,6 +267,16 @@ final class RuntimeCollectorService
             $events->listen(QueryExecuted::class, fn (QueryExecuted $event) => $collector->recordQuery($event));
         }
 
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Mail)) {
+            $events->listen(MessageSending::class, fn (MessageSending $event) => $collector->rememberMail($event));
+            $events->listen(MessageSent::class, fn (MessageSent $event) => $collector->recordMail($event));
+            // Registered before the job and command listeners, which flush: a failed send lands in that flush.
+            $events->listen(
+                [JobProcessed::class, JobExceptionOccurred::class, JobFailed::class, CommandFinished::class],
+                fn () => $collector->settlePendingMail(),
+            );
+        }
+
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::Job) || $configuration->isTypeEnabled(RuntimeTypeEnum::JobMemory) || $configuration->isTypeEnabled(RuntimeTypeEnum::QueueWait) || $isCountingQueryShapes) {
             $events->listen(JobProcessing::class, fn (JobProcessing $event) => $collector->startJob($event));
             $events->listen(JobProcessed::class, fn (JobProcessed $event) => $collector->recordJob($event));
@@ -288,11 +297,6 @@ final class RuntimeCollectorService
                 [CacheHit::class, CacheMissed::class, KeyWritten::class, KeyForgotten::class],
                 fn (CacheHit|CacheMissed|KeyWritten|KeyForgotten $event) => $collector->recordCache($event),
             );
-        }
-
-        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Mail)) {
-            $events->listen(MessageSending::class, fn (MessageSending $event) => $collector->rememberMail($event));
-            $events->listen(MessageSent::class, fn (MessageSent $event) => $collector->recordMail($event));
         }
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::Notification)) {
@@ -327,6 +331,7 @@ final class RuntimeCollectorService
         }
 
         $application->terminating(function () use ($collector): void {
+            $collector->settlePendingMail();
             $collector->forgetQueryShapes();
             $collector->flush();
         });
@@ -620,9 +625,15 @@ final class RuntimeCollectorService
         return $masked;
     }
 
+    /**
+     * Remember the message being sent. A message still pending from an
+     * earlier `MessageSending` never reached `MessageSent`, so it is counted
+     * as failed first (the app caught the transport exception and went on).
+     */
     public function rememberMail(MessageSending $event): void
     {
         $this->guard(function () use ($event): void {
+            $this->settlePendingMail();
             $this->pendingMail = $this->mailDimensions($event->data);
         });
     }
@@ -639,24 +650,28 @@ final class RuntimeCollectorService
     }
 
     /**
-     * Count a failed mail when the exception capture hook
-     * (`exceptions.enabled`) sees a reported Symfony Mailer transport
-     * exception, anywhere in the chain. Laravel has no mail failure event,
-     * so a failure the app catches without reporting is not counted. The
-     * mailable and mailer are those of the last `MessageSending` that was
-     * not followed by `MessageSent`, else `unknown`.
+     * Count the pending message as one failed mail (#175). Laravel has no
+     * mail failure event, but the mailer fires `MessageSent` right after the
+     * transport returns: a `MessageSending` with no `MessageSent` by the end
+     * of its scope (the next send, the end of the queued job or attempt, the
+     * end of the Artisan command, or the request or process terminating) is
+     * a send that threw. This is the only source of mail failures, so it
+     * works with exception capture off and counts each send once with it on.
+     *
+     * ponytail: a `MessageSending` listener registered after Excubia's that
+     * cancels the send (returns false), or one that throws, is counted as a
+     * failed mail; a job or command that runs inside a `MessageSending`
+     * listener (a queued listener on the sync driver) counts the send as
+     * failed and then as sent. Wrapping the mail transport is the upgrade
+     * path if that ever matters.
      */
-    public function recordMailFailure(Throwable $exception): void
+    public function settlePendingMail(): void
     {
-        $this->guard(function () use ($exception): void {
-            if (! $this->configuration->isTypeEnabled(RuntimeTypeEnum::Mail) || ! self::isMailTransportFailure($exception)) {
-                return;
-            }
-
-            $dimensions = $this->pendingMail ?? ['mailable' => 'unknown', 'mailer' => 'unknown'];
+        $this->guard(function (): void {
+            $dimensions = $this->pendingMail;
             $this->pendingMail = null;
 
-            if ($this->isSampled(RuntimeTypeEnum::Mail)) {
+            if ($dimensions !== null && $this->isSampled(RuntimeTypeEnum::Mail)) {
                 $this->record(RuntimeTypeEnum::Mail, $dimensions, ['errorCount' => 1]);
             }
         });
@@ -1283,17 +1298,6 @@ final class RuntimeCollectorService
             'mailable' => is_string($mailable) && $mailable !== '' ? $this->className($mailable) : 'unknown',
             'mailer' => is_string($mailer) && $mailer !== '' ? $mailer : 'unknown',
         ];
-    }
-
-    private static function isMailTransportFailure(Throwable $exception): bool
-    {
-        for ($current = $exception; $current !== null; $current = $current->getPrevious()) {
-            if ($current instanceof TransportExceptionInterface) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static function statusClass(int $status): string
