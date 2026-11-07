@@ -16,11 +16,25 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Laravel\Ai\Ai;
+use Laravel\Ai\AiServiceProvider;
+use Laravel\Ai\Events\AgentPrompted;
+use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\ToolInvoked;
+use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
+use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\TextResponse;
+use Laravel\Ai\Tools\ToolNameResolver;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
+use Qiick\Excubia\Tests\Support\FakeAiAgent;
+use Qiick\Excubia\Tests\Support\FakeAiTool;
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -35,7 +49,8 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
  * and writes the cache three times, logs once and runs the same query five
  * times (an N+1 that `duplicateQuery` records), so the cache, log level and
  * query listeners run as in a typical request. The third test prices the
- * Monolog processor that learns the log channel (#174) per log entry.
+ * Monolog processor that learns the log channel (#174) per log entry, and the
+ * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -278,4 +293,65 @@ it('adds little per log entry to learn its channel, with log levels on', functio
 
     expect(bufferedOfType($this->app, 'logLevel')[0])->toMatchArray(['channel' => 'benchmark', 'count' => $entries])
         ->and($withProcessor - $plain)->toBeLessThan(0.01);
+})->group('benchmark');
+
+it('adds little per Laravel AI SDK agent run and tool call, with the AI types on', function () {
+    $this->app->register(AiServiceProvider::class);
+    $runs = 4 * BENCHMARK_REQUESTS;
+    $toolName = ToolNameResolver::resolve(new FakeAiTool);
+
+    // One agent run through the SDK's fake gateway: a tool call, then the answer.
+    $runMilliseconds = function () use ($runs, $toolName): float {
+        FakeAiAgent::fake(function (string $prompt, $attachments, $provider, string $model) use ($toolName): mixed {
+            static $step = 0;
+
+            return $step++ % 2 === 0
+                ? new ToolCall('call', $toolName, ['query' => 'order'])
+                : new TextResponse('done', new TextUsage(100, 20, 60), new Meta('openai', $model));
+        });
+        $agent = new FakeAiAgent;
+        $agent->prompt('warm up', model: 'gpt-test');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $runs; $i++) {
+            $agent->prompt('benchmark', model: 'gpt-test');
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $runs;
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $runMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'ai' => ['enabled' => true], 'aiTools' => ['enabled' => true]]);
+    $on = $runMilliseconds();
+
+    // The collector alone per run: start, done with its usage, one tool call.
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $prompt = new AgentPrompt(new FakeAiAgent, 'benchmark', [], Ai::textProvider('openai'), 'gpt-test');
+    $done = new AgentPrompted('invocation', $prompt, new AgentResponse('invocation', 'done', new TextUsage(100, 20, 60), new Meta('openai', 'gpt-test')));
+    $tool = new ToolInvoked('invocation', 'tool', new FakeAiAgent, new FakeAiTool, ['query' => 'order'], 'result', 0.2);
+    $start = new PromptingAgent('invocation', $prompt);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $runs; $i++) {
+        $collector->startAiOperation($start);
+        $collector->recordAiTool($tool);
+        $collector->recordAiOperation($done);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / $runs;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel AI SDK over %d agent runs with one tool call each (fake gateway; PHP %s, Laravel %s)\n  ai types off: %.4f ms/run\n  ai types on:  %.4f ms/run (delta %.4f ms)\n  collector:    %.4f ms/run (start + tool + done, no flush)\n",
+        $runs,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
 })->group('benchmark');

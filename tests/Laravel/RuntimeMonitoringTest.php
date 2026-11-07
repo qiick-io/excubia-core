@@ -47,6 +47,38 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
+use Laravel\Ai\Ai;
+use Laravel\Ai\AiServiceProvider;
+use Laravel\Ai\Audio;
+use Laravel\Ai\Embeddings;
+use Laravel\Ai\Events\AgentPrompted;
+use Laravel\Ai\Events\GeneratingImage;
+use Laravel\Ai\Events\ImageFailed;
+use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\ProviderFailedOver;
+use Laravel\Ai\Events\ToolInvoked;
+use Laravel\Ai\Exceptions\RateLimitedException;
+use Laravel\Ai\Image;
+use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Prompts\ImagePrompt;
+use Laravel\Ai\Reranking;
+use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\AudioResponse;
+use Laravel\Ai\Responses\Data\GeneratedImage;
+use Laravel\Ai\Responses\Data\ImageUsage;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\RerankingUsage;
+use Laravel\Ai\Responses\Data\TextUsage;
+use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\Data\TranscriptionUsage;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\EmbeddingsResponse;
+use Laravel\Ai\Responses\ImageResponse;
+use Laravel\Ai\Responses\RerankingResponse;
+use Laravel\Ai\Responses\TextResponse;
+use Laravel\Ai\Responses\TranscriptionResponse;
+use Laravel\Ai\Tools\ToolNameResolver;
+use Laravel\Ai\Transcription;
 use Monolog\Handler\TestHandler;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -54,6 +86,8 @@ use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\LogChannelTapService;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
 use Qiick\Excubia\Services\RuntimeBufferService;
+use Qiick\Excubia\Tests\Support\FakeAiAgent;
+use Qiick\Excubia\Tests\Support\FakeAiTool;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -1892,6 +1926,317 @@ it('never lets a failure in the command collector reach the host app', function 
     file_put_contents($buffer, 'not a directory');
 
     dispatchCommand('migrate', 2);
+
+    expect(is_file($buffer))->toBeTrue();
+});
+
+/**
+ * Laravel AI SDK runtime types (#198): `ai` and `aiTool`.
+ */
+const AI_MARKER = 'excubia-ai-marker-7f3a';
+
+/**
+ * Boot the Laravel AI SDK and Excubia with both AI types on, plus these keys.
+ *
+ * @param  array<string, mixed>  $runtime
+ */
+function bootAiRuntime(Application $app, array $runtime = []): void
+{
+    $app->register(AiServiceProvider::class);
+    bootRuntimeProject($app, ['enabled' => true, 'ai' => ['enabled' => true], 'aiTools' => ['enabled' => true], ...$runtime]);
+}
+
+/**
+ * A collector with both AI types on and a clock that moves 40 ms per read.
+ */
+function aiCollector(Application $app): RuntimeCollectorService
+{
+    $app->register(AiServiceProvider::class);
+    $now = 1_800_000_000.0;
+
+    return new RuntimeCollectorService(
+        new RuntimeConfigurationData(isEnabled: true, enabledTypes: ['ai' => true, 'aiTool' => true]),
+        new RuntimeBufferService($app->storagePath('excubia/runtime'), RuntimeConfigurationData::DEFAULT_BUFFER_MAX_BYTES),
+        $app->basePath(),
+        function () use (&$now): float {
+            $now += 0.04;
+
+            return $now;
+        },
+    );
+}
+
+function aiAgentPrompt(string $provider = 'openai', string $model = 'gpt-test'): AgentPrompt
+{
+    return new AgentPrompt(new FakeAiAgent(AI_MARKER), AI_MARKER, [], Ai::textProvider($provider), $model);
+}
+
+/**
+ * Every usage field null, as on a failed attempt.
+ *
+ * @return array<string, null>
+ */
+function noAiUsage(): array
+{
+    return array_fill_keys(RuntimeBufferService::NULLABLE_SUM_FIELDS, null);
+}
+
+/**
+ * @return list<int>
+ */
+function aiListenerCounts(): array
+{
+    return array_map(static fn (string $event): int => count(Event::getListeners($event)), [PromptingAgent::class, AgentPrompted::class, ProviderFailedOver::class, ToolInvoked::class]);
+}
+
+it('keeps the AI types off by default and registers their listeners only when switched on', function (array $runtime, array $added) {
+    $this->app->register(AiServiceProvider::class);
+    $before = aiListenerCounts();
+    bootRuntimeProject($this->app, $runtime);
+
+    expect(aiListenerCounts())->toBe(array_map(static fn (int $count, int $extra): int => $count + $extra, $before, $added));
+})->with([
+    'runtime on, types not switched on' => [['enabled' => true], [0, 0, 0, 0]],
+    'runtime off' => [['enabled' => false, 'ai' => ['enabled' => true], 'aiTools' => ['enabled' => true]], [0, 0, 0, 0]],
+    'ai only' => [['enabled' => true, 'ai' => ['enabled' => true]], [1, 1, 1, 0]],
+    'aiTools only' => [['enabled' => true, 'aiTools' => ['enabled' => true]], [0, 0, 0, 1]],
+]);
+
+it('times an agent prompt from start to done by invocation id, with the provider and model of the response and its token usage', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $collector = aiCollector($this->app);
+    $prompt = aiAgentPrompt();
+
+    $collector->startAiOperation(new PromptingAgent('invocation-1', $prompt));
+    $collector->recordAiOperation(new AgentPrompted('invocation-1', $prompt, new AgentResponse('invocation-1', AI_MARKER, new TextUsage(1200, 300, 800, 100, 50), new Meta('openai', 'gpt-test-2026-01-01'))));
+    $collector->flush();
+
+    expect(bufferedRuntime($this->app))->toHaveCount(1)
+        ->and(bufferedRuntime($this->app)[0])->toEqual([
+            'type' => 'ai',
+            'bucket' => gmdate('Y-m-d\TH:i:00\Z', 1_800_000_000),
+            'sampleRate' => 1.0,
+            'operation' => 'agent',
+            'agent' => FakeAiAgent::class,
+            'provider' => 'openai',
+            'model' => 'gpt-test-2026-01-01',
+            'count' => 1,
+            'errorCount' => 0,
+            'totalMs' => 40.0,
+            'maxMs' => 40.0,
+            'histogram' => runtimeHistogram([3 => 1]),
+            'failoverCount' => 0,
+            'inputTokens' => 1200,
+            'outputTokens' => 300,
+            'cacheReadInputTokens' => 800,
+            'cacheWriteInputTokens' => 100,
+            'reasoningTokens' => 50,
+            'imageInputTokens' => null,
+            'imageOutputTokens' => null,
+            'audioSeconds' => null,
+            'searchUnits' => null,
+        ]);
+});
+
+it('takes provider and model from the prompt when the response meta has none, and 0 ms when the start was not seen', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $collector = aiCollector($this->app);
+    $prompt = aiAgentPrompt('anthropic', 'claude-test');
+
+    $collector->recordAiOperation(new AgentPrompted('invocation-2', $prompt, new AgentResponse('invocation-2', AI_MARKER, new TextUsage(10, 2), new Meta)));
+    $collector->flush();
+
+    expect(bufferedRuntime($this->app)[0])->toMatchArray(['provider' => 'anthropic', 'model' => 'claude-test', 'totalMs' => 0.0, 'cacheReadInputTokens' => null, 'reasoningTokens' => null]);
+});
+
+it('forgets the oldest start past the pending invocation cap', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $collector = aiCollector($this->app);
+    $prompt = aiAgentPrompt();
+
+    for ($i = 0; $i <= RuntimeCollectorService::MAX_PENDING_AI_INVOCATIONS; $i++) {
+        $collector->startAiOperation(new PromptingAgent('invocation-'.$i, $prompt));
+    }
+
+    $response = new AgentResponse('invocation-0', '', new TextUsage, new Meta);
+    $collector->recordAiOperation(new AgentPrompted('invocation-0', $prompt, $response));
+    $collector->recordAiOperation(new AgentPrompted('invocation-1', $prompt, $response));
+    $collector->flush();
+
+    // invocation-0 lost its start (0 ms); invocation-1 kept it, about 200 clock reads of 40 ms ago.
+    expect(bufferedOfType($this->app, 'ai')[0])->toMatchArray(['count' => 2])
+        ->and(bufferedOfType($this->app, 'ai')[0]['maxMs'])->toEqualWithDelta(8040.0, 0.01)
+        ->and(bufferedOfType($this->app, 'ai')[0]['histogram'][0])->toBe(1);
+});
+
+it('records real agent runs, streams and tool calls through the SDK, a stream once with its final usage', function () {
+    bootAiRuntime($this->app);
+    FakeAiAgent::fake([
+        new ToolCall('call-1', ToolNameResolver::resolve(new FakeAiTool), ['query' => AI_MARKER]),
+        new TextResponse(AI_MARKER, new TextUsage(100, 20, 60), new Meta('openai', 'gpt-test')),
+        new TextResponse(AI_MARKER, new TextUsage(40, 10), new Meta('openai', 'gpt-test')),
+    ]);
+
+    (new FakeAiAgent)->prompt(AI_MARKER, model: 'gpt-test');
+    // A stream's meta is its prompt's provider and model.
+    $stream = (new FakeAiAgent)->stream(AI_MARKER, model: 'gpt-test');
+
+    foreach ($stream as $streamEvent) {
+        // Read the whole stream: AgentStreamed comes at its end.
+    }
+
+    $this->app->terminate();
+    $ai = bufferedOfType($this->app, 'ai');
+    $tools = bufferedOfType($this->app, 'aiTool');
+
+    expect($ai)->toHaveCount(1)
+        ->and($ai[0])->toMatchArray([
+            'operation' => 'agent',
+            'agent' => FakeAiAgent::class,
+            'provider' => 'openai',
+            'model' => 'gpt-test',
+            'count' => 2,
+            'errorCount' => 0,
+            'failoverCount' => 0,
+            'inputTokens' => 140,
+            'outputTokens' => 30,
+            'cacheReadInputTokens' => 60,
+            'cacheWriteInputTokens' => null,
+        ])
+        ->and(array_sum($ai[0]['histogram']))->toBe(2)
+        ->and($tools)->toHaveCount(1)
+        ->and($tools[0])->toMatchArray(['agent' => FakeAiAgent::class, 'tool' => FakeAiTool::class, 'count' => 1, 'errorCount' => 0])
+        ->and($tools[0])->toHaveKeys(['totalMs', 'maxMs', 'histogram'])
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
+});
+
+it('counts an agent failover and a failed run per attempt, without usage or the exception message', function () {
+    bootAiRuntime($this->app);
+    FakeAiAgent::fake(function (string $prompt, $attachments, $provider) {
+        if ($provider->name() === 'anthropic' || $prompt === 'fail') {
+            throw new RateLimitedException(AI_MARKER);
+        }
+
+        return new TextResponse('ok', new TextUsage(10, 1), new Meta('openai', 'gpt-test'));
+    });
+
+    (new FakeAiAgent)->prompt('first', provider: ['anthropic' => 'claude-test', 'openai' => 'gpt-test']);
+
+    expect(fn () => (new FakeAiAgent)->prompt('fail', provider: 'openai', model: 'gpt-test'))->toThrow(RateLimitedException::class);
+
+    $this->app->terminate();
+    $ai = bufferedOfType($this->app, 'ai')->keyBy('provider');
+
+    expect($ai)->toHaveCount(2)
+        ->and($ai['anthropic'])->toMatchArray(['operation' => 'agent', 'agent' => FakeAiAgent::class, 'model' => 'claude-test', 'count' => 1, 'errorCount' => 1, 'failoverCount' => 1, ...noAiUsage()])
+        ->and($ai['openai'])->toMatchArray(['model' => 'gpt-test', 'count' => 2, 'errorCount' => 1, 'failoverCount' => 0, 'inputTokens' => 10, 'outputTokens' => 1])
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
+});
+
+it('counts a failed tool call by agent and tool, and the run it fails, without its arguments or exception', function () {
+    bootAiRuntime($this->app);
+    FakeAiAgent::fake([new ToolCall('call-1', ToolNameResolver::resolve(new FakeAiTool), ['query' => AI_MARKER, 'fail' => true]), 'done']);
+
+    // The SDK rethrows the tool's exception, so the run fails too.
+    expect(fn () => (new FakeAiAgent)->prompt(AI_MARKER))->toThrow(RuntimeException::class);
+
+    $this->app->terminate();
+
+    expect(bufferedOfType($this->app, 'aiTool')[0])->toMatchArray(['agent' => FakeAiAgent::class, 'tool' => FakeAiTool::class, 'count' => 1, 'errorCount' => 1])
+        ->and(bufferedOfType($this->app, 'ai')[0])->toMatchArray(['count' => 1, 'errorCount' => 1])
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
+});
+
+it('records image, embeddings, transcription, reranking and audio with the usage each one reports', function () {
+    bootAiRuntime($this->app);
+    Image::fake(fn () => new ImageResponse(new Collection([new GeneratedImage(base64_encode('png'), 'image/png')]), new ImageUsage(5, 0, null, null, null, 30, 1290), new Meta('gemini', 'image-model')));
+    Embeddings::fake(fn () => new EmbeddingsResponse([[0.1, 0.2]], new Usage(12), new Meta('openai', 'embedding-model')));
+    Transcription::fake(fn () => new TranscriptionResponse(AI_MARKER, new Collection, new TranscriptionUsage(0, 0, null, null, null, 61.5), new Meta('openai', 'transcription-model')));
+    Reranking::fake(fn () => new RerankingResponse([], new RerankingUsage(8, 1.0), new Meta('cohere', 'rerank-model')));
+    Audio::fake(fn () => new AudioResponse(base64_encode('mp3'), new Usage(20), new Meta('openai', 'speech-model')));
+
+    Image::of(AI_MARKER)->generate();
+    Embeddings::for([AI_MARKER])->generate();
+    Transcription::fromBase64(base64_encode(AI_MARKER), 'audio/mpeg')->generate();
+    Reranking::of([AI_MARKER, 'other'])->rerank(AI_MARKER);
+    Audio::of(AI_MARKER)->generate();
+    $this->app->terminate();
+
+    $ai = bufferedOfType($this->app, 'ai')->keyBy('operation');
+
+    expect($ai->keys()->sort()->values()->all())->toBe(['audio', 'embeddings', 'image', 'reranking', 'transcription'])
+        ->and($ai['image'])->toMatchArray(['provider' => 'gemini', 'count' => 1, 'errorCount' => 0, 'inputTokens' => 5, 'imageInputTokens' => 30, 'imageOutputTokens' => 1290, 'audioSeconds' => null])
+        ->and($ai['image'])->not->toHaveKey('agent')
+        ->and($ai['embeddings'])->toMatchArray(['provider' => 'openai', 'inputTokens' => 12, 'outputTokens' => 0, 'reasoningTokens' => null])
+        ->and($ai['transcription'])->toMatchArray(['audioSeconds' => 61.5])
+        ->and($ai['reranking'])->toMatchArray(['provider' => 'cohere', 'inputTokens' => 8, 'searchUnits' => 1.0])
+        ->and($ai['audio'])->toMatchArray(['inputTokens' => 20, 'searchUnits' => null])
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
+});
+
+it('counts a failed image attempt and its failover on that attempt, then the success on the next provider', function () {
+    bootAiRuntime($this->app);
+    Image::fake(function (ImagePrompt $prompt) {
+        if ($prompt->provider->name() === 'gemini') {
+            throw new RateLimitedException(AI_MARKER);
+        }
+
+        return null;
+    });
+
+    Image::of(AI_MARKER)->generate(['gemini' => 'image-a', 'openai' => 'image-b']);
+    Image::fake(fn () => throw new RuntimeException(AI_MARKER));
+
+    expect(fn () => Image::of('again')->generate('openai', 'image-b'))->toThrow(RuntimeException::class);
+
+    $this->app->terminate();
+    $ai = bufferedOfType($this->app, 'ai')->keyBy('provider');
+
+    expect($ai)->toHaveCount(2)
+        ->and($ai['gemini'])->toMatchArray(['operation' => 'image', 'model' => 'image-a', 'count' => 1, 'errorCount' => 1, 'failoverCount' => 1, ...noAiUsage()])
+        ->and($ai['openai'])->toMatchArray(['operation' => 'image', 'model' => 'image-b', 'count' => 2, 'errorCount' => 1, 'failoverCount' => 0])
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
+});
+
+it('adds a provider failover only to the failure it follows', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $collector = aiCollector($this->app);
+    $provider = Ai::imageProvider('gemini');
+    $prompt = new ImagePrompt(AI_MARKER, [], null, null, $provider, 'image-a');
+
+    $collector->recordAiFailover(new ProviderFailedOver($provider, 'image-a', new RateLimitedException(AI_MARKER)));
+    $collector->recordAiFailure(new ImageFailed('invocation-1', $provider, 'image-a', $prompt, new RuntimeException(AI_MARKER)));
+    $collector->recordAiFailover(new ProviderFailedOver($provider, 'image-other', new RateLimitedException(AI_MARKER)));
+    $collector->recordAiFailure(new ImageFailed('invocation-2', $provider, 'image-a', $prompt, new RuntimeException(AI_MARKER)));
+    $collector->startAiOperation(new GeneratingImage('invocation-3', $provider, 'image-a', $prompt));
+    $collector->recordAiFailover(new ProviderFailedOver($provider, 'image-a', new RateLimitedException(AI_MARKER)));
+    $collector->flush();
+
+    expect(bufferedOfType($this->app, 'ai')[0])->toMatchArray(['count' => 2, 'errorCount' => 2, 'failoverCount' => 0]);
+});
+
+it('records no AI aggregate at sample rate 0', function () {
+    bootAiRuntime($this->app, ['ai' => ['enabled' => true, 'sampleRate' => 0], 'aiTools' => ['enabled' => true, 'sampleRate' => 0]]);
+    FakeAiAgent::fake([new ToolCall('call-1', ToolNameResolver::resolve(new FakeAiTool), ['query' => 'x']), 'done']);
+    Image::fake();
+
+    (new FakeAiAgent)->prompt('hello');
+    Image::of('a cat')->generate();
+    $this->app->terminate();
+
+    expect(bufferedRuntime($this->app))->toBe([]);
+});
+
+it('never lets a failure in the AI collector reach the host app', function () {
+    bootAiRuntime($this->app);
+    $buffer = $this->app->storagePath('excubia/runtime');
+    @mkdir(dirname($buffer), 0777, true);
+    file_put_contents($buffer, 'not a directory');
+    FakeAiAgent::fake(['done']);
+
+    expect((new FakeAiAgent)->prompt('hello')->text)->toBe('done');
+
+    $this->app->terminate();
 
     expect(is_file($buffer))->toBeTrue();
 });

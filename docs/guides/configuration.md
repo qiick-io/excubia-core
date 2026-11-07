@@ -67,7 +67,9 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 },
     "server": { "enabled": false, "sampleRate": 1 },
     "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] },
-    "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 }
+    "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 },
+    "ai": { "enabled": false, "sampleRate": 1 },
+    "aiTools": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -304,6 +306,12 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.health.checks` | list of check ids | all nine | Checks to sample, in order, without duplicates: any of `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `laravel-queue-workers`, `laravel-scheduler-heartbeat`, `laravel-redis-memory`, `laravel-maintenance-mode`. Any other id is a configuration error. |
 | `runtime.health.checkBudgetMs` | integer ≥ 1 | `3000` | Milliseconds reserved for one check: a check starts only while this much is left of `totalBudgetMs`. At most `totalBudgetMs`. |
 | `runtime.health.totalBudgetMs` | integer | `15000` | Milliseconds of the push-runtime run, from its start, after which no further check starts; the rest are sent as `skipped`. |
+| `runtime.ai` | object | | Laravel AI SDK (`laravel/ai`) operations per operation, agent class, provider and model, with their duration, failures, failovers and token usage. Records nothing unless `laravel/ai` is installed; never prompts, responses or exception messages. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-ai-sdk). |
+| `runtime.ai.enabled` | boolean | `false` | Collect AI operations. |
+| `runtime.ai.sampleRate` | number 0–1 | `1` | Share of AI attempts recorded. |
+| `runtime.aiTools` | object | | Laravel AI SDK agent tool calls per agent and tool class, with their duration and failures. Records nothing unless `laravel/ai` is installed; never tool arguments or results. Off by default. |
+| `runtime.aiTools.enabled` | boolean | `false` | Collect AI tool calls. |
+| `runtime.aiTools.sampleRate` | number 0–1 | `1` | Share of tool calls recorded. |
 
 ## Exception capture
 

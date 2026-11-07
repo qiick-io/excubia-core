@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection and Artisan command runs. It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -52,7 +52,9 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "duplicateQueries": { "enabled": true, "threshold": 5 },
     "server": { "enabled": true },
     "commands": { "enabled": true },
-    "health": { "enabled": true }
+    "health": { "enabled": true },
+    "ai": { "enabled": true },
+    "aiTools": { "enabled": true }
   }
 }
 ```
@@ -88,7 +90,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 ## How it works
 
 - Laravel events are aggregated in memory per UTC minute: `count` and `errorCount`, plus `totalMs`, `maxMs` and a latency `histogram` for durations, `totalMb` and `maxMb` for memory, or `hits`, `misses`, `writes` and `deletes` for the cache.
-- The latency `histogram` (requests, slow queries, jobs, scheduled tasks, outgoing HTTP and queue wait) lets excubia-app show p50, p95 and p99. It is 12 counts, one per bucket with the upper bounds 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000 and 10000 ms (inclusive), plus one for anything slower; the counts add up to `count`. The bounds are fixed, so rows add up element by element across minutes and batches, and the app interpolates linearly inside a bucket (recipe in `$defs.histogram` of [`docs/runtime-schema.json`](../runtime-schema.json)). A percentile is exact to the bucket: p95 = 180 ms means "between 100 and 250 ms, about 180". Recording a sample is a bucket lookup and one increment, about 0.0002 ms (`vendor/bin/pest --group=benchmark`).
+- The latency `histogram` (requests, slow queries, jobs, scheduled tasks, outgoing HTTP, queue wait, commands, AI operations and AI tool calls) lets excubia-app show p50, p95 and p99. It is 12 counts, one per bucket with the upper bounds 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000 and 10000 ms (inclusive), plus one for anything slower; the counts add up to `count`. The bounds are fixed, so rows add up element by element across minutes and batches, and the app interpolates linearly inside a bucket (recipe in `$defs.histogram` of [`docs/runtime-schema.json`](../runtime-schema.json)). A percentile is exact to the bucket: p95 = 180 ms means "between 100 and 250 ms, about 180". Recording a sample is a bucket lookup and one increment, about 0.0002 ms (`vendor/bin/pest --group=benchmark`).
 - Scheduled task aggregates carry a `taskId` (#146), sha256 of the task name and its cron expression, the same value as in the `schedule` inventory that `excubia:push` sends, so excubia-app can tell missed, late and failed runs apart ([excubia-app guide](./excubia-app.md#scheduled-tasks)).
 - The aggregates are written to a local buffer under `storage/excubia/runtime/` when the request or command ends, and after each queued job or scheduled task. Nothing is sent during a request.
 - `excubia:push-runtime` claims the buffer into batch files and sends them oldest first to `POST {url}/api/runtime`. A batch is deleted only after a 2xx answer. When the app is down, batches are kept and resent with the same `batchId`, so the app stores each once.
@@ -114,6 +116,8 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `server` | One sample per `excubia:push-runtime` run, on each server | — |
 | `commands` | `CommandStarting` / `CommandFinished`, top-level commands only | Non-zero exit code |
 | `health` | One sample of the fast Artisan checks per `excubia:push-runtime` run, at most once a minute, on each server | The check failed |
+| `ai` | Laravel AI SDK: `PromptingAgent` / `StreamingAgent` → `AgentPrompted` / `AgentStreamed` / `AgentFailed` / `AgentFailedOver`, and the start, done and failed events of images, embeddings, transcriptions, reranking and audio, plus `ProviderFailedOver` | The attempt failed |
+| `aiTools` | Laravel AI SDK: `ToolInvoked` / `ToolFailed` | The tool threw |
 
 Notes on the newer types:
 
@@ -181,11 +185,34 @@ Set `EXCUBIA_SERVER_NAME` in each server's environment (`.env`, Forge, the proce
 - Two samples of one check, server and minute merge with the worst status (fail, then warn, then pass, then skipped: a skipped sample has no reading and never hides one).
 - The server is named as for [server metrics](#server-metrics): `EXCUBIA_SERVER_NAME`, else `runtime.server.name`, else a hashed id.
 
+### Laravel AI SDK
+
+With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) in your app, `runtime.ai` and `runtime.aiTools` (1.0.0-beta.4, #198) show what your AI features cost and how reliable they are, next to health and runtime. Excubia does not depend on the SDK: without `laravel/ai` installed both types register nothing and record nothing, whatever `excubia.json` says. Everything stays in your own `excubia-app`, and prompts never leave your app.
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "ai": { "enabled": true },
+    "aiTools": { "enabled": true }
+  }
+}
+```
+
+- **`ai`** rows are keyed by `operation` (`agent`, `image`, `embeddings`, `transcription`, `reranking` or `audio`), `agent` (the agent class, for `agent` rows only), `provider` (the name in `config/ai.php`, such as `openai`) and `model`. For an agent, provider and model come from the response (the model the provider answered with), else from the prompt; a stream's are the prompt's.
+- `count` is the provider attempts: completed operations plus failed attempts. `errorCount` is the failed ones, and `failoverCount` the failed ones that moved on to the next provider of a failover list (`AgentFailedOver`, `ProviderFailedOver`). For images, embeddings, transcription, reranking and audio, the SDK fires its failed event once per attempt and `ProviderFailedOver` for every failoverable error, the last provider's included.
+- Durations run from the start event to the done or failed event of the same invocation id, with `totalMs`, `maxMs` and the latency histogram; a start Excubia did not see (it fired before boot) counts 0 ms. A stream is counted once, at `AgentStreamed`, with the usage of the whole stream. At most 200 starts are kept waiting for their end, so a stream nobody reads cannot grow memory.
+- Usage: `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens`, `reasoningTokens`, `imageInputTokens`, `imageOutputTokens`, `audioSeconds` and `searchUnits`, as the SDK reports them. A count the provider does not report is `null`, never 0; rows add up, and a sum is `null` only when every row has `null`. A failed attempt has no usage.
+- No cost is computed here: prices change, so `excubia-app` computes cost from the tokens. `inputTokens` includes the cached input; cache reads, cache writes and uncached input (`inputTokens - cacheReadInputTokens - cacheWriteInputTokens`) are billed at different rates, which is why they are separate fields.
+- **`aiTools`** rows are keyed by `agent` and `tool` (class names), with `count`, `errorCount` (the tool threw) and the time the SDK measured in the tool's handler. An agent used as a tool, an MCP tool or a provider tool shows as the SDK's wrapper class.
+- Read: class names, provider and model names, invocation ids (in memory only, to time an operation) and the usage counts. Never the prompt, the instructions, attachments, messages, the response text, reasoning, tool arguments or results, conversation ids or users, or exception messages.
+- Cost (`vendor/bin/pest --group=benchmark`): about 0.02 ms per agent run with one tool call in the collector, and 0.03–0.04 ms end to end through the SDK's fake gateway, against provider calls that take hundreds of milliseconds.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 
