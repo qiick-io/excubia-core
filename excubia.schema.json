@@ -534,6 +534,14 @@
                             "description": "Milliseconds of the push-runtime run, from its start, after which no further check starts; the rest are sent as skipped. Default 15000."
                         }
                     }
+                },
+                "ai": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel AI SDK (laravel/ai) operations counted per operation (agent, image, embeddings, transcription, reranking, audio), agent class, provider and model name, with their duration, failures, failovers and token usage. Records nothing unless laravel/ai is installed. Never prompts, attachments, messages, responses, reasoning, conversations or exception messages. Off by default (#198)."
+                },
+                "aiTools": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel AI SDK (laravel/ai) agent tool calls counted per agent class and tool class, with their duration and failures. Records nothing unless laravel/ai is installed. Never tool arguments or results. Off by default (#198)."
                 }
             }
         },

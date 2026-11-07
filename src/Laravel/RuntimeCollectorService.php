@@ -34,6 +34,30 @@ use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Queue;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
+use Laravel\Ai\Events\AgentFailed;
+use Laravel\Ai\Events\AgentFailedOver;
+use Laravel\Ai\Events\AgentPrompted;
+use Laravel\Ai\Events\AgentStreamed;
+use Laravel\Ai\Events\AudioFailed;
+use Laravel\Ai\Events\AudioGenerated;
+use Laravel\Ai\Events\EmbeddingsFailed;
+use Laravel\Ai\Events\EmbeddingsGenerated;
+use Laravel\Ai\Events\GeneratingAudio;
+use Laravel\Ai\Events\GeneratingEmbeddings;
+use Laravel\Ai\Events\GeneratingImage;
+use Laravel\Ai\Events\GeneratingTranscription;
+use Laravel\Ai\Events\ImageFailed;
+use Laravel\Ai\Events\ImageGenerated;
+use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\ProviderFailedOver;
+use Laravel\Ai\Events\Reranked;
+use Laravel\Ai\Events\Reranking;
+use Laravel\Ai\Events\RerankingFailed;
+use Laravel\Ai\Events\StreamingAgent;
+use Laravel\Ai\Events\ToolFailed;
+use Laravel\Ai\Events\ToolInvoked;
+use Laravel\Ai\Events\TranscriptionFailed;
+use Laravel\Ai\Events\TranscriptionGenerated;
 use Monolog\Logger as MonologLogger;
 use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -62,12 +86,15 @@ use WeakReference;
  * channel names, log levels and log channel names, the source package, masked message and PHP
  * minor version of PHP deprecations, the normalised SQL shape, connection
  * and route name or job class of queries repeated within one request or job
- * (`duplicateQuery`, #148), and Artisan command names with their exit code
- * class (`command`, #152). Never request or response bodies,
+ * (`duplicateQuery`, #148), Artisan command names with their exit code
+ * class (`command`, #152), and for the Laravel AI SDK the operation, agent
+ * and tool class names, provider and model names, token counts and
+ * durations (`ai`, `aiTool`, #198). Never request or response bodies,
  * headers, cookies, users, IP addresses, query bindings, exception messages,
  * whole cache keys or values, recipients, log messages or context, absolute
- * paths, the line and stack of a deprecation, or command arguments and
- * options.
+ * paths, the line and stack of a deprecation, command arguments and
+ * options, or AI prompts, attachments, messages, responses, reasoning, tool
+ * arguments or results and conversations.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -126,6 +153,13 @@ final class RuntimeCollectorService
      * process or as child processes, are `scheduledTask`, never `command`.
      */
     private const SCHEDULER_COMMANDS = ['schedule:run', 'schedule:work', 'schedule:test'];
+
+    /**
+     * AI invocations whose start time is kept until they end (`ai`, #198):
+     * one that never ends (a stream nobody reads) is forgotten, oldest first,
+     * past this many.
+     */
+    public const MAX_PENDING_AI_INVOCATIONS = 200;
 
     private const BYTES_PER_MEGABYTE = 1048576;
 
@@ -225,6 +259,24 @@ final class RuntimeCollectorService
      * so a long-lived process that called `schedule:run` keeps counting.
      */
     private bool $hasMarkedScheduler = false;
+
+    /**
+     * Start time of each running AI operation by invocation id (`ai`), at
+     * most MAX_PENDING_AI_INVOCATIONS.
+     *
+     * @var array<string, float>
+     */
+    private array $aiStartedAt = [];
+
+    /**
+     * The pending aggregate of the last failed image, embeddings,
+     * transcription, reranking or audio attempt, with its provider and
+     * model, so the `ProviderFailedOver` that follows it counts the failover
+     * on that aggregate (the event carries no invocation id or operation).
+     *
+     * @var array{key: string, provider: string, model: string}|null
+     */
+    private ?array $lastAiFailure = null;
 
     /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
@@ -328,6 +380,10 @@ final class RuntimeCollectorService
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::Command)) {
             $events->listen(CommandStarting::class, fn (CommandStarting $event) => $collector->startCommand($event));
             $events->listen(CommandFinished::class, fn (CommandFinished $event) => $collector->recordCommand($event));
+        }
+
+        if (class_exists(PromptingAgent::class)) {
+            $collector->listenToAi($events);
         }
 
         $application->terminating(function () use ($collector): void {
@@ -1128,6 +1184,256 @@ final class RuntimeCollectorService
     }
 
     /**
+     * Listen to the Laravel AI SDK (`laravel/ai`, #198), which the provider
+     * only calls when its events exist: Excubia does not depend on it.
+     * Laravel dispatches an event to the listeners of its own class only, so
+     * `StreamingAgent`, `AgentStreamed` and `AgentFailedOver` are listened to
+     * apart from the classes they extend.
+     */
+    public function listenToAi(Dispatcher $events): void
+    {
+        if ($this->configuration->isTypeEnabled(RuntimeTypeEnum::Ai)) {
+            $events->listen(
+                [PromptingAgent::class, StreamingAgent::class, GeneratingImage::class, GeneratingEmbeddings::class, GeneratingTranscription::class, Reranking::class, GeneratingAudio::class],
+                $this->startAiOperation(...),
+            );
+            $events->listen(
+                [AgentPrompted::class, AgentStreamed::class, ImageGenerated::class, EmbeddingsGenerated::class, TranscriptionGenerated::class, Reranked::class, AudioGenerated::class],
+                $this->recordAiOperation(...),
+            );
+            $events->listen(
+                [AgentFailed::class, ImageFailed::class, EmbeddingsFailed::class, TranscriptionFailed::class, RerankingFailed::class, AudioFailed::class],
+                $this->recordAiFailure(...),
+            );
+            $events->listen([ProviderFailedOver::class, AgentFailedOver::class], $this->recordAiFailover(...));
+        }
+
+        if ($this->configuration->isTypeEnabled(RuntimeTypeEnum::AiTool)) {
+            $events->listen([ToolInvoked::class, ToolFailed::class], $this->recordAiTool(...));
+        }
+    }
+
+    /**
+     * Remember when an AI operation starts, by its invocation id. A streamed
+     * agent starts when its stream is first read (`StreamingAgent`).
+     */
+    public function startAiOperation(PromptingAgent|GeneratingImage|GeneratingEmbeddings|GeneratingTranscription|Reranking|GeneratingAudio $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $this->lastAiFailure = null;
+            unset($this->aiStartedAt[$event->invocationId]);
+
+            if (count($this->aiStartedAt) >= self::MAX_PENDING_AI_INVOCATIONS) {
+                unset($this->aiStartedAt[array_key_first($this->aiStartedAt)]);
+            }
+
+            $this->aiStartedAt[$event->invocationId] = $this->now();
+        });
+    }
+
+    /**
+     * One completed AI operation with its duration and usage. A streamed
+     * agent is counted once, at `AgentStreamed`, with the usage of the whole
+     * stream. Provider and model come from the response meta of an agent,
+     * else from the prompt. Only the usage counts and the meta names are
+     * read, never the text, reasoning, messages or tool calls.
+     */
+    public function recordAiOperation(AgentPrompted|ImageGenerated|EmbeddingsGenerated|TranscriptionGenerated|Reranked|AudioGenerated $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $durationMs = $this->aiDurationMs($event->invocationId);
+
+            if (! $this->isSampled(RuntimeTypeEnum::Ai)) {
+                return;
+            }
+
+            $dimensions = $event instanceof AgentPrompted
+                ? $this->aiDimensions(
+                    'agent',
+                    $event->prompt->agent,
+                    $event->response->meta->provider ?? $event->prompt->provider->name(),
+                    $event->response->meta->model ?? $event->prompt->model,
+                )
+                : $this->aiDimensions(self::aiOperation($event), null, $event->provider->name(), $event->model);
+
+            $this->add(RuntimeTypeEnum::Ai, $dimensions, $durationMs, false, [
+                'failoverCount' => 0,
+                ...self::aiUsage($event->response->usage),
+            ]);
+        });
+    }
+
+    /**
+     * One failed AI attempt, without usage. `AgentFailed` comes once per
+     * run, when no provider is left to fail over to; the other operations
+     * fire their failure once per attempt, and a `ProviderFailedOver` right
+     * after it counts the failover (`recordAiFailover()`). The exception is
+     * never read.
+     */
+    public function recordAiFailure(AgentFailed|ImageFailed|EmbeddingsFailed|TranscriptionFailed|RerankingFailed|AudioFailed $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $durationMs = $this->aiDurationMs($event->invocationId);
+            $this->lastAiFailure = null;
+
+            if (! $this->isSampled(RuntimeTypeEnum::Ai)) {
+                return;
+            }
+
+            if ($event instanceof AgentFailed) {
+                $this->add(RuntimeTypeEnum::Ai, $this->aiDimensions('agent', $event->prompt->agent, $event->prompt->provider->name(), $event->prompt->model), $durationMs, true, [
+                    'failoverCount' => 0,
+                    ...self::aiUsage(null),
+                ]);
+
+                return;
+            }
+
+            $dimensions = $this->aiDimensions(self::aiOperation($event), null, $event->provider->name(), $event->model);
+            $key = $this->add(RuntimeTypeEnum::Ai, $dimensions, $durationMs, true, [
+                'failoverCount' => 0,
+                ...self::aiUsage(null),
+            ]);
+            $this->lastAiFailure = ['key' => $key, 'provider' => $dimensions['provider'], 'model' => $dimensions['model']];
+        });
+    }
+
+    /**
+     * A failed attempt that moves on to the next configured provider.
+     * `AgentFailedOver` is the agent attempt itself (no `AgentFailed` comes
+     * for it): one failed attempt with its failover. `ProviderFailedOver`
+     * follows the failure event of the attempt, which was already counted:
+     * it adds the failover to that attempt's aggregate.
+     *
+     * ponytail: the failover of an image, embeddings, transcription,
+     * reranking or audio attempt is dropped when the buffer was flushed
+     * between the two events (MAX_PENDING_AGGREGATES reached by that very
+     * failure); the error itself is kept. An invocation id on
+     * `ProviderFailedOver` would be the upgrade path.
+     */
+    public function recordAiFailover(ProviderFailedOver $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if ($event instanceof AgentFailedOver) {
+                $durationMs = $this->aiDurationMs($event->invocationId);
+
+                if ($this->isSampled(RuntimeTypeEnum::Ai)) {
+                    $this->add(RuntimeTypeEnum::Ai, $this->aiDimensions('agent', $event->agent, $event->provider->name(), $event->model), $durationMs, true, [
+                        'failoverCount' => 1,
+                        ...self::aiUsage(null),
+                    ]);
+                }
+
+                return;
+            }
+
+            $failure = $this->lastAiFailure;
+            $this->lastAiFailure = null;
+
+            if ($failure === null
+                || $failure['provider'] !== self::aiName($event->provider->name())
+                || $failure['model'] !== self::aiName($event->model)
+                || ! isset($this->aggregates[$failure['key']])) {
+                return;
+            }
+
+            $failoverCount = $this->aggregates[$failure['key']]['failoverCount'] ?? 0;
+            $this->aggregates[$failure['key']]['failoverCount'] = (is_int($failoverCount) ? $failoverCount : 0) + 1;
+        });
+    }
+
+    /**
+     * One tool call of an agent (`aiTool`), timed by the SDK itself. Only
+     * the agent and tool class names are read, never the arguments or the
+     * result.
+     */
+    public function recordAiTool(ToolInvoked|ToolFailed $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if (! $this->isSampled(RuntimeTypeEnum::AiTool)) {
+                return;
+            }
+
+            $this->add(RuntimeTypeEnum::AiTool, [
+                'agent' => $this->className($event->agent::class),
+                'tool' => $this->className($event->tool::class),
+            ], $event->time, $event instanceof ToolFailed);
+        });
+    }
+
+    /**
+     * Milliseconds since the operation started, and forget the start; 0
+     * when the start was not seen.
+     */
+    private function aiDurationMs(string $invocationId): float
+    {
+        $startedAt = $this->aiStartedAt[$invocationId] ?? null;
+        unset($this->aiStartedAt[$invocationId]);
+
+        return $startedAt === null ? 0.0 : ($this->now() - $startedAt) * 1000;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function aiDimensions(string $operation, ?object $agent, string $provider, string $model): array
+    {
+        return [
+            'operation' => $operation,
+            ...$agent === null ? [] : ['agent' => $this->className($agent::class)],
+            'provider' => self::aiName($provider),
+            'model' => self::aiName($model),
+        ];
+    }
+
+    /**
+     * A provider or model name, `unknown` when empty.
+     */
+    private static function aiName(string $name): string
+    {
+        return $name !== '' ? $name : 'unknown';
+    }
+
+    /**
+     * @return 'image'|'embeddings'|'transcription'|'reranking'|'audio'
+     */
+    private static function aiOperation(ImageGenerated|EmbeddingsGenerated|TranscriptionGenerated|Reranked|AudioGenerated|ImageFailed|EmbeddingsFailed|TranscriptionFailed|RerankingFailed|AudioFailed $event): string
+    {
+        return match (true) {
+            $event instanceof ImageGenerated, $event instanceof ImageFailed => 'image',
+            $event instanceof EmbeddingsGenerated, $event instanceof EmbeddingsFailed => 'embeddings',
+            $event instanceof TranscriptionGenerated, $event instanceof TranscriptionFailed => 'transcription',
+            $event instanceof Reranked, $event instanceof RerankingFailed => 'reranking',
+            default => 'audio',
+        };
+    }
+
+    /**
+     * Every usage field of `RuntimeBufferService::NULLABLE_SUM_FIELDS`
+     * that the usage object has (`TextUsage`, `ImageUsage`,
+     * `TranscriptionUsage`, `RerankingUsage`, `Usage`), else null: a count
+     * the provider does not report stays null.
+     *
+     * @return array<string, int|float|null>
+     */
+    private static function aiUsage(?object $usage): array
+    {
+        $metrics = [];
+
+        foreach (RuntimeBufferService::NULLABLE_SUM_FIELDS as $field) {
+            $value = $usage !== null && property_exists($usage, $field) ? $usage->{$field} : null;
+
+            $metrics[$field] = match (true) {
+                is_int($value) => max($value, 0),
+                is_float($value) => round(max($value, 0.0), 3),
+                default => null,
+            };
+        }
+
+        return $metrics;
+    }
+
+    /**
      * Write the pending aggregates to the buffer and forget them.
      */
     public function flush(): void
@@ -1202,14 +1508,16 @@ final class RuntimeCollectorService
      * up to `count`.
      *
      * @param  array<string, string>  $dimensions
+     * @param  array<string, int|float|null>  $metrics  further metric fields of the type
+     * @return string the merge key of the pending aggregate
      */
-    private function add(RuntimeTypeEnum $type, array $dimensions, float $durationMs, bool $isError): void
+    private function add(RuntimeTypeEnum $type, array $dimensions, float $durationMs, bool $isError, array $metrics = []): string
     {
         $durationMs = round(max($durationMs, 0.0), 3);
         $histogram = array_fill(0, count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1, 0);
         $histogram[RuntimeTypeEnum::histogramBucket($durationMs)]++;
 
-        $this->record($type, $dimensions, ['errorCount' => $isError ? 1 : 0, 'totalMs' => $durationMs, 'maxMs' => $durationMs, 'histogram' => $histogram]);
+        return $this->record($type, $dimensions, ['errorCount' => $isError ? 1 : 0, 'totalMs' => $durationMs, 'maxMs' => $durationMs, 'histogram' => $histogram, ...$metrics]);
     }
 
     /**
@@ -1228,9 +1536,10 @@ final class RuntimeCollectorService
      * says otherwise.
      *
      * @param  array<string, string>  $dimensions
-     * @param  array<string, int|float|list<int>>  $metrics
+     * @param  array<string, int|float|list<int>|null>  $metrics
+     * @return string the merge key of the pending aggregate
      */
-    private function record(RuntimeTypeEnum $type, array $dimensions, array $metrics): void
+    private function record(RuntimeTypeEnum $type, array $dimensions, array $metrics): string
     {
         $aggregate = [
             'type' => $type->value,
@@ -1250,6 +1559,8 @@ final class RuntimeCollectorService
         if (count($this->aggregates) >= self::MAX_PENDING_AGGREGATES) {
             $this->flush();
         }
+
+        return $key;
     }
 
     private function shouldRecord(RuntimeTypeEnum $type): bool

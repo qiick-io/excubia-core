@@ -48,7 +48,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command, RuntimeTypeEnum::Health];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command, RuntimeTypeEnum::Health, RuntimeTypeEnum::Ai, RuntimeTypeEnum::AiTool];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {
@@ -70,6 +70,24 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
         ->and($deprecations->sampleRate(RuntimeTypeEnum::Deprecation))->toBe(0.5)
         ->and($load(['deprecations' => ['enabled' => true]])->isTypeEnabled(RuntimeTypeEnum::Deprecation))->toBeFalse()
         ->and(fn () => $load(['deprecations' => ['thresholdMs' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.deprecations key [thresholdMs].');
+});
+
+it('keeps the Laravel AI SDK types off by default and reads their switches and sample rates', function () {
+    $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
+        'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
+    ]))->runtime;
+    $defaults = $load(['enabled' => true]);
+    $switched = $load(['enabled' => true, 'ai' => ['enabled' => true, 'sampleRate' => 0.5], 'aiTools' => ['enabled' => true]]);
+
+    expect($defaults->isTypeEnabled(RuntimeTypeEnum::Ai))->toBeFalse()
+        ->and($defaults->isTypeEnabled(RuntimeTypeEnum::AiTool))->toBeFalse()
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::Ai))->toBeTrue()
+        ->and($switched->sampleRate(RuntimeTypeEnum::Ai))->toBe(0.5)
+        ->and($switched->isTypeEnabled(RuntimeTypeEnum::AiTool))->toBeTrue()
+        ->and($switched->sampleRate(RuntimeTypeEnum::AiTool))->toBe(1.0)
+        ->and($load(['ai' => ['enabled' => true]])->isTypeEnabled(RuntimeTypeEnum::Ai))->toBeFalse()
+        ->and(fn () => $load(['ai' => ['threshold' => 5]]))->toThrow(InvalidConfigurationException::class, 'Unknown runtime.ai key [threshold].')
+        ->and(fn () => $load(['aiTools' => ['sampleRate' => 2]]))->toThrow(InvalidConfigurationException::class, 'runtime.aiTools.sampleRate must be between 0 and 1.');
 });
 
 it('keeps duplicate query detection off by default and reads its threshold', function () {
