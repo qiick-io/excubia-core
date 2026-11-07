@@ -43,10 +43,11 @@ final class RuntimeBufferService
 
     /**
      * Metric fields that add up when two aggregates merge: integer counters
-     * and decimal totals. A type carries only the ones it needs (#132, and
-     * `totalRepeats` for `duplicateQuery`, #148).
+     * and decimal totals. A type carries only the ones it needs (#132,
+     * `totalRepeats` for `duplicateQuery`, #148, and `failoverCount` for
+     * `ai`, #198).
      */
-    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount'];
 
     private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
 
@@ -85,6 +86,25 @@ final class RuntimeBufferService
     public const GAUGE_FIELDS = ['loadAverage1', 'loadAverage5', 'loadAverage15', 'cpuCores', 'cpuLimit', 'memoryUsedMb', 'memoryTotalMb', 'diskUsedGb', 'diskTotalGb'];
 
     /**
+     * Usage of the `ai` type (#198): token, audio second and search unit
+     * counts, null when the provider does not report them. They add up when
+     * two aggregates merge, and the sum is null only when both sides are
+     * null (a missing value counts as null), so a count no provider reported
+     * never turns into 0.
+     */
+    public const NULLABLE_SUM_FIELDS = [
+        'inputTokens',
+        'outputTokens',
+        'cacheReadInputTokens',
+        'cacheWriteInputTokens',
+        'reasoningTokens',
+        'imageInputTokens',
+        'imageOutputTokens',
+        'audioSeconds',
+        'searchUnits',
+    ];
+
+    /**
      * Boolean metric fields: true when either side of a merge is true
      * (`isContainer` of `server`, #173). A missing value counts as false.
      */
@@ -105,7 +125,7 @@ final class RuntimeBufferService
      * Every metric field. Every other field is a dimension and part of the
      * merge key.
      */
-    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, ...self::FLAG_FIELDS, self::HISTOGRAM_FIELD, self::STATUS_FIELD, self::SEVERITY_FIELD, self::FINGERPRINTS_FIELD];
+    private const METRIC_FIELDS = [...self::NUMBER_FIELDS, ...self::GAUGE_FIELDS, ...self::NULLABLE_SUM_FIELDS, ...self::FLAG_FIELDS, self::HISTOGRAM_FIELD, self::STATUS_FIELD, self::SEVERITY_FIELD, self::FINGERPRINTS_FIELD];
 
     public function __construct(
         private readonly string $directory,
@@ -232,7 +252,7 @@ final class RuntimeBufferService
      * Merge aggregates that share every dimension (type, bucket, sample rate
      * and the type's keys): counts and totals add up, maxima take the larger,
      * histograms add up element by element, gauges keep the larger reading,
-     * and a `health` sample keeps the worst status (see `combine()`).
+     * usage counts add up (null only when both are null), and a `health` sample keeps the worst status (see `combine()`).
      *
      * @param  list<array<string, mixed>>  $aggregates
      * @return list<array<string, mixed>>
@@ -314,6 +334,12 @@ final class RuntimeBufferService
             }
         }
 
+        foreach (self::NULLABLE_SUM_FIELDS as $field) {
+            if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
+                $into[$field] = self::nullableSum($into[$field] ?? null, $from[$field] ?? null);
+            }
+        }
+
         foreach (self::FLAG_FIELDS as $field) {
             if (array_key_exists($field, $into) || array_key_exists($field, $from)) {
                 $into[$field] = ($into[$field] ?? false) === true || ($from[$field] ?? false) === true;
@@ -364,6 +390,23 @@ final class RuntimeBufferService
     }
 
     /**
+     * The sum of two usage counts (#198), null when neither is a number.
+     * Integers stay integers; a decimal sum keeps 3 decimals.
+     */
+    private static function nullableSum(mixed $first, mixed $second): int|float|null
+    {
+        $counts = array_filter([$first, $second], static fn (mixed $count): bool => is_int($count) || is_float($count));
+
+        if ($counts === []) {
+            return null;
+        }
+
+        $sum = array_sum($counts);
+
+        return is_float($sum) ? round($sum, 3) : $sum;
+    }
+
+    /**
      * Element-by-element sum of two histograms, or null when either is
      * missing or they differ in length.
      *
@@ -404,8 +447,8 @@ final class RuntimeBufferService
 
     /**
      * Every aggregate has a type, a bucket, `count` and `errorCount`; any
-     * other metric field it carries is a number, a gauge is a number or
-     * null, a flag is a boolean, a histogram is a list of non-negative counts,
+     * other metric field it carries is a number, a gauge or a usage count
+     * is a number or null, a flag is a boolean, a histogram is a list of non-negative counts,
      * and a `health` status, severity and fingerprint list are known values.
      *
      * @param  array<mixed>  $aggregate
@@ -425,7 +468,7 @@ final class RuntimeBufferService
             }
         }
 
-        foreach (self::GAUGE_FIELDS as $field) {
+        foreach ([...self::GAUGE_FIELDS, ...self::NULLABLE_SUM_FIELDS] as $field) {
             if (array_key_exists($field, $aggregate) && $aggregate[$field] !== null && ! is_int($aggregate[$field]) && ! is_float($aggregate[$field])) {
                 return false;
             }

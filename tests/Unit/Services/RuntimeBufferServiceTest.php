@@ -150,6 +150,59 @@ it('skips lines whose server gauge is not a number or null', function () {
     expect(array_column($buffer->read($buffer->claimBatches()[0]['path']), 'route'))->toBe(['home']);
 });
 
+it('adds up the AI usage counts and failovers, null only when every entry has null, without making them dimensions', function () {
+    $usage = static fn (array $fields): array => [
+        'type' => 'ai',
+        'bucket' => '2026-11-03T10:15:00Z',
+        'sampleRate' => 1.0,
+        'operation' => 'agent',
+        'agent' => 'App\\Ai\\SupportAgent',
+        'provider' => 'openai',
+        'model' => 'gpt-test',
+        'count' => 1,
+        'errorCount' => 0,
+        'failoverCount' => 0,
+        ...array_fill_keys(RuntimeBufferService::NULLABLE_SUM_FIELDS, null),
+        ...$fields,
+    ];
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([
+        $usage(['inputTokens' => 100, 'outputTokens' => 20, 'cacheReadInputTokens' => 40, 'audioSeconds' => 1.25]),
+        $usage(['errorCount' => 1, 'failoverCount' => 1]),
+        $usage(['inputTokens' => 50, 'outputTokens' => 5, 'cacheReadInputTokens' => null, 'reasoningTokens' => 7, 'audioSeconds' => 2.5005]),
+    ]);
+
+    $aggregates = $buffer->read($buffer->claimBatches()[0]['path']);
+    $withoutField = $usage([]);
+    unset($withoutField['searchUnits']);
+
+    expect($aggregates)->toHaveCount(1)
+        ->and($aggregates[0])->toMatchArray([
+            'count' => 3,
+            'errorCount' => 1,
+            'failoverCount' => 1,
+            'inputTokens' => 150,
+            'outputTokens' => 25,
+            'cacheReadInputTokens' => 40,
+            'cacheWriteInputTokens' => null,
+            'reasoningTokens' => 7,
+            'imageInputTokens' => null,
+            'audioSeconds' => 3.751,
+            'searchUnits' => null,
+        ])
+        ->and($aggregates[0]['inputTokens'])->toBeInt()
+        ->and(RuntimeBufferService::mergeKey($usage(['inputTokens' => 9])))->toBe(RuntimeBufferService::mergeKey($usage([])))
+        ->and(RuntimeBufferService::merge([$withoutField, $usage(['searchUnits' => 2.0])])[0]['searchUnits'])->toBe(2.0)
+        ->and(RuntimeBufferService::merge([$withoutField, $withoutField])[0])->not->toHaveKey('searchUnits');
+});
+
+it('skips lines whose AI usage count is not a number or null', function () {
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([bufferedAggregate('home'), [...bufferedAggregate('broken'), 'inputTokens' => '12']]);
+
+    expect(array_column($buffer->read($buffer->claimBatches()[0]['path']), 'route'))->toBe(['home']);
+});
+
 it('keeps a claimed batch and its id until it is deleted', function () {
     $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
     $buffer->append([bufferedAggregate('home')]);

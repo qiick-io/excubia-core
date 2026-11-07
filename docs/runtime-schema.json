@@ -4,7 +4,7 @@
     "x-excubia-version": 1,
     "$comment": "Contract version of this payload. It travels in an envelope with protocolVersion 1 and changes only with it. Stable from 1.0.0-beta (docs/CONTRACTS.md).",
     "title": "Excubia runtime batch",
-    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes, and totalRepeats for duplicateQuery) and keeps the larger maxMs (and maxMb, maxRepeats and the server gauges) for entries with the same type, bucket, sampleRate and dimensions, also across batches. The optional histogram (#147) adds up element by element ($defs.histogram). Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, the file, line or stack of a deprecation, Artisan command arguments or options, or absolute paths.",
+    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes, totalRepeats for duplicateQuery, and failoverCount and the usage counts of ai, #198, which stay null only when every entry has null) and keeps the larger maxMs (and maxMb, maxRepeats and the server gauges) for entries with the same type, bucket, sampleRate and dimensions, also across batches. The optional histogram (#147) adds up element by element ($defs.histogram). Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, the file, line or stack of a deprecation, Artisan command arguments or options, AI prompts, attachments, messages, responses, reasoning, tool arguments or results or conversations, or absolute paths.",
     "type": "object",
     "additionalProperties": false,
     "required": ["bucketSeconds", "aggregates"],
@@ -39,10 +39,12 @@
                     { "$ref": "#/$defs/duplicateQuery" },
                     { "$ref": "#/$defs/server" },
                     { "$ref": "#/$defs/command" },
-                    { "$ref": "#/$defs/health" }
+                    { "$ref": "#/$defs/health" },
+                    { "$ref": "#/$defs/ai" },
+                    { "$ref": "#/$defs/aiTool" }
                 ]
             },
-            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation, #148 for duplicateQuery, #149 for server and #152 for command; additive), and health in 1.0.0-beta.3 (#188, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server; status, severity, findingCount and fingerprints for health. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); histograms add up element by element; a health entry keeps the worst status (fail, then warn, then pass, then skipped), the most serious severity, the larger findingCount and the union of fingerprints. isContainer, status, severity, findingCount and fingerprints are metric fields, not dimensions."
+            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation, #148 for duplicateQuery, #149 for server and #152 for command; additive), health in 1.0.0-beta.3 (#188, additive), and ai and aiTool (#198, additive, only with laravel/ai installed); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server; status, severity, findingCount and fingerprints for health; failoverCount and the nullable usage counts inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningTokens, imageInputTokens, imageOutputTokens, audioSeconds and searchUnits for ai. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); usage counts add up and are null only when every entry has null; histograms add up element by element; a health entry keeps the worst status (fail, then warn, then pass, then skipped), the most serious severity, the larger findingCount and the union of fingerprints. isContainer, status, severity, findingCount and fingerprints are metric fields, not dimensions."
         }
     },
     "$defs": {
@@ -70,7 +72,7 @@
         "errorCount": {
             "type": "integer",
             "minimum": 0,
-            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types. For health, the samples whose status is fail."
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications, failed AI attempts and tool calls. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types. For health, the samples whose status is fail."
         },
         "milliseconds": {
             "type": "number",
@@ -409,6 +411,64 @@
                     "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                     "description": "The fingerprints of the warn and fail findings, sorted, at most 20: the same sha256 values as the report's finding fingerprint (check id, subject and advisory id joined by NUL), so the app can link an alert to the report finding and tell one failing connection or queue from another without receiving its name."
                 }
+            }
+        },
+        "usageCount": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "A usage count of the ai type (#198) as the provider reported it: null when it does not report it, never a guess. Entries with the same type, bucket, sampleRate and dimensions add up; the sum is null only when every entry has null (a null entry adds nothing)."
+        },
+        "usageAmount": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "description": "Like usageCount, for a decimal amount (3 decimals)."
+        },
+        "ai": {
+            "type": "object",
+            "description": "Laravel AI SDK (laravel/ai) operations (#198, additive), only when that package is installed. count is the provider attempts: completed operations plus failed attempts. An agent run is timed from PromptingAgent (StreamingAgent for a stream) to AgentPrompted (AgentStreamed, counted once with the usage of the whole stream) or AgentFailed; image, embeddings, transcription, reranking and audio from their start event to their done or failed event, through the invocation id; a start that was not seen gives 0 ms. errorCount is the failed attempts: AgentFailed (once per run, when no provider is left), AgentFailedOver (an agent attempt that failed over to the next provider), and the failed event of the other operations, which Laravel fires once per attempt. failoverCount is the failed attempts the SDK reported as failed over (AgentFailedOver for an agent attempt that moved on to the next provider; ProviderFailedOver for the other operations, which laravel/ai fires for every failoverable error, the last provider's included); failoverCount <= errorCount <= count. A failed attempt has null usage. Usage fields are null when the provider does not report them; inputTokens and outputTokens are what the SDK reports (0 when it reports none). No cost: prices change, so the app computes cost from the tokens; inputTokens includes the cached input, and cacheReadInputTokens and cacheWriteInputTokens are billed at their own rates, so uncached input is inputTokens - cacheReadInputTokens - cacheWriteInputTokens. Never prompts, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, or exception messages.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "operation", "provider", "model", "count", "errorCount", "failoverCount", "totalMs", "maxMs", "inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens", "reasoningTokens", "imageInputTokens", "imageOutputTokens", "audioSeconds", "searchUnits"],
+            "properties": {
+                "type": { "const": "ai" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "operation": { "enum": ["agent", "image", "embeddings", "transcription", "reranking", "audio"], "description": "agent for agent prompts and streams; image, embeddings, transcription, reranking and audio (text to speech) for the other SDK operations." },
+                "agent": { "type": "string", "minLength": 1, "description": "The agent class (anonymous classes as Parent@anonymous). Present for operation agent only, and a dimension: entries without it never merge with entries that have it." },
+                "provider": { "type": "string", "minLength": 1, "description": "The provider name as configured in config/ai.php (such as openai or anthropic): the response meta of an agent, else the provider of the attempt; unknown when empty." },
+                "model": { "type": "string", "minLength": 1, "description": "The model name: the response meta of an agent (the model the provider answered with), else the model of the attempt; unknown when empty." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "failoverCount": { "$ref": "#/$defs/counter", "description": "Failed attempts reported as failed over (see the type description). Adds up." },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" },
+                "inputTokens": { "$ref": "#/$defs/usageCount", "description": "Input tokens, cached input included." },
+                "outputTokens": { "$ref": "#/$defs/usageCount", "description": "Output tokens." },
+                "cacheReadInputTokens": { "$ref": "#/$defs/usageCount", "description": "Input tokens read from the provider's prompt cache." },
+                "cacheWriteInputTokens": { "$ref": "#/$defs/usageCount", "description": "Input tokens written to the provider's prompt cache." },
+                "reasoningTokens": { "$ref": "#/$defs/usageCount", "description": "Reasoning (thinking) tokens." },
+                "imageInputTokens": { "$ref": "#/$defs/usageCount", "description": "Image input tokens of image generation." },
+                "imageOutputTokens": { "$ref": "#/$defs/usageCount", "description": "Image output tokens of image generation." },
+                "audioSeconds": { "$ref": "#/$defs/usageAmount", "description": "Seconds of audio transcribed." },
+                "searchUnits": { "$ref": "#/$defs/usageAmount", "description": "Search units of reranking." }
+            }
+        },
+        "aiTool": {
+            "type": "object",
+            "description": "Laravel AI SDK (laravel/ai) agent tool calls (#198, additive), only when that package is installed: ToolInvoked and ToolFailed, timed by the SDK (time spent in the tool's handler). errorCount counts ToolFailed. Never tool arguments or results.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "agent", "tool", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "aiTool" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "agent": { "type": "string", "minLength": 1, "description": "The agent class that called the tool (anonymous classes as Parent@anonymous)." },
+                "tool": { "type": "string", "minLength": 1, "description": "The tool class (anonymous classes as Parent@anonymous). An agent used as a tool, an MCP tool or a provider tool is the SDK's wrapper class." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
             }
         }
     }
