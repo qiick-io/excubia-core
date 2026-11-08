@@ -19,10 +19,16 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use JsonSchema\Validator;
 use Laravel\Ai\AiServiceProvider;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Boolean;
+use Laravel\Ai\Classification\Choice;
 use Laravel\Ai\Exceptions\RateLimitedException;
 use Laravel\Ai\Files\Document;
 use Laravel\Ai\Image;
 use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\ClassificationResponse;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
@@ -367,6 +373,47 @@ it('never lets an AI prompt, attachment, response, reasoning, tool argument or r
         ->and($aggregates->where('type', 'ai')->where('operation', 'image')->sum('failoverCount'))->toBe(2)
         ->and($aggregates->where('type', 'aiTool')->sum('count'))->toBe(2)
         ->and($aggregates->where('type', 'aiTool')->sum('errorCount'))->toBe(1);
+});
+
+it('never lets a classified text, its data, the questions, attachments, answers or exception message reach the buffer or the push', function () {
+    $marker = 'excubia-ai-classification-marker-5d0e';
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    $this->app->register(AiServiceProvider::class);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'ai' => ['enabled' => true]]]);
+    $questions = [
+        'topic-'.$marker => new Choice('Which topic is '.$marker.' about?', ['billing-'.$marker => 'Billing '.$marker, 'other' => 'Other']),
+        'urgent' => new Boolean(['Is it urgent?', 'Answer about '.$marker]),
+    ];
+    Classification::fake([
+        new ClassificationResponse([
+            'topic-'.$marker => new ChoiceAnswer('billing-'.$marker, ['billing-'.$marker => 0.8, 'other' => 0.2], 0.8),
+            'urgent' => new BooleanAnswer(0.7),
+        ], new TextUsage(80, 6), new Meta('openai', 'gpt-classify')),
+        fn () => throw new RuntimeException('classification failed for '.$marker),
+    ]);
+
+    Classification::of('Customer message about '.$marker, [Document::fromString('Attachment with '.$marker, 'text/plain')])
+        ->questions($questions)
+        ->classify('openai', 'gpt-classify');
+
+    expect(fn () => Classification::of(['ticket' => $marker, 'body' => 'Structured '.$marker])->questions($questions)->classify('openai', 'gpt-classify'))
+        ->toThrow(RuntimeException::class);
+
+    $this->app->terminate();
+    $buffer = (string) file_get_contents($this->app->storagePath('excubia/runtime/buffer.ndjson'));
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtimePayload = collect($client->postedPayloads)->firstWhere('type', 'runtime')['runtime'];
+    $classification = collect($runtimePayload['aggregates'])->where('type', 'ai')->where('operation', 'classification');
+
+    expect($buffer)->toContain('"operation":"classification"')
+        ->and($buffer)->not->toContain($marker)
+        ->and(json_encode($client->postedPayloads, JSON_THROW_ON_ERROR))->not->toContain($marker)
+        ->and(runtimeSchemaErrors($runtimePayload))->toBe([])
+        ->and($classification->sum('count'))->toBe(2)
+        ->and($classification->sum('errorCount'))->toBe(1)
+        ->and($classification->sum('inputTokens'))->toBe(80);
 });
 
 it('sends each batch with histograms that add up to count, and the schema rejects one with other buckets', function () {
