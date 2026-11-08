@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-11-08
+
+Fourth beta of 1.0 (D20): runtime data from the official Laravel packages, additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). The four new check ids are appended to the run order; every new runtime type is off by default, and all but `auth` record nothing unless their package is installed; schema and protocol versions stay `1`.
+
 ### Added
 
 - Laravel Pennant (#225): new runtime aggregate type `pennant`, off by default, switched by the new `excubia.json` key `runtime.pennant` (`enabled`, `sampleRate`), recorded only when `laravel/pennant` is installed (`class_exists`; it is not a dependency, and the tests fake its events under their real class names). One entry per `feature`: the feature name when it is 1 to 128 characters of `A-Z a-z 0-9 _ . : -` and backslash (short names and class names), else the first 12 hex characters of its sha256. `activeCount` and `inactiveCount` count the checks (`FeatureRetrieved`, Pennant's rule: any value other than `false` is active), `resolvedCount` the first resolutions for a scope (`FeatureResolved`), `unknownCount` the checks of undefined features (`UnknownFeatureResolved`); `count` is their sum, `errorCount` always 0. Stale flags (always the same value for N days) are derived by the app from these counts; there is no new check. Never the scope or the value.
@@ -154,7 +158,8 @@ First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [
 
 - Initial `qiick/excubia-core` release: standalone `vendor/bin/excubia check` CLI, optional Artisan alias `excubia:check`, nine health checks, `table` / `json` / `markdown` formats, `excubia.json` config, and local response cache.
 
-[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.4...HEAD
+[1.0.0-beta.4]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/qiick-io/excubia-core/compare/v0.1.1...v1.0.0-beta.1
