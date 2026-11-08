@@ -1,7 +1,7 @@
 # Excubia — Roadmap
 
-Through v1.0.0, updated 2026-11-05. Sources of truth:
-- [`docs/SPEC.md`](SPEC.md): decisions D1–D19, push protocol in section 13.
+Through v1.0.0, updated 2026-11-08. Sources of truth:
+- [`docs/SPEC.md`](SPEC.md): decisions D1–D20, push protocol in section 13.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
 - [`docs/CONTRACTS.md`](CONTRACTS.md): the public contracts frozen for 1.0.
 
@@ -27,6 +27,7 @@ After the beta, every change to the frozen contracts must be backwards compatibl
 | **v1.0.0-beta.1** | Done: push #72, SARIF #10, GitHub Action #11, health endpoint #74, posture checks #73, runtime aggregates #75, exception capture #77, `--strict` #15, report details #92 and #123, privacy `skipPackages` #108, contract freeze #76, security review #82, Laravel 12–13 matrix #83, versioning policy #84, user documentation #85, coverage gate #86. Open: beta release checklist #87. | Runs against the beta: report push, runtime and exception ingest, alerts, findings views, self-monitoring, beta checklist (excubia-app milestone v1.0.0-beta.1) |
 | **v1.0.0-beta.2** | Done: #129 release identifier and deploy markers, #130 more production posture checks, #131 infrastructure checks (database, cache, storage, disk, queue backlog, platform requirements), #132 memory / queue-wait / cache / mail / notification / log-level aggregates, #133 PHP deprecation counts, #134 dependency license inventory, #13 `env-example-sync`, #21 `yarn.lock` and `pnpm-lock.yaml`; also shipped in the beta.2 tag (first planned as beta.3): #146 scheduled task inventory (missed-run detection in the app), #147 latency histograms (p50/p95/p99), #148 N+1 duplicate queries, #149 server CPU/memory/disk (+ #162 `EXCUBIA_SERVER_NAME`), #150 outdated Composer dependencies, #151 queue workers and Horizon, #152 Artisan command runs, #153 outdated npm dependencies, #169 database connection count and size, #170 Redis memory usage, #171 backups, #172 OPcache and production php.ini, #173 cgroup limits for server metrics, #174 log channel on `logLevel`, #176 npm outdated and license steps in the upgrade plan | Shows the new data (issues opened there for each); schedule monitoring (excubia-app#110), runtime cards (excubia-app#107) |
 | **v1.0.0-beta.3** | Done: #175 mail failures without exception capture, #188 `health` runtime type for minute-level alerts, #187 every check id listed in `docs/CONTRACTS.md`, #191 version labels | — |
+| **v1.0.0-beta.4** | Done: #198 Laravel AI SDK usage (`ai`, `aiTool`) and #201 classification, #203 app environment in reports, #204 license kind, #205 scheduler heartbeat key in CONTRACTS, #197 no banner with machine formats, #202 benchmark test, #199 official Laravel packages: #213 Octane, #215 Reverb, #217 Cashier, #219 Sanctum/Passport and `auth`, #221 Scout, #225 Pennant (Socialite #224 and Horizon #227 not planned) | AI usage and cost (excubia-app#129), cards for Octane, Reverb, billing, auth, Scout, Pennant (excubia-app#168, #175, #178, #180, #184, #189) |
 | v1.0.0 — stable | #88 release checklist: no contract change since the beta, feedback triaged | Stable app |
 
 ## Decisions needed before the beta
