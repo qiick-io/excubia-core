@@ -13,12 +13,13 @@ namespace Qiick\Excubia\Enums;
  * is true. The types added in 1.0.0-beta.2 (#132, #133) and later
  * (`duplicateQuery`, #148, `server`, #149, `command`, #152, `health`, #188,
  * `ai` and `aiTool`, #198, `octane`, #213, `reverb`, #215,
- * `billingWebhook`, #217, `auth`, #219) are off by default, so an excubia-app that does
+ * `billingWebhook`, #217, `auth`, #219, `pennant`, #225) are off by default, so an excubia-app that does
  * not know them yet never receives them. `ai` and `aiTool` also need the
  * Laravel AI SDK (`laravel/ai`) installed, `octane` needs Laravel Octane
  * (`laravel/octane`), `reverb` Laravel Reverb (`laravel/reverb`) and
  * `billingWebhook` Laravel Cashier (`laravel/cashier` or
- * `laravel/cashier-paddle`); without them they record nothing.
+ * `laravel/cashier-paddle`) and `pennant` Laravel Pennant
+ * (`laravel/pennant`); without them they record nothing.
  *
  * `server` is not an event type: `excubia:push-runtime` takes one sample
  * of the machine per run (ServerMetricsService). Neither is `health` (#188):
@@ -63,6 +64,7 @@ enum RuntimeTypeEnum: string
     case Reverb = 'reverb';
     case BillingWebhook = 'billingWebhook';
     case Auth = 'auth';
+    case Pennant = 'pennant';
 
     /**
      * The `excubia.json` key under `runtime` that switches this type.
@@ -93,6 +95,7 @@ enum RuntimeTypeEnum: string
             self::Reverb => 'reverb',
             self::BillingWebhook => 'billing',
             self::Auth => 'auth',
+            self::Pennant => 'pennant',
         };
     }
 
