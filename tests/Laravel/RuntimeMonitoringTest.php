@@ -138,25 +138,6 @@ function bootRuntimeProject(Application $app, ?array $runtime): string
     return $project;
 }
 
-/**
- * The aggregates written to the local buffer so far.
- *
- * @return list<array<string, mixed>>
- */
-function bufferedRuntime(Application $app): array
-{
-    $path = $app->storagePath('excubia/runtime/'.RuntimeBufferService::BUFFER_FILE);
-
-    if (! is_file($path)) {
-        return [];
-    }
-
-    return array_map(
-        fn (string $line): array => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
-        array_values(array_filter(explode("\n", (string) file_get_contents($path)))),
-    );
-}
-
 function rawBuffer(Application $app): string
 {
     $path = $app->storagePath('excubia/runtime/'.RuntimeBufferService::BUFFER_FILE);
@@ -621,16 +602,6 @@ function allRuntimeTypes(array $overrides = []): array
     }
 
     return array_replace_recursive($runtime, $overrides);
-}
-
-/**
- * The merged buffered aggregates of one type.
- *
- * @return Collection<int, array<string, mixed>>
- */
-function bufferedOfType(Application $app, string $type): Collection
-{
-    return collect(RuntimeBufferService::merge(bufferedRuntime($app)))->where('type', $type)->values();
 }
 
 /**
