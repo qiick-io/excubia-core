@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) Laravel Reverb servers (connections, messages, errors and channels per app), Laravel Cashier webhooks (received, handled, failed and payment signals per provider and event type) authentication (logins, failed logins, lockouts and Sanctum token authentications per guard) and Laravel Scout (queued index jobs and searches per model and engine). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) Laravel Reverb servers (connections, messages, errors and channels per app), Laravel Cashier webhooks (received, handled, failed and payment signals per provider and event type) authentication (logins, failed logins, lockouts and Sanctum token authentications per guard), Laravel Scout (queued index jobs and searches per model and engine) and Laravel Pennant feature checks (active, inactive, resolved and undefined per feature). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -59,7 +59,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "reverb": { "enabled": true },
     "billing": { "enabled": true },
     "auth": { "enabled": true },
-    "scout": { "enabled": true }
+    "scout": { "enabled": true },
+    "pennant": { "enabled": true }
   }
 }
 ```
@@ -127,6 +128,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `reverb` | Laravel Reverb: `MessageReceived`, `MessageSent`, `ConnectionPruned`, `ChannelCreated`, `ChannelRemoved`, plus a connection sample once a minute | A `pusher:error` sent to an established connection |
 | `auth` | `Login`, `Failed`, `Lockout`, and Laravel Sanctum's `TokenAuthenticated` | A failed login |
 | `scout` | Laravel Scout: `JobProcessing` / `JobProcessed` / `JobFailed` of its index jobs, and the container resolving its search builder | The index job failed |
+| `pennant` | Laravel Pennant: `FeatureRetrieved`, `FeatureResolved`, `UnknownFeatureResolved` | — |
 | `billingWebhook` | Laravel Cashier and Cashier Paddle: `WebhookReceived`, `WebhookHandled`, and `RequestHandled` for the response status | The request ended with a 5xx before Cashier's handler returned |
 
 Notes on the newer types:
@@ -327,11 +329,32 @@ With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) i
 - Read: the job class, and in the serialized job the model class and the number of keys (never the keys), and the class of the search builder's model. Never the search query, record ids or record data.
 - Cost (`vendor/bin/pest --group=benchmark`): about 0.06 ms per index job and search, mostly the buffer write after each index job, as for `jobs`.
 
+### Laravel Pennant
+
+`runtime.pennant` (1.0.0-beta.4, #225) counts [Laravel Pennant](https://laravel.com/docs/pennant) feature checks when Pennant is installed. Excubia does not depend on it.
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "pennant": { "enabled": true, "sampleRate": 0.1 }
+  }
+}
+```
+
+- Rows are keyed by `feature`, the feature name (`new-checkout`, or a class name such as `App\Features\NewCheckout`). A name with other characters, or longer than 128, is replaced by the first 12 hex characters of its sha256, because an app could build it from user data.
+- `activeCount` and `inactiveCount` count the checks (`FeatureRetrieved`, fired for every `Feature::active()`, `value()`, `when()` and the like, per scope, also when Pennant answers from its in-memory cache). Pennant's rule applies: any value other than `false` is active, so a rich value (a string variant) counts as active.
+- `resolvedCount` counts the first resolutions of a feature for a scope (`FeatureResolved`: the resolver ran and Pennant stored the value), and `unknownCount` the checks of a feature that is not defined (`UnknownFeatureResolved`, resolved to `false`): a removed flag that code still checks, or a typo. `count` is the sum of the four.
+- Stale flags: a feature checked every day for N days whose `inactiveCount` stays 0 (always on) or whose `activeCount` stays 0 (always off) can be removed. excubia-app derives this from the counts, so there is no separate check.
+- Checks can be very frequent; a `sampleRate` below 1 keeps the buffer small (estimate = count / sampleRate).
+- Read: the feature name, and whether the value is `false`. Never the scope (user, team or other model) or the value itself.
+- Cost (`vendor/bin/pest --group=benchmark`): about 0.005 ms per feature check, in the collector and through Laravel's dispatcher.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, Cashier webhook providers and event types with webhook and payment signal counts, auth guard names with login, failed login, lockout and token authentication counts, Scout model classes, engines and operations with index job, record and search counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, anything of a Cashier webhook but its event type (amounts, currencies, customer or subscription ids, emails, cards), the user, credentials, token or request of an authentication event (usernames, emails, user ids, passwords, IP addresses), Scout search queries, record ids or record data, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, Cashier webhook providers and event types with webhook and payment signal counts, auth guard names with login, failed login, lockout and token authentication counts, Scout model classes, engines and operations with index job, record and search counts, Pennant feature names (or their hash) with check counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, anything of a Cashier webhook but its event type (amounts, currencies, customer or subscription ids, emails, cards), the user, credentials, token or request of an authentication event (usernames, emails, user ids, passwords, IP addresses), Scout search queries, record ids or record data, the scope or value of a Pennant feature check, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

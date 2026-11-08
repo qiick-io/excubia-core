@@ -562,6 +562,10 @@
                 "scout": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Laravel Scout counted per model class, engine (scout.driver) and operation: queued index jobs (MakeSearchable, RemoveFromSearch; with scout.queue on) with their record count, failures and duration, and searches started (Model::search(), no duration). Records nothing unless laravel/scout is installed. Never search queries, record ids or record data. Off by default (#221)."
+                },
+                "pennant": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Pennant feature checks counted per feature name: active and inactive checks (FeatureRetrieved), first resolutions (FeatureResolved) and checks of undefined features (UnknownFeatureResolved). Records nothing unless laravel/pennant is installed. Feature names are hashed unless they are short names or class names. Never the scope or the value. Off by default (#225)."
                 }
             }
         },

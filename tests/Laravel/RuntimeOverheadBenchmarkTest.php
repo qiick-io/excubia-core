@@ -42,6 +42,7 @@ use Laravel\Octane\Events\RequestReceived;
 use Laravel\Octane\Events\RequestTerminated;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Pennant\Events\FeatureRetrieved;
 use Laravel\Reverb\Application as ReverbApplication;
 use Laravel\Reverb\Contracts\Connection as ReverbConnection;
 use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
@@ -61,6 +62,7 @@ require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
 require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
 require_once dirname(__DIR__).'/Support/FakeApiTokenClasses.php';
+require_once dirname(__DIR__).'/Support/FakePennantEvents.php';
 require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
 
 /**
@@ -81,8 +83,9 @@ require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
  * the fifth the `octane` listeners (#213) per Octane request and tick, the
  * sixth the `reverb` listeners (#215) per Reverb message, the seventh the
  * `billingWebhook` listeners (#217) per Cashier webhook, the eighth the
- * `auth` listeners (#219) per authentication event, and the ninth the
- * `scout` listeners (#221) per Scout index job and search.
+ * `auth` listeners (#219) per authentication event, the ninth the `scout`
+ * listeners (#221) per Scout index job and search, and the tenth the
+ * `pennant` listener (#225) per feature check.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -645,4 +648,52 @@ it('adds little per Scout index job and search, with the scout type on', functio
     ));
 
     expect($collectorOnly)->toBeLessThan(0.1);
+})->group('benchmark');
+
+it('adds little per Pennant feature check, with the pennant type on', function () {
+    $checks = 4 * BENCHMARK_REQUESTS;
+    $active = new FeatureRetrieved('new-checkout', 'user:1', true);
+    $inactive = new FeatureRetrieved('App\\Features\\PurchaseButton', 'user:1', false);
+
+    // Two feature checks through the dispatcher, as Pennant's decorator fires them.
+    $dispatchMilliseconds = function () use ($checks, $active, $inactive): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $checks; $i++) {
+            $events->dispatch($active);
+            $events->dispatch($inactive);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $checks);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'pennant' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $checks; $i++) {
+        $collector->recordFeature($active);
+        $collector->recordFeature($inactive);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $checks);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Pennant over %d feature checks (Pennant faked; PHP %s, Laravel %s)\n  pennant off: %.4f ms/check\n  pennant on:  %.4f ms/check (delta %.4f ms)\n  collector:   %.4f ms/check (no flush)\n",
+        2 * $checks,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
 })->group('benchmark');

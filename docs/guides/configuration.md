@@ -74,7 +74,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "reverb": { "enabled": false, "sampleRate": 1 },
     "billing": { "enabled": false, "sampleRate": 1 },
     "auth": { "enabled": false, "sampleRate": 1 },
-    "scout": { "enabled": false, "sampleRate": 1 }
+    "scout": { "enabled": false, "sampleRate": 1 },
+    "pennant": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -332,6 +333,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.scout` | object | | Laravel Scout (`laravel/scout`) per model class, engine and operation: queued index jobs (with `scout.queue` on) with their record count, failures and duration, and searches started, without a duration. Records nothing unless Scout is installed; never search queries, record ids or record data. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-scout). |
 | `runtime.scout.enabled` | boolean | `false` | Collect Scout index jobs and searches. |
 | `runtime.scout.sampleRate` | number 0–1 | `1` | Share of index jobs and searches recorded. |
+| `runtime.pennant` | object | | Laravel Pennant (`laravel/pennant`) feature checks per feature name: active, inactive, first resolutions and checks of undefined features. Records nothing unless Pennant is installed; feature names are hashed unless they are short names or class names; never the scope or the value. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-pennant). |
+| `runtime.pennant.enabled` | boolean | `false` | Collect Pennant feature checks. |
+| `runtime.pennant.sampleRate` | number 0–1 | `1` | Share of feature events recorded. Checks can be frequent: a value below 1 keeps the buffer small. |
 
 ## Exception capture
 
