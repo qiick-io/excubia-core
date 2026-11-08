@@ -90,9 +90,9 @@ it('emits the documented details and a schema-valid report', function () {
     $validator->validate($document, $schema, Constraint::CHECK_MODE_STRICT);
 
     expect($validator->getErrors())->toBe([])
-        ->and($findings['acme/denied']['details'])->toBe(['package' => 'acme/denied', 'lockedVersion' => '3.0.0', 'licenses' => ['SSPL-1.0'], 'ecosystem' => 'composer'])
+        ->and($findings['acme/denied']['details'])->toBe(['package' => 'acme/denied', 'lockedVersion' => '3.0.0', 'licenses' => ['SSPL-1.0'], 'ecosystem' => 'composer', 'kind' => 'denied'])
         ->and($findings['acme/both']['details']['licenses'])->toBe(['(MIT and GPL-3.0-only)'])
-        ->and($findings['gpl-lib']['details'])->toBe(['package' => 'gpl-lib', 'lockedVersion' => '1.0.0', 'licenses' => ['GPL-3.0-or-later'], 'ecosystem' => 'npm'])
+        ->and($findings['gpl-lib']['details'])->toBe(['package' => 'gpl-lib', 'lockedVersion' => '1.0.0', 'licenses' => ['GPL-3.0-or-later'], 'ecosystem' => 'npm', 'kind' => 'copyleft'])
         ->and($findings['acme/in-house']['evidenceUrl'])->toBeNull()
         ->and($findings['gpl-lib']['evidenceUrl'])->toBe('https://www.npmjs.com/package/gpl-lib');
 });
