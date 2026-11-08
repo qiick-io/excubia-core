@@ -28,6 +28,8 @@ use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\TextResponse;
 use Laravel\Ai\Tools\ToolNameResolver;
+use Laravel\Cashier\Events\WebhookHandled as StripeWebhookHandled;
+use Laravel\Cashier\Events\WebhookReceived as StripeWebhookReceived;
 use Laravel\Octane\Events\RequestReceived;
 use Laravel\Octane\Events\RequestTerminated;
 use Laravel\Octane\Events\TickReceived;
@@ -46,6 +48,7 @@ use Qiick\Excubia\Tests\Support\FakeAiTool;
 
 require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
+require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -62,8 +65,9 @@ require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
  * query listeners run as in a typical request. The third test prices the
  * Monolog processor that learns the log channel (#174) per log entry, and the
  * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run,
- * the fifth the `octane` listeners (#213) per Octane request and tick, and
- * the sixth the `reverb` listeners (#215) per Reverb message.
+ * the fifth the `octane` listeners (#213) per Octane request and tick, the
+ * sixth the `reverb` listeners (#215) per Reverb message, and the seventh the
+ * `billingWebhook` listeners (#217) per Cashier webhook.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -463,6 +467,55 @@ it('adds little per Reverb message, with the reverb type on', function () {
     fwrite(STDERR, sprintf(
         "\nLaravel Reverb over %d messages (faked events; PHP %s, Laravel %s)\n  reverb off: %.4f ms/message\n  reverb on:  %.4f ms/message (delta %.4f ms)\n  collector:  %.4f ms/message (sent or received, no flush)\n",
         2 * $messages,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Cashier webhook, with the billingWebhook type on', function () {
+    $webhooks = 4 * BENCHMARK_REQUESTS;
+    $payload = ['id' => 'evt_1', 'type' => 'invoice.payment_failed', 'data' => ['object' => ['id' => 'in_1', 'amount_due' => 1000, 'currency' => 'eur']]];
+    $received = new StripeWebhookReceived($payload);
+    $handled = new StripeWebhookHandled($payload);
+
+    // Cashier's two events through the dispatcher, as its webhook controller fires them.
+    $dispatchMilliseconds = function () use ($webhooks, $received, $handled): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $webhooks; $i++) {
+            $events->dispatch($received);
+            $events->dispatch($handled);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $webhooks;
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'billing' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $webhooks; $i++) {
+        $collector->receiveBillingWebhook($received);
+        $collector->recordBillingWebhookHandled($handled);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / $webhooks;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Cashier over %d webhooks (faked events; PHP %s, Laravel %s)\n  billing off: %.4f ms/webhook\n  billing on:  %.4f ms/webhook (delta %.4f ms)\n  collector:   %.4f ms/webhook (received and handled, no flush)\n",
+        $webhooks,
         PHP_VERSION,
         Application::VERSION,
         $off,

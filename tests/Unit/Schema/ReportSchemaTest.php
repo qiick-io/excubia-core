@@ -115,6 +115,7 @@ it('documents the details keys per check id', function () {
         ->and($keys('platformRequirementsDetails'))->toBe(['requirement', 'requiredBy', 'checkedPhpVersion', 'isStandaloneCli'])
         ->and($keys('laravelOctaneConfigDetails'))->toBe(['server', 'maxRequests'])
         ->and($keys('laravelReverbDetails'))->toBe(['isReachable', 'latencyMs'])
+        ->and($keys('laravelCashierDetails'))->toBe(['provider', 'isWebhookSecretConfigured', 'isWebhookRouteRegistered', 'hasTestKeys'])
         ->and($ruledCheckIds)->toBe([
             'composer-advisories',
             'npm-advisories',
@@ -149,6 +150,7 @@ it('documents the details keys per check id', function () {
             'php-production-ini',
             'laravel-octane-config',
             'laravel-reverb',
+            'laravel-cashier',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem', 'kind'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])

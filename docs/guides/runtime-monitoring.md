@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) and Laravel Reverb servers (connections, messages, errors and channels per app). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) Laravel Reverb servers (connections, messages, errors and channels per app) and Laravel Cashier webhooks (received, handled, failed and payment signals per provider and event type). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -56,7 +56,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "ai": { "enabled": true },
     "aiTools": { "enabled": true },
     "octane": { "enabled": true },
-    "reverb": { "enabled": true }
+    "reverb": { "enabled": true },
+    "billing": { "enabled": true }
   }
 }
 ```
@@ -122,6 +123,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `aiTools` | Laravel AI SDK: `ToolInvoked` / `ToolFailed` | The tool threw |
 | `octane` | Laravel Octane: `WorkerStarting`, `RequestReceived` / `RequestTerminated`, `TaskReceived`, `TickReceived`, `WorkerErrorOccurred`, `WorkerStopping` | A worker error |
 | `reverb` | Laravel Reverb: `MessageReceived`, `MessageSent`, `ConnectionPruned`, `ChannelCreated`, `ChannelRemoved`, plus a connection sample once a minute | A `pusher:error` sent to an established connection |
+| `billingWebhook` | Laravel Cashier and Cashier Paddle: `WebhookReceived`, `WebhookHandled`, and `RequestHandled` for the response status | The request ended with a 5xx before Cashier's handler returned |
 
 Notes on the newer types:
 
@@ -256,11 +258,33 @@ With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) i
 - The `laravel-reverb` check (Artisan only) connects over TCP, with a 2 s timeout, to the host and port of the default broadcast connection when it uses the `reverb` driver (`REVERB_HOST`, `REVERB_PORT`; 443, or 80 for the `http` scheme, when the port is unset), the address your app broadcasts to. It fails at high when nothing answers, and reports only `isReachable` and `latencyMs`, never the host or port.
 - Cost (`vendor/bin/pest --group=benchmark`): about 0.005 ms per message sent or received in the collector, 0.006 ms through Laravel's dispatcher; a broadcast to 1,000 subscribers costs about 6 ms. Lower `sampleRate` for very busy servers.
 
+### Laravel Cashier
+
+[Laravel Cashier](https://laravel.com/docs/billing) (Stripe, `laravel/cashier`) and [Cashier Paddle](https://laravel.com/docs/cashier-paddle) (`laravel/cashier-paddle`) keep subscriptions in sync through the provider's webhooks. `runtime.billing` (1.0.0-beta.4, #217) counts those webhooks, and the `laravel-cashier` check tells whether they can be trusted and reach the app. Excubia depends on neither package: without one installed the type registers nothing and records nothing, whatever `excubia.json` says.
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "billing": { "enabled": true }
+  }
+}
+```
+
+- Rows are keyed by `provider` (`stripe` or `paddle`) and `eventType`, the provider's event type (Stripe's `type`, Paddle's `event_type`, `alert_name` on Paddle Classic), such as `invoice.payment_failed`. It is kept only when it is 1 to 64 characters of `a-z 0-9 _ .`; anything else becomes `unknown`.
+- `count` counts `WebhookReceived`, which both webhook controllers fire before their handler; `handledCount` counts `WebhookHandled`, fired after it returns. A webhook whose request ends with a 5xx before that is `errorCount`: Cashier's handler or one of your `WebhookReceived` listeners threw, and the provider will retry it. The rest, `count - handledCount - errorCount`, are event types Cashier has no handler for (it answers 200): your own listeners may still handle them.
+- `totalMs`, `maxMs` and `histogram` time each webhook from `WebhookReceived` to `WebhookHandled`, or to the end of the request.
+- Payment signals, 1 per webhook of these event types: `paymentFailedCount` (Stripe `invoice.payment_failed`; Paddle `transaction.payment_failed`, Classic `subscription_payment_failed`), `paymentActionRequiredCount` (Stripe `invoice.payment_action_required`, the 3D Secure confirmation; Paddle `subscription.past_due`, a renewal the customer must pay) and `subscriptionCanceledCount` (Stripe `customer.subscription.deleted`; Paddle `subscription.canceled`, Classic `subscription_cancelled`).
+- A webhook rejected by the signature middleware (403) never reaches the controller, so it fires no event and is not counted here; it shows as a 4xx `request` row on the `cashier.webhook` route.
+- Read: the event type and the response status. Never anything else of the payload: no amounts, currencies, customer or subscription ids, emails, cards or metadata.
+- The `laravel-cashier` check (Artisan only) reports, per installed package, a missing webhook secret (`STRIPE_WEBHOOK_SECRET`, `PADDLE_WEBHOOK_SECRET`; high in production, low elsewhere, because Cashier then skips the signature check and accepts forged webhooks), test keys in production (high: Stripe keys starting `sk_test_`, `rk_test_` or `pk_test_`, Paddle's `PADDLE_SANDBOX` or a sandbox API key or test client-side token) and no route to Cashier's webhook controller or a subclass of it (medium). Booleans only: never a key, a secret or a prefix.
+- Cost (`vendor/bin/pest --group=benchmark`): about 0.006 ms per webhook in the collector, 0.007 ms through Laravel's dispatcher.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, Cashier webhook providers and event types with webhook and payment signal counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, anything of a Cashier webhook but its event type (amounts, currencies, customer or subscription ids, emails, cards), hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

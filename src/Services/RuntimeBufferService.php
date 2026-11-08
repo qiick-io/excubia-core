@@ -46,9 +46,10 @@ final class RuntimeBufferService
      * and decimal totals. A type carries only the ones it needs (#132,
      * `totalRepeats` for `duplicateQuery`, #148, and `failoverCount` for
      * `ai`, #198, the worker counts of `octane`, #213, and the connection,
-     * message and channel counts of `reverb`, #215).
+     * message and channel counts of `reverb`, #215, and the handled and
+     * payment signal counts of `billingWebhook`, #217).
      */
-    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount', 'workerStarts', 'workerStops', 'requests', 'tasks', 'ticks', 'totalRequestsAtStop', 'connectionsOpened', 'connectionsPruned', 'connectionsRejected', 'messagesReceived', 'messagesSent', 'publicChannelsCreated', 'privateChannelsCreated', 'presenceChannelsCreated', 'publicChannelsRemoved', 'privateChannelsRemoved', 'presenceChannelsRemoved'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount', 'workerStarts', 'workerStops', 'requests', 'tasks', 'ticks', 'totalRequestsAtStop', 'connectionsOpened', 'connectionsPruned', 'connectionsRejected', 'messagesReceived', 'messagesSent', 'publicChannelsCreated', 'privateChannelsCreated', 'presenceChannelsCreated', 'publicChannelsRemoved', 'privateChannelsRemoved', 'presenceChannelsRemoved', 'handledCount', 'paymentFailedCount', 'paymentActionRequiredCount', 'subscriptionCanceledCount'];
 
     private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
 

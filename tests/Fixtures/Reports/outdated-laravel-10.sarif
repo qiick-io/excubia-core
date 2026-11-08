@@ -319,6 +319,14 @@
                                 "text": "Reverb server"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-cashier",
+                            "name": "Cashier billing",
+                            "shortDescription": {
+                                "text": "Cashier billing"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

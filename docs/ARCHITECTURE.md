@@ -49,7 +49,8 @@ qiick-io/excubia-core
 │   │   ├── PhpOpcacheCheck.php             (php-opcache)                  # OPcache on, validate_timestamps, hit rate and memory (web snapshot)
 │   │   ├── PhpProductionIniCheck.php       (php-production-ini)           # display_errors, expose_php, log_errors in production
 │   │   ├── LaravelOctaneConfigCheck.php    (laravel-octane-config)        # Octane server type, max_requests in production
-│   │   └── LaravelReverbCheck.php          (laravel-reverb)               # TCP connect to the Reverb broadcast host and port
+│   │   ├── LaravelReverbCheck.php          (laravel-reverb)               # TCP connect to the Reverb broadcast host and port
+│   │   └── LaravelCashierCheck.php         (laravel-cashier)              # Cashier webhook secret, test keys in production, webhook route
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string

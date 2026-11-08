@@ -70,6 +70,7 @@ final class SarifRenderer implements ReportRendererContract
         'php-production-ini' => 'composer.json',
         'laravel-octane-config' => 'config/octane.php',
         'laravel-reverb' => 'config/broadcasting.php',
+        'laravel-cashier' => 'config/cashier.php',
     ];
 
     /**

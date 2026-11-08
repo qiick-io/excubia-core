@@ -61,6 +61,8 @@ use Laravel\Ai\Events\ToolFailed;
 use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Events\TranscriptionFailed;
 use Laravel\Ai\Events\TranscriptionGenerated;
+use Laravel\Cashier\Events\WebhookHandled as StripeWebhookHandled;
+use Laravel\Cashier\Events\WebhookReceived as StripeWebhookReceived;
 use Laravel\Octane\Events\RequestReceived;
 use Laravel\Octane\Events\RequestTerminated;
 use Laravel\Octane\Events\TaskReceived;
@@ -68,6 +70,8 @@ use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerErrorOccurred;
 use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Octane\Events\WorkerStopping;
+use Laravel\Paddle\Events\WebhookHandled as PaddleWebhookHandled;
+use Laravel\Paddle\Events\WebhookReceived as PaddleWebhookReceived;
 use Laravel\Reverb\Events\ChannelCreated;
 use Laravel\Reverb\Events\ChannelRemoved;
 use Laravel\Reverb\Events\ConnectionPruned;
@@ -112,8 +116,9 @@ use WeakReference;
  * paths, the line and stack of a deprecation, command arguments and
  * options, or AI prompts, attachments, messages, responses, reasoning, tool
  * arguments or results and conversations, Octane URLs, request or task
- * data, worker ids or PIDs, or Reverb message payloads, channel names,
- * socket ids, origins or app keys and secrets.
+ * data, worker ids or PIDs, Reverb message payloads, channel names,
+ * socket ids, origins or app keys and secrets, or anything of a Cashier
+ * webhook payload but its event type.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -230,6 +235,37 @@ final class RuntimeCollectorService
      * hashed.
      */
     private const REVERB_APPLICATION_ID_PATTERN = '/^[A-Za-z0-9_-]{1,32}$/';
+
+    /**
+     * A billing webhook's event type (#217) is kept only when it is a short
+     * enum-like name such as `invoice.payment_failed`; anything else, which
+     * a forged or unusual payload could carry, becomes `unknown`.
+     */
+    private const BILLING_EVENT_TYPE_PATTERN = '/^[a-z0-9_.]{1,64}$/';
+
+    /**
+     * The event types that are payment signals (#217), per provider, and
+     * the counter each one adds to: Stripe's failed invoice payment,
+     * payment that needs the customer's action (3D Secure) and ended
+     * subscription; Paddle Billing's failed transaction payment, past due
+     * subscription (renewal unpaid, the customer must update the payment
+     * method) and canceled subscription, plus the Paddle Classic alert
+     * names of cashier-paddle 1.x.
+     */
+    private const BILLING_SIGNALS = [
+        'stripe' => [
+            'invoice.payment_failed' => 'paymentFailedCount',
+            'invoice.payment_action_required' => 'paymentActionRequiredCount',
+            'customer.subscription.deleted' => 'subscriptionCanceledCount',
+        ],
+        'paddle' => [
+            'transaction.payment_failed' => 'paymentFailedCount',
+            'subscription_payment_failed' => 'paymentFailedCount',
+            'subscription.past_due' => 'paymentActionRequiredCount',
+            'subscription.canceled' => 'subscriptionCanceledCount',
+            'subscription_cancelled' => 'subscriptionCanceledCount',
+        ],
+    ];
 
     private const LOG_LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
 
@@ -403,6 +439,15 @@ final class RuntimeCollectorService
     private WeakMap $establishedReverbConnections;
 
     /**
+     * The Cashier webhook being handled (#217): `WebhookReceived` sets it,
+     * `WebhookHandled` records and clears it, and one still set when the
+     * request ends was not handled by Cashier (`settlePendingBillingWebhook()`).
+     *
+     * @var array{provider: string, eventType: string, startedAt: float}|null
+     */
+    private ?array $pendingBillingWebhook = null;
+
+    /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
      */
     public function __construct(
@@ -519,8 +564,13 @@ final class RuntimeCollectorService
             $collector->listenToReverb($application, $events);
         }
 
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::BillingWebhook) && (class_exists(StripeWebhookReceived::class) || class_exists(PaddleWebhookReceived::class))) {
+            $collector->listenToBillingWebhooks($events);
+        }
+
         $application->terminating(function () use ($collector): void {
             $collector->settlePendingMail();
+            $collector->settlePendingBillingWebhook();
             $collector->forgetQueryShapes();
             $collector->flush();
         });
@@ -1961,6 +2011,111 @@ final class RuntimeCollectorService
             'privateChannelsRemoved' => 0,
             'presenceChannelsRemoved' => 0,
             ...$metrics,
+        ]);
+    }
+
+    /**
+     * Listen to the webhooks of Laravel Cashier (`laravel/cashier`, Stripe)
+     * and Laravel Cashier Paddle (`laravel/cashier-paddle`) (#217), which the
+     * provider only calls when one of them is installed: Excubia depends on
+     * neither. Both webhook controllers fire `WebhookReceived` before their
+     * handler and `WebhookHandled` after it returns, and nothing when it
+     * throws, so `RequestHandled` settles a webhook still pending with the
+     * response status.
+     */
+    public function listenToBillingWebhooks(Dispatcher $events): void
+    {
+        $events->listen(
+            [StripeWebhookReceived::class, PaddleWebhookReceived::class],
+            fn (StripeWebhookReceived|PaddleWebhookReceived $event) => $this->receiveBillingWebhook($event),
+        );
+        $events->listen(
+            [StripeWebhookHandled::class, PaddleWebhookHandled::class],
+            fn (StripeWebhookHandled|PaddleWebhookHandled $event) => $this->recordBillingWebhookHandled($event),
+        );
+        $events->listen(RequestHandled::class, fn (RequestHandled $event) => $this->settlePendingBillingWebhook($event->response->getStatusCode()));
+    }
+
+    /**
+     * Remember the webhook Cashier received: its provider, its event type
+     * (Stripe's `type`, Paddle's `event_type`, or `alert_name` for Paddle
+     * Classic) when it matches BILLING_EVENT_TYPE_PATTERN, else `unknown`,
+     * and when it arrived. Nothing else of the payload is read: never
+     * amounts, currencies, customer or subscription ids, emails or cards.
+     */
+    public function receiveBillingWebhook(StripeWebhookReceived|PaddleWebhookReceived $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $this->settlePendingBillingWebhook();
+
+            if (! $this->isSampled(RuntimeTypeEnum::BillingWebhook)) {
+                return;
+            }
+
+            $isStripe = $event instanceof StripeWebhookReceived;
+            $payload = $event->payload;
+            $eventType = is_array($payload) ? ($isStripe ? ($payload['type'] ?? null) : ($payload['event_type'] ?? $payload['alert_name'] ?? null)) : null;
+
+            $this->pendingBillingWebhook = [
+                'provider' => $isStripe ? 'stripe' : 'paddle',
+                'eventType' => is_string($eventType) && preg_match(self::BILLING_EVENT_TYPE_PATTERN, $eventType) === 1 ? $eventType : 'unknown',
+                'startedAt' => $this->now(),
+            ];
+        });
+    }
+
+    /**
+     * Cashier's handler for the pending webhook returned.
+     */
+    public function recordBillingWebhookHandled(StripeWebhookHandled|PaddleWebhookHandled $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $pending = $this->pendingBillingWebhook;
+
+            if ($pending === null || $pending['provider'] !== ($event instanceof StripeWebhookHandled ? 'stripe' : 'paddle')) {
+                return;
+            }
+
+            $this->pendingBillingWebhook = null;
+            $this->recordBillingWebhook($pending, isHandled: true, isFailed: false);
+        });
+    }
+
+    /**
+     * Record the webhook still pending when its request ends (or the next
+     * one arrives, or the process terminates), as not handled. With a 5xx
+     * response it failed: Cashier's handler or an app listener threw, and
+     * the provider retries it. Otherwise Cashier has no handler for its
+     * event type (the controller answers 200 without `WebhookHandled`), and
+     * it counts as received only.
+     */
+    public function settlePendingBillingWebhook(?int $statusCode = null): void
+    {
+        $this->guard(function () use ($statusCode): void {
+            $pending = $this->pendingBillingWebhook;
+            $this->pendingBillingWebhook = null;
+
+            if ($pending !== null) {
+                $this->recordBillingWebhook($pending, isHandled: false, isFailed: $statusCode !== null && $statusCode >= 500);
+            }
+        });
+    }
+
+    /**
+     * One `billingWebhook` aggregate, timed from `WebhookReceived` to
+     * `WebhookHandled` or to the end of the request, with every counter.
+     *
+     * @param  array{provider: string, eventType: string, startedAt: float}  $pending
+     */
+    private function recordBillingWebhook(array $pending, bool $isHandled, bool $isFailed): void
+    {
+        $signal = self::BILLING_SIGNALS[$pending['provider']][$pending['eventType']] ?? null;
+
+        $this->add(RuntimeTypeEnum::BillingWebhook, ['provider' => $pending['provider'], 'eventType' => $pending['eventType']], ($this->now() - $pending['startedAt']) * 1000, $isFailed, [
+            'handledCount' => $isHandled ? 1 : 0,
+            'paymentFailedCount' => $signal === 'paymentFailedCount' ? 1 : 0,
+            'paymentActionRequiredCount' => $signal === 'paymentActionRequiredCount' ? 1 : 0,
+            'subscriptionCanceledCount' => $signal === 'subscriptionCanceledCount' ? 1 : 0,
         ]);
     }
 

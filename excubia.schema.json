@@ -550,6 +550,10 @@
                 "reverb": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Laravel Reverb (laravel/reverb) WebSocket servers counted per server and Reverb app id, from the reverb:start process: connections opened, rejected and pruned, open connections sampled once a minute, messages received and sent, errors, and channels created and removed by prefix (public, private, presence). Records nothing unless laravel/reverb is installed. Never message payloads, channel names, socket ids or origins. Off by default (#215)."
+                },
+                "billing": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Cashier (laravel/cashier for Stripe, laravel/cashier-paddle) webhooks counted per provider and event type: received, handled, failed (a 5xx before the handler returned), handling time, and the payment signals failed payment, payment action required and canceled subscription. Records nothing unless Cashier is installed. Never anything of the payload but its event type: no amounts, currencies, customer or subscription ids, emails or cards. Off by default (#217)."
                 }
             }
         },

@@ -71,7 +71,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "ai": { "enabled": false, "sampleRate": 1 },
     "aiTools": { "enabled": false, "sampleRate": 1 },
     "octane": { "enabled": false, "sampleRate": 1 },
-    "reverb": { "enabled": false, "sampleRate": 1 }
+    "reverb": { "enabled": false, "sampleRate": 1 },
+    "billing": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -320,6 +321,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.reverb` | object | | Laravel Reverb (`laravel/reverb`) servers per server and Reverb app id: connections opened, rejected and pruned, open connections sampled once a minute, messages received and sent, errors, and channels created and removed by prefix. Records nothing unless `laravel/reverb` is installed; never message payloads, channel names, socket ids or origins. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-reverb). |
 | `runtime.reverb.enabled` | boolean | `false` | Collect Reverb events. |
 | `runtime.reverb.sampleRate` | number 0–1 | `1` | Share of Reverb events recorded (0 also stops the connection sample). |
+| `runtime.billing` | object | | Laravel Cashier (`laravel/cashier`, `laravel/cashier-paddle`) webhooks per provider and event type: received, handled, failed, handling time, failed payments, payments needing action and canceled subscriptions. Records nothing unless Cashier is installed; never anything of the payload but its event type. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-cashier). |
+| `runtime.billing.enabled` | boolean | `false` | Collect Cashier webhook events. |
+| `runtime.billing.sampleRate` | number 0–1 | `1` | Share of webhooks recorded. |
 
 ## Exception capture
 
