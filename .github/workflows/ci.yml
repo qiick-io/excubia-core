@@ -54,6 +54,10 @@ jobs:
       - name: PHPStan
         run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
 
+      # Level max with no baseline: the ratchet fails if a baseline ever appears.
+      - name: Larastan baseline only shrinks
+        run: node scripts/qiick-ratchet.mjs phpstan
+
       - name: Pest
         run: vendor/bin/pest --parallel --coverage --coverage-clover=build/clover.xml
 
@@ -100,3 +104,10 @@ jobs:
 
       - name: Pest (Laravel integration)
         run: vendor/bin/pest tests/Laravel
+
+  # The qiick standards pack (agent files, architecture test) must match app-ui.
+  standards:
+    uses: qiick-io/app-ui/.github/workflows/drift-check.yml@develop
+    with:
+      standards: true
+      registry: false
