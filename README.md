@@ -197,7 +197,7 @@ vendor/bin/excubia cache:clear [path] [--config=FILE]
 | `--offline` | `check` | Use cached data-source responses only; checks without a cached response are `skipped` |
 | `--no-cache` | `check` | Do not read or write the response cache |
 | `--config=FILE` | all | Config file (default: `excubia.json` in the project, if present). A missing explicit file is an error |
-| `--no-banner` | `check` | Hide the ASCII banner |
+| `--no-banner` | `check` | Hide the ASCII banner. `json` and `sarif` never print it |
 | `--strict` | `check`, `push` | Exit `3` when a data-source failure skipped a check; `push` then sends nothing. Same as `"strict": true` |
 | `--deploy` | `push` | Mark the report as a deploy: it carries `deployedAt` next to its `release`, so `excubia-app` draws a deploy marker. Run it as the post-deploy step ([CI guide](./docs/guides/ci.md#deploy-markers)) |
 | `-q`, `-v`, `-vv` | all | Quiet, verbose, debug. From `-v` every HTTP request is listed on stderr |

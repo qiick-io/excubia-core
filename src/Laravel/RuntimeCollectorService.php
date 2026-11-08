@@ -40,6 +40,9 @@ use Laravel\Ai\Events\AgentPrompted;
 use Laravel\Ai\Events\AgentStreamed;
 use Laravel\Ai\Events\AudioFailed;
 use Laravel\Ai\Events\AudioGenerated;
+use Laravel\Ai\Events\ClassificationFailed;
+use Laravel\Ai\Events\Classified;
+use Laravel\Ai\Events\Classifying;
 use Laravel\Ai\Events\EmbeddingsFailed;
 use Laravel\Ai\Events\EmbeddingsGenerated;
 use Laravel\Ai\Events\GeneratingAudio;
@@ -270,7 +273,7 @@ final class RuntimeCollectorService
 
     /**
      * The pending aggregate of the last failed image, embeddings,
-     * transcription, reranking or audio attempt, with its provider and
+     * transcription, reranking, audio or classification attempt, with its provider and
      * model, so the `ProviderFailedOver` that follows it counts the failover
      * on that aggregate (the event carries no invocation id or operation).
      *
@@ -1194,15 +1197,15 @@ final class RuntimeCollectorService
     {
         if ($this->configuration->isTypeEnabled(RuntimeTypeEnum::Ai)) {
             $events->listen(
-                [PromptingAgent::class, StreamingAgent::class, GeneratingImage::class, GeneratingEmbeddings::class, GeneratingTranscription::class, Reranking::class, GeneratingAudio::class],
+                [PromptingAgent::class, StreamingAgent::class, GeneratingImage::class, GeneratingEmbeddings::class, GeneratingTranscription::class, Reranking::class, GeneratingAudio::class, Classifying::class],
                 $this->startAiOperation(...),
             );
             $events->listen(
-                [AgentPrompted::class, AgentStreamed::class, ImageGenerated::class, EmbeddingsGenerated::class, TranscriptionGenerated::class, Reranked::class, AudioGenerated::class],
+                [AgentPrompted::class, AgentStreamed::class, ImageGenerated::class, EmbeddingsGenerated::class, TranscriptionGenerated::class, Reranked::class, AudioGenerated::class, Classified::class],
                 $this->recordAiOperation(...),
             );
             $events->listen(
-                [AgentFailed::class, ImageFailed::class, EmbeddingsFailed::class, TranscriptionFailed::class, RerankingFailed::class, AudioFailed::class],
+                [AgentFailed::class, ImageFailed::class, EmbeddingsFailed::class, TranscriptionFailed::class, RerankingFailed::class, AudioFailed::class, ClassificationFailed::class],
                 $this->recordAiFailure(...),
             );
             $events->listen([ProviderFailedOver::class, AgentFailedOver::class], $this->recordAiFailover(...));
@@ -1217,7 +1220,7 @@ final class RuntimeCollectorService
      * Remember when an AI operation starts, by its invocation id. A streamed
      * agent starts when its stream is first read (`StreamingAgent`).
      */
-    public function startAiOperation(PromptingAgent|GeneratingImage|GeneratingEmbeddings|GeneratingTranscription|Reranking|GeneratingAudio $event): void
+    public function startAiOperation(PromptingAgent|GeneratingImage|GeneratingEmbeddings|GeneratingTranscription|Reranking|GeneratingAudio|Classifying $event): void
     {
         $this->guard(function () use ($event): void {
             $this->lastAiFailure = null;
@@ -1236,9 +1239,11 @@ final class RuntimeCollectorService
      * agent is counted once, at `AgentStreamed`, with the usage of the whole
      * stream. Provider and model come from the response meta of an agent,
      * else from the prompt. Only the usage counts and the meta names are
-     * read, never the text, reasoning, messages or tool calls.
+     * read, never the text, reasoning, messages or tool calls, and for a
+     * classification (#201) never the classified state, the questions,
+     * the attachments or the answers.
      */
-    public function recordAiOperation(AgentPrompted|ImageGenerated|EmbeddingsGenerated|TranscriptionGenerated|Reranked|AudioGenerated $event): void
+    public function recordAiOperation(AgentPrompted|ImageGenerated|EmbeddingsGenerated|TranscriptionGenerated|Reranked|AudioGenerated|Classified $event): void
     {
         $this->guard(function () use ($event): void {
             $durationMs = $this->aiDurationMs($event->invocationId);
@@ -1270,7 +1275,7 @@ final class RuntimeCollectorService
      * after it counts the failover (`recordAiFailover()`). The exception is
      * never read.
      */
-    public function recordAiFailure(AgentFailed|ImageFailed|EmbeddingsFailed|TranscriptionFailed|RerankingFailed|AudioFailed $event): void
+    public function recordAiFailure(AgentFailed|ImageFailed|EmbeddingsFailed|TranscriptionFailed|RerankingFailed|AudioFailed|ClassificationFailed $event): void
     {
         $this->guard(function () use ($event): void {
             $durationMs = $this->aiDurationMs($event->invocationId);
@@ -1306,7 +1311,7 @@ final class RuntimeCollectorService
      * it adds the failover to that attempt's aggregate.
      *
      * ponytail: the failover of an image, embeddings, transcription,
-     * reranking or audio attempt is dropped when the buffer was flushed
+     * reranking, audio or classification attempt is dropped when the buffer was flushed
      * between the two events (MAX_PENDING_AGGREGATES reached by that very
      * failure); the error itself is kept. An invocation id on
      * `ProviderFailedOver` would be the upgrade path.
@@ -1395,15 +1400,16 @@ final class RuntimeCollectorService
     }
 
     /**
-     * @return 'image'|'embeddings'|'transcription'|'reranking'|'audio'
+     * @return 'image'|'embeddings'|'transcription'|'reranking'|'audio'|'classification'
      */
-    private static function aiOperation(ImageGenerated|EmbeddingsGenerated|TranscriptionGenerated|Reranked|AudioGenerated|ImageFailed|EmbeddingsFailed|TranscriptionFailed|RerankingFailed|AudioFailed $event): string
+    private static function aiOperation(ImageGenerated|EmbeddingsGenerated|TranscriptionGenerated|Reranked|AudioGenerated|Classified|ImageFailed|EmbeddingsFailed|TranscriptionFailed|RerankingFailed|AudioFailed|ClassificationFailed $event): string
     {
         return match (true) {
             $event instanceof ImageGenerated, $event instanceof ImageFailed => 'image',
             $event instanceof EmbeddingsGenerated, $event instanceof EmbeddingsFailed => 'embeddings',
             $event instanceof TranscriptionGenerated, $event instanceof TranscriptionFailed => 'transcription',
             $event instanceof Reranked, $event instanceof RerankingFailed => 'reranking',
+            $event instanceof Classified, $event instanceof ClassificationFailed => 'classification',
             default => 'audio',
         };
     }
@@ -1411,7 +1417,8 @@ final class RuntimeCollectorService
     /**
      * Every usage field of `RuntimeBufferService::NULLABLE_SUM_FIELDS`
      * that the usage object has (`TextUsage`, `ImageUsage`,
-     * `TranscriptionUsage`, `RerankingUsage`, `Usage`), else null: a count
+     * `TranscriptionUsage`, `RerankingUsage`, `Usage`; a classification
+     * reports `TextUsage`), else null: a count
      * the provider does not report stays null.
      *
      * @return array<string, int|float|null>

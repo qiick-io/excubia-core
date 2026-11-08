@@ -61,7 +61,8 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile', 'schedule'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile', 'schedule', 'environment'])
+        ->and($schema['properties']['environment']['pattern'])->toBe('^[A-Za-z0-9_-]{1,64}$')
         ->and($schema['properties']['schedule']['items']['$ref'])->toBe('#/$defs/scheduledTask')
         ->and($schema['$defs']['scheduledTask']['required'])->toBe(['taskId', 'task', 'expression', 'timezone', 'withoutOverlapping', 'onOneServer', 'runsInMaintenanceMode', 'environments'])
         ->and($schema['$defs']['scheduledTask']['properties']['taskId']['pattern'])->toBe('^[0-9a-f]{64}$')

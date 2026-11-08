@@ -69,7 +69,8 @@ final class ReportPushService
      * Send one batch of runtime aggregates (`docs/runtime-schema.json`) to
      * `POST {url}/api/runtime`. The caller owns the batch id, so a batch that
      * failed earlier is sent again with the same id and stored once.
-     * `$release` is the release at send time (`ReleaseService`).
+     * `$release` is the release at send time (`ReleaseService`), and
+     * `$environment` the Laravel environment of the sending app (#203).
      *
      * @param  list<array<string, mixed>>  $aggregates
      *
@@ -84,13 +85,14 @@ final class ReportPushService
         ?string $appToken,
         DateTimeImmutable $sentAt,
         ?string $release = null,
+        ?string $environment = null,
     ): void {
         $this->send(self::RUNTIME_PATH, 'the runtime batch', [
             'protocolVersion' => self::PROTOCOL_VERSION,
             'type' => self::RUNTIME_TYPE,
             'batchId' => $batchId,
             'sentAt' => self::sentAt($sentAt),
-            'runtime' => ['bucketSeconds' => self::RUNTIME_BUCKET_SECONDS] + self::release($release) + ['aggregates' => $aggregates],
+            'runtime' => ['bucketSeconds' => self::RUNTIME_BUCKET_SECONDS] + self::release($release) + self::environment($environment) + ['aggregates' => $aggregates],
         ], $appUrl, $appToken);
     }
 
@@ -131,6 +133,19 @@ final class ReportPushService
     private static function release(?string $release): array
     {
         return $release === null ? [] : ['release' => $release];
+    }
+
+    /**
+     * The optional `environment` of a runtime batch (#203), omitted when
+     * unknown or not a short name (`HealthReportData::ENVIRONMENT_PATTERN`).
+     *
+     * @return array{environment?: string}
+     */
+    private static function environment(?string $environment): array
+    {
+        $name = HealthReportData::environmentName($environment);
+
+        return $name === null ? [] : ['environment' => $name];
     }
 
     /**
