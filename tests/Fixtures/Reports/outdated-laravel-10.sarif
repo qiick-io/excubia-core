@@ -311,6 +311,14 @@
                                 "text": "Octane configuration"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-reverb",
+                            "name": "Reverb server",
+                            "shortDescription": {
+                                "text": "Reverb server"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

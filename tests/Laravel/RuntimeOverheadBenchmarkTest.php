@@ -32,6 +32,10 @@ use Laravel\Octane\Events\RequestReceived;
 use Laravel\Octane\Events\RequestTerminated;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Reverb\Application as ReverbApplication;
+use Laravel\Reverb\Contracts\Connection as ReverbConnection;
+use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
+use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -41,6 +45,7 @@ use Qiick\Excubia\Tests\Support\FakeAiAgent;
 use Qiick\Excubia\Tests\Support\FakeAiTool;
 
 require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
+require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -57,7 +62,8 @@ require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
  * query listeners run as in a typical request. The third test prices the
  * Monolog processor that learns the log channel (#174) per log entry, and the
  * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run,
- * and the fifth the `octane` listeners (#213) per Octane request and tick.
+ * the fifth the `octane` listeners (#213) per Octane request and tick, and
+ * the sixth the `reverb` listeners (#215) per Reverb message.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -407,6 +413,56 @@ it('adds little per Octane request and tick, with the octane type on', function 
     fwrite(STDERR, sprintf(
         "\nLaravel Octane over %d requests and ticks (faked events; PHP %s, Laravel %s)\n  octane off: %.4f ms/request\n  octane on:  %.4f ms/request (delta %.4f ms)\n  collector:  %.4f ms/request (received + terminated + tick, no flush)\n",
         $requests,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Reverb message, with the reverb type on', function () {
+    $messages = 4 * BENCHMARK_REQUESTS;
+    $connection = new ReverbConnection(new ReverbApplication('123456'));
+    $broadcast = (string) json_encode(['event' => 'App\\Events\\OrderShipped', 'data' => json_encode(['order' => 1]), 'channel' => 'private-orders.1']);
+    $sent = new ReverbMessageSent($connection, $broadcast);
+    $received = new ReverbMessageReceived($connection, '{"event":"pusher:ping","data":{}}');
+
+    // Reverb's events through the dispatcher: one broadcast frame sent and one client message received.
+    $dispatchMilliseconds = function () use ($messages, $sent, $received): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $messages; $i++) {
+            $events->dispatch($sent);
+            $events->dispatch($received);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $messages);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'reverb' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $messages; $i++) {
+        $collector->recordReverbMessageSent($sent);
+        $collector->recordReverbMessageReceived($received);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $messages);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Reverb over %d messages (faked events; PHP %s, Laravel %s)\n  reverb off: %.4f ms/message\n  reverb on:  %.4f ms/message (delta %.4f ms)\n  collector:  %.4f ms/message (sent or received, no flush)\n",
+        2 * $messages,
         PHP_VERSION,
         Application::VERSION,
         $off,

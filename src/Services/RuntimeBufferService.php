@@ -45,9 +45,10 @@ final class RuntimeBufferService
      * Metric fields that add up when two aggregates merge: integer counters
      * and decimal totals. A type carries only the ones it needs (#132,
      * `totalRepeats` for `duplicateQuery`, #148, and `failoverCount` for
-     * `ai`, #198, and the worker counts of `octane`, #213).
+     * `ai`, #198, the worker counts of `octane`, #213, and the connection,
+     * message and channel counts of `reverb`, #215).
      */
-    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount', 'workerStarts', 'workerStops', 'requests', 'tasks', 'ticks', 'totalRequestsAtStop'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount', 'workerStarts', 'workerStops', 'requests', 'tasks', 'ticks', 'totalRequestsAtStop', 'connectionsOpened', 'connectionsPruned', 'connectionsRejected', 'messagesReceived', 'messagesSent', 'publicChannelsCreated', 'privateChannelsCreated', 'presenceChannelsCreated', 'publicChannelsRemoved', 'privateChannelsRemoved', 'presenceChannelsRemoved'];
 
     private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
 
@@ -60,9 +61,10 @@ final class RuntimeBufferService
     /**
      * Integer metric fields that keep the larger value when two aggregates
      * merge, and stay integers (`maxRepeats` of `duplicateQuery`, #148,
-     * `findingCount` of `health`, #188, `maxRequestsAtStop` of `octane`, #213).
+     * `findingCount` of `health`, #188, `maxRequestsAtStop` of `octane`, #213,
+     * `maxConnections` of `reverb`, #215).
      */
-    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats', 'findingCount', 'maxRequestsAtStop'];
+    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats', 'findingCount', 'maxRequestsAtStop', 'maxConnections'];
 
     /**
      * Outcome fields of the `health` type (#188). Two samples of one check

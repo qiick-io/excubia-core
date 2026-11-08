@@ -546,6 +546,10 @@
                 "octane": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Laravel Octane (laravel/octane) workers counted per server, Octane server and worker type: worker starts and stops, requests, tasks and ticks handled, worker errors, the memory in use after each request and its growth since the worker's first request, and the requests a worker handled when it stopped. Records nothing unless laravel/octane is installed. Never URLs, request or task data, worker ids or PIDs, or exception messages. Off by default (#213)."
+                },
+                "reverb": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Reverb (laravel/reverb) WebSocket servers counted per server and Reverb app id, from the reverb:start process: connections opened, rejected and pruned, open connections sampled once a minute, messages received and sent, errors, and channels created and removed by prefix (public, private, presence). Records nothing unless laravel/reverb is installed. Never message payloads, channel names, socket ids or origins. Off by default (#215)."
                 }
             }
         },

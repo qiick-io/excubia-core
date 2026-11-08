@@ -70,7 +70,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 },
     "ai": { "enabled": false, "sampleRate": 1 },
     "aiTools": { "enabled": false, "sampleRate": 1 },
-    "octane": { "enabled": false, "sampleRate": 1 }
+    "octane": { "enabled": false, "sampleRate": 1 },
+    "reverb": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -316,6 +317,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.octane` | object | | Laravel Octane (`laravel/octane`) workers per server, Octane server and worker type: starts, stops, requests, tasks, ticks, worker errors, memory after each request and its growth since the worker's first request, and requests handled at stop. Records nothing unless `laravel/octane` is installed; never URLs, request or task data, or PIDs. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-octane). |
 | `runtime.octane.enabled` | boolean | `false` | Collect Octane worker events. |
 | `runtime.octane.sampleRate` | number 0–1 | `1` | Share of worker events recorded. |
+| `runtime.reverb` | object | | Laravel Reverb (`laravel/reverb`) servers per server and Reverb app id: connections opened, rejected and pruned, open connections sampled once a minute, messages received and sent, errors, and channels created and removed by prefix. Records nothing unless `laravel/reverb` is installed; never message payloads, channel names, socket ids or origins. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-reverb). |
+| `runtime.reverb.enabled` | boolean | `false` | Collect Reverb events. |
+| `runtime.reverb.sampleRate` | number 0–1 | `1` | Share of Reverb events recorded (0 also stops the connection sample). |
 
 ## Exception capture
 

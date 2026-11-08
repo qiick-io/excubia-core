@@ -68,12 +68,18 @@ use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerErrorOccurred;
 use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Octane\Events\WorkerStopping;
+use Laravel\Reverb\Events\ChannelCreated;
+use Laravel\Reverb\Events\ChannelRemoved;
+use Laravel\Reverb\Events\ConnectionPruned;
+use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
+use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
 use Monolog\Logger as MonologLogger;
 use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Qiick\Excubia\Services\ServerMetricsService;
+use React\EventLoop\Loop;
 use Throwable;
 use WeakMap;
 use WeakReference;
@@ -105,8 +111,9 @@ use WeakReference;
  * whole cache keys or values, recipients, log messages or context, absolute
  * paths, the line and stack of a deprecation, command arguments and
  * options, or AI prompts, attachments, messages, responses, reasoning, tool
- * arguments or results and conversations, or Octane URLs, request or task
- * data, worker ids or PIDs.
+ * arguments or results and conversations, Octane URLs, request or task
+ * data, worker ids or PIDs, or Reverb message payloads, channel names,
+ * socket ids, origins or app keys and secrets.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -196,6 +203,33 @@ final class RuntimeCollectorService
      * The container key of the Swoole server Octane binds in a Swoole worker.
      */
     private const SWOOLE_SERVER = 'Swoole\\Http\\Server';
+
+    /**
+     * Laravel Reverb's container keys (#215): its application provider (the
+     * configured apps) and its channel manager (the channels and the
+     * connections subscribed to them, per app).
+     */
+    private const REVERB_APPLICATION_PROVIDER = 'Laravel\\Reverb\\Contracts\\ApplicationProvider';
+
+    private const REVERB_CHANNEL_MANAGER = 'Laravel\\Reverb\\Protocols\\Pusher\\Contracts\\ChannelManager';
+
+    /**
+     * How Reverb's Pusher protocol starts the frames it sends for a new
+     * connection, for an error, and for the error a pruned connection gets
+     * (code 4201): `json_encode` of `['event' => …, 'data' => …]`. Only these
+     * fixed prefixes are compared; nothing else of a message is read.
+     */
+    private const REVERB_CONNECTION_ESTABLISHED = '{"event":"pusher:connection_established"';
+
+    private const REVERB_ERROR = '{"event":"pusher:error"';
+
+    private const REVERB_PRUNED_ERROR = '{"event":"pusher:error","data":"{\\"code\\":4201,';
+
+    /**
+     * The Reverb app id when it is a short name; a longer or unusual one is
+     * hashed.
+     */
+    private const REVERB_APPLICATION_ID_PATTERN = '/^[A-Za-z0-9_-]{1,32}$/';
 
     private const LOG_LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
 
@@ -346,6 +380,29 @@ final class RuntimeCollectorService
     private float $octaneFlushedAt = 0.0;
 
     /**
+     * The server dimension of the `reverb` aggregates (#215), set when the
+     * Reverb listeners are registered.
+     */
+    private string $reverbServer = '';
+
+    /**
+     * Dimensions of the `reverb` aggregates per Reverb app id, so the id is
+     * checked or hashed once. As many entries as configured Reverb apps.
+     *
+     * @var array<string, array{server: string, appId: string}>
+     */
+    private array $reverbDimensions = [];
+
+    /**
+     * Reverb connections that received `pusher:connection_established`: an
+     * error sent to any other connection rejected it (connection quota,
+     * origin not allowed). Weak, so it forgets closed connections.
+     *
+     * @var WeakMap<object, true>
+     */
+    private WeakMap $establishedReverbConnections;
+
+    /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
      */
     public function __construct(
@@ -357,6 +414,7 @@ final class RuntimeCollectorService
         $this->jobStartedAt = new WeakMap;
         $this->recordedTasks = new WeakMap;
         $this->outerQueryShapes = new WeakMap;
+        $this->establishedReverbConnections = new WeakMap;
         $this->isCountingQueryShapes = $configuration->isTypeEnabled(RuntimeTypeEnum::DuplicateQuery);
     }
 
@@ -455,6 +513,10 @@ final class RuntimeCollectorService
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::Octane) && class_exists(WorkerStarting::class)) {
             $collector->listenToOctane($events);
+        }
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Reverb) && class_exists(ReverbMessageSent::class)) {
+            $collector->listenToReverb($application, $events);
         }
 
         $application->terminating(function () use ($collector): void {
@@ -1713,6 +1775,193 @@ final class RuntimeCollectorService
     private static function megabytes(int $bytes): float
     {
         return round(max($bytes, 0) / self::BYTES_PER_MEGABYTE, 3);
+    }
+
+    /**
+     * Listen to Laravel Reverb (`laravel/reverb`, #215), which the provider
+     * only calls when its events exist: Excubia does not depend on it. The
+     * Reverb server is `php artisan reverb:start`, a long-lived process that
+     * boots the app (and this provider) once and fires every event on this
+     * dispatcher; it never terminates between messages, so a timer on its
+     * event loop samples the open connections and flushes once a minute.
+     */
+    public function listenToReverb(Application $application, Dispatcher $events): void
+    {
+        /** @var Repository $config */
+        $config = $application->make('config');
+        $applicationKey = $config->get('app.key');
+        $hostname = gethostname();
+        $this->reverbServer = ServerMetricsService::serverIdentity($this->configuration->serverName, is_string($hostname) ? $hostname : '', is_string($applicationKey) ? $applicationKey : '');
+
+        $events->listen(ReverbMessageReceived::class, $this->recordReverbMessageReceived(...));
+        $events->listen(ReverbMessageSent::class, $this->recordReverbMessageSent(...));
+        $events->listen(ConnectionPruned::class, $this->recordReverbConnectionPruned(...));
+        $events->listen(
+            [ChannelCreated::class, ChannelRemoved::class],
+            fn (ChannelCreated|ChannelRemoved $event) => $this->recordReverbChannel($event, $application),
+        );
+        $events->listen(CommandStarting::class, fn (CommandStarting $event) => $this->startReverbServer($event, $application));
+    }
+
+    /**
+     * When `reverb:start` starts, add a timer of 60 seconds to the event
+     * loop it is about to run (Reverb runs on ReactPHP's global loop,
+     * `Loop::get()`, a dependency of laravel/reverb): each tick samples the
+     * open connections and flushes the buffer, so `excubia:push-runtime`,
+     * which reads the same buffer file, sends them within two minutes.
+     *
+     * ponytail: what was recorded after the last tick is lost when the
+     * server is killed or stops on a signal (Symfony exits without
+     * Laravel's terminating callbacks); a `reverb:restart` ends the command
+     * normally and flushes.
+     */
+    public function startReverbServer(CommandStarting $event, Application $application): void
+    {
+        if ($event->command !== 'reverb:start' || ! class_exists(Loop::class)) {
+            return;
+        }
+
+        $this->guard(function () use ($application): void {
+            Loop::get()->addPeriodicTimer(60, fn () => $this->sampleReverb($application));
+        });
+    }
+
+    /**
+     * One sample per configured Reverb app of the connections subscribed to
+     * at least one channel on this server (what Reverb's own `connections`
+     * API counts), as `maxConnections`, then flush. Not sampled, as a
+     * gauge, except that sample rate 0 records nothing. Reverb's channel manager is a singleton scoped with `for()`,
+     * which Reverb itself calls before every use, so scoping it here between
+     * two loop callbacks changes nothing.
+     */
+    public function sampleReverb(Application $application): void
+    {
+        $this->guard(function () use ($application): void {
+            if ($this->configuration->sampleRate(RuntimeTypeEnum::Reverb) <= 0.0) {
+                return;
+            }
+
+            $channels = $application->make(self::REVERB_CHANNEL_MANAGER);
+
+            foreach ($application->make(self::REVERB_APPLICATION_PROVIDER)->all() as $reverbApplication) {
+                $this->recordReverb($reverbApplication->id(), ['maxConnections' => count($channels->for($reverbApplication)->connections())]);
+            }
+        });
+
+        $this->flush();
+    }
+
+    /**
+     * One message a client sent (`MessageReceived`, after Reverb handled it:
+     * Pusher pings and subscriptions included). The message is never read.
+     */
+    public function recordReverbMessageReceived(ReverbMessageReceived $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if ($this->isSampled(RuntimeTypeEnum::Reverb)) {
+                $this->recordReverb($event->connection->app()->id(), ['messagesReceived' => 1]);
+            }
+        });
+    }
+
+    /**
+     * One message Reverb sent to a client (`MessageSent`): broadcasts and
+     * protocol frames. A `pusher:connection_established` frame is also an
+     * opened connection, and a `pusher:error` frame a rejected connection
+     * (sent before the connection was established: quota or origin) or an
+     * error (rate limit, unauthorized subscription, invalid message); the
+     * error a pruned connection gets is counted by `ConnectionPruned`. Only
+     * the fixed prefix of the frame is compared, never its data.
+     */
+    public function recordReverbMessageSent(ReverbMessageSent $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $connection = $event->connection;
+            $message = $event->message;
+            $metrics = ['messagesSent' => 1];
+
+            if (str_starts_with($message, self::REVERB_CONNECTION_ESTABLISHED)) {
+                $this->establishedReverbConnections[$connection] = true;
+                $metrics['connectionsOpened'] = 1;
+            } elseif (str_starts_with($message, self::REVERB_ERROR) && ! str_starts_with($message, self::REVERB_PRUNED_ERROR)) {
+                $metrics[isset($this->establishedReverbConnections[$connection]) ? 'errorCount' : 'connectionsRejected'] = 1;
+            }
+
+            if ($this->isSampled(RuntimeTypeEnum::Reverb)) {
+                $this->recordReverb($connection->app()->id(), $metrics);
+            }
+        });
+    }
+
+    /**
+     * One connection Reverb pruned: it missed the pong in time.
+     */
+    public function recordReverbConnectionPruned(ConnectionPruned $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if ($this->isSampled(RuntimeTypeEnum::Reverb)) {
+                $this->recordReverb($event->connection->connection()->app()->id(), ['connectionsPruned' => 1]);
+            }
+        });
+    }
+
+    /**
+     * One channel created or removed (its last subscriber left), counted by
+     * prefix only: `private…` (private and encrypted, cache included),
+     * `presence…`, else public, as Reverb's ChannelBroker types them. The
+     * events carry no app, so it is the one Reverb's channel manager is
+     * scoped to while it creates or removes the channel. The channel name
+     * is never kept.
+     */
+    public function recordReverbChannel(ChannelCreated|ChannelRemoved $event, Application $application): void
+    {
+        $this->guard(function () use ($event, $application): void {
+            if (! $this->isSampled(RuntimeTypeEnum::Reverb)) {
+                return;
+            }
+
+            $name = $event->channel->name();
+            $channelType = match (true) {
+                str_starts_with($name, 'private') => 'private',
+                str_starts_with($name, 'presence') => 'presence',
+                default => 'public',
+            };
+            $reverbApplication = $application->make(self::REVERB_CHANNEL_MANAGER)->app();
+
+            $this->recordReverb(
+                is_object($reverbApplication) ? $reverbApplication->id() : 'unknown',
+                [$channelType.'Channels'.($event instanceof ChannelCreated ? 'Created' : 'Removed') => 1],
+            );
+        });
+    }
+
+    /**
+     * One `reverb` event with every metric field: the ones not given are 0.
+     *
+     * @param  array<string, int>  $metrics
+     */
+    private function recordReverb(string $applicationId, array $metrics): void
+    {
+        $this->reverbDimensions[$applicationId] ??= [
+            'server' => $this->reverbServer,
+            'appId' => preg_match(self::REVERB_APPLICATION_ID_PATTERN, $applicationId) === 1 ? $applicationId : substr(hash('sha256', $applicationId), 0, 12),
+        ];
+
+        $this->record(RuntimeTypeEnum::Reverb, $this->reverbDimensions[$applicationId], [
+            'connectionsOpened' => 0,
+            'connectionsPruned' => 0,
+            'connectionsRejected' => 0,
+            'maxConnections' => 0,
+            'messagesReceived' => 0,
+            'messagesSent' => 0,
+            'publicChannelsCreated' => 0,
+            'privateChannelsCreated' => 0,
+            'presenceChannelsCreated' => 0,
+            'publicChannelsRemoved' => 0,
+            'privateChannelsRemoved' => 0,
+            'presenceChannelsRemoved' => 0,
+            ...$metrics,
+        ]);
     }
 
     /**

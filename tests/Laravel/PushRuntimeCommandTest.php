@@ -35,6 +35,9 @@ use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\TextResponse;
 use Laravel\Ai\Tools\ToolNameResolver;
 use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Reverb\Application as ReverbApplication;
+use Laravel\Reverb\Contracts\Connection as ReverbConnection;
+use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
@@ -52,6 +55,7 @@ use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
 
 require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
+require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
 
 const RUNTIME_ENDPOINT = 'https://excubia.example.test/api/runtime';
 const RUNTIME_TOKEN = 'runtime-token-secret';
@@ -327,6 +331,7 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 1));
     (new FakeAiAgent)->prompt('hello');
     event(new WorkerStarting($this->app));
+    event(new ReverbMessageReceived(new ReverbConnection(new ReverbApplication('123456')), '{}'));
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);
