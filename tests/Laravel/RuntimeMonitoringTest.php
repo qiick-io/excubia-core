@@ -50,8 +50,12 @@ use Illuminate\Support\Facades\Route;
 use Laravel\Ai\Ai;
 use Laravel\Ai\AiServiceProvider;
 use Laravel\Ai\Audio;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Choice;
 use Laravel\Ai\Embeddings;
 use Laravel\Ai\Events\AgentPrompted;
+use Laravel\Ai\Events\Classified;
+use Laravel\Ai\Events\Classifying;
 use Laravel\Ai\Events\GeneratingImage;
 use Laravel\Ai\Events\ImageFailed;
 use Laravel\Ai\Events\PromptingAgent;
@@ -60,10 +64,13 @@ use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Exceptions\RateLimitedException;
 use Laravel\Ai\Image;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Prompts\ImagePrompt;
 use Laravel\Ai\Reranking;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\AudioResponse;
+use Laravel\Ai\Responses\ClassificationResponse;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 use Laravel\Ai\Responses\Data\GeneratedImage;
 use Laravel\Ai\Responses\Data\ImageUsage;
 use Laravel\Ai\Responses\Data\Meta;
@@ -2184,6 +2191,65 @@ it('adds a provider failover only to the failure it follows', function () {
     $collector->flush();
 
     expect(bufferedOfType($this->app, 'ai')[0])->toMatchArray(['count' => 2, 'errorCount' => 2, 'failoverCount' => 0]);
+});
+
+it('times a classification from Classifying to Classified by invocation id, with its TextUsage and no agent', function () {
+    bootRuntimeProject($this->app, ['enabled' => true]);
+    $collector = aiCollector($this->app);
+    $provider = Ai::classificationProvider('openai');
+    $prompt = new ClassificationPrompt(AI_MARKER, ['mood' => new Choice(AI_MARKER, ['happy' => AI_MARKER, 'sad' => 'Sad'])], $provider, 'classifier-model');
+    $response = new ClassificationResponse(['mood' => new ChoiceAnswer(AI_MARKER, [AI_MARKER => 1.0])], new TextUsage(120, 4, 20, 0, 2), new Meta('openai', 'classifier-model'));
+
+    $collector->startAiOperation(new Classifying('invocation-1', $provider, 'classifier-model', $prompt));
+    $collector->recordAiOperation(new Classified('invocation-1', $provider, 'classifier-model', $prompt, $response));
+    $collector->flush();
+
+    expect(bufferedRuntime($this->app))->toHaveCount(1)
+        ->and(bufferedRuntime($this->app)[0])->toMatchArray([
+            'type' => 'ai',
+            'operation' => 'classification',
+            'provider' => 'openai',
+            'model' => 'classifier-model',
+            'count' => 1,
+            'errorCount' => 0,
+            'failoverCount' => 0,
+            'totalMs' => 40.0,
+            'maxMs' => 40.0,
+            'inputTokens' => 120,
+            'outputTokens' => 4,
+            'cacheReadInputTokens' => 20,
+            'cacheWriteInputTokens' => 0,
+            'reasoningTokens' => 2,
+            'imageInputTokens' => null,
+            'audioSeconds' => null,
+            'searchUnits' => null,
+        ])
+        ->and(bufferedRuntime($this->app)[0])->not->toHaveKey('agent')
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
+});
+
+it('counts a failed classification attempt and its failover on that attempt, then the success on the next provider', function () {
+    bootAiRuntime($this->app);
+    Classification::fake(function (ClassificationPrompt $prompt) {
+        if ($prompt->provider->name() === 'typesafe') {
+            throw new RateLimitedException(AI_MARKER);
+        }
+
+        return new ClassificationResponse(['mood' => new ChoiceAnswer('happy', ['happy' => 0.9, 'sad' => 0.1])], new TextUsage(30, 2), new Meta('openai', 'gpt-classify'));
+    });
+
+    Classification::of(AI_MARKER)
+        ->question('mood', new Choice(AI_MARKER, ['happy' => 'Happy', 'sad' => 'Sad']))
+        ->classify(['typesafe' => 'classifier-a', 'openai' => 'gpt-classify']);
+    $this->app->terminate();
+
+    $ai = bufferedOfType($this->app, 'ai')->keyBy('provider');
+
+    expect($ai)->toHaveCount(2)
+        ->and($ai['typesafe'])->toMatchArray(['operation' => 'classification', 'model' => 'classifier-a', 'count' => 1, 'errorCount' => 1, 'failoverCount' => 1, ...noAiUsage()])
+        ->and($ai['openai'])->toMatchArray(['operation' => 'classification', 'model' => 'gpt-classify', 'count' => 1, 'errorCount' => 0, 'failoverCount' => 0, 'inputTokens' => 30, 'outputTokens' => 2])
+        ->and($ai['openai'])->not->toHaveKey('agent')
+        ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
 });
 
 it('records no AI aggregate at sample rate 0', function () {
