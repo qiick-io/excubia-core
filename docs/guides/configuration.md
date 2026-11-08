@@ -73,7 +73,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "octane": { "enabled": false, "sampleRate": 1 },
     "reverb": { "enabled": false, "sampleRate": 1 },
     "billing": { "enabled": false, "sampleRate": 1 },
-    "auth": { "enabled": false, "sampleRate": 1 }
+    "auth": { "enabled": false, "sampleRate": 1 },
+    "scout": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -328,6 +329,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.auth` | object | | Authentication per guard: successful and failed logins, lockouts and, with `laravel/sanctum`, Sanctum token authentications. Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default. See [runtime monitoring](./runtime-monitoring.md#authentication). |
 | `runtime.auth.enabled` | boolean | `false` | Collect authentication events. |
 | `runtime.auth.sampleRate` | number 0–1 | `1` | Share of authentication events recorded. |
+| `runtime.scout` | object | | Laravel Scout (`laravel/scout`) per model class, engine and operation: queued index jobs (with `scout.queue` on) with their record count, failures and duration, and searches started, without a duration. Records nothing unless Scout is installed; never search queries, record ids or record data. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-scout). |
+| `runtime.scout.enabled` | boolean | `false` | Collect Scout index jobs and searches. |
+| `runtime.scout.sampleRate` | number 0–1 | `1` | Share of index jobs and searches recorded. |
 
 ## Exception capture
 
