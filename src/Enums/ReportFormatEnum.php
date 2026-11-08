@@ -14,4 +14,12 @@ enum ReportFormatEnum: string
     case Json = 'json';
     case Markdown = 'markdown';
     case Sarif = 'sarif';
+
+    /**
+     * Formats parsed by tools, whose stdout must carry the report alone (no banner, #197).
+     */
+    public function isMachineReadable(): bool
+    {
+        return $this === self::Json || $this === self::Sarif;
+    }
 }

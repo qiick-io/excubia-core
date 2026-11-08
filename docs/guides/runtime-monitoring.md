@@ -116,7 +116,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `server` | One sample per `excubia:push-runtime` run, on each server | — |
 | `commands` | `CommandStarting` / `CommandFinished`, top-level commands only | Non-zero exit code |
 | `health` | One sample of the fast Artisan checks per `excubia:push-runtime` run, at most once a minute, on each server | The check failed |
-| `ai` | Laravel AI SDK: `PromptingAgent` / `StreamingAgent` → `AgentPrompted` / `AgentStreamed` / `AgentFailed` / `AgentFailedOver`, and the start, done and failed events of images, embeddings, transcriptions, reranking and audio, plus `ProviderFailedOver` | The attempt failed |
+| `ai` | Laravel AI SDK: `PromptingAgent` / `StreamingAgent` → `AgentPrompted` / `AgentStreamed` / `AgentFailed` / `AgentFailedOver`, and the start, done and failed events of images, embeddings, transcriptions, reranking, audio and classification (`Classifying` → `Classified` / `ClassificationFailed`), plus `ProviderFailedOver` | The attempt failed |
 | `aiTools` | Laravel AI SDK: `ToolInvoked` / `ToolFailed` | The tool threw |
 
 Notes on the newer types:
@@ -199,7 +199,7 @@ With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) i
 }
 ```
 
-- **`ai`** rows are keyed by `operation` (`agent`, `image`, `embeddings`, `transcription`, `reranking` or `audio`), `agent` (the agent class, for `agent` rows only), `provider` (the name in `config/ai.php`, such as `openai`) and `model`. For an agent, provider and model come from the response (the model the provider answered with), else from the prompt; a stream's are the prompt's.
+- **`ai`** rows are keyed by `operation` (`agent`, `image`, `embeddings`, `transcription`, `reranking`, `audio` or `classification`), `agent` (the agent class, for `agent` rows only), `provider` (the name in `config/ai.php`, such as `openai`) and `model`. For an agent, provider and model come from the response (the model the provider answered with), else from the prompt; a stream's are the prompt's.
 - `count` is the provider attempts: completed operations plus failed attempts. `errorCount` is the failed ones, and `failoverCount` the failed ones that moved on to the next provider of a failover list (`AgentFailedOver`, `ProviderFailedOver`). For images, embeddings, transcription, reranking and audio, the SDK fires its failed event once per attempt and `ProviderFailedOver` for every failoverable error, the last provider's included.
 - Durations run from the start event to the done or failed event of the same invocation id, with `totalMs`, `maxMs` and the latency histogram; a start Excubia did not see (it fired before boot) counts 0 ms. A stream is counted once, at `AgentStreamed`, with the usage of the whole stream. At most 200 starts are kept waiting for their end, so a stream nobody reads cannot grow memory.
 - Usage: `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens`, `reasoningTokens`, `imageInputTokens`, `imageOutputTokens`, `audioSeconds` and `searchUnits`, as the SDK reports them. A count the provider does not report is `null`, never 0; rows add up, and a sum is `null` only when every row has `null`. A failed attempt has no usage.

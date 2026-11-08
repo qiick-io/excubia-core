@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
 use Qiick\Excubia\Console\CheckCommand;
+use Qiick\Excubia\Enums\ReportFormatEnum;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -80,6 +81,24 @@ it('runs env-example-sync on the application base path in Artisan, without readi
         ->expectsOutputToContain('STRIPE_SECRET is read by config/services.php but missing from .env.example.')
         ->doesntExpectOutputToContain('artisan-sentinel-value')
         ->assertExitCode(1);
+});
+
+it('prints only the report on stdout of excubia:check for every machine-readable format', function (ReportFormatEnum $format) {
+    $this->app->setBasePath(cachedOutdatedProject());
+
+    Artisan::call('excubia:check', ['--only' => 'php-eol', '--offline' => true, '--fail-on' => 'none', '--format' => $format->value]);
+    $stdout = Artisan::output();
+
+    expect($stdout)->not->toContain('Health checks for Laravel apps.')
+        ->and(json_decode($stdout, true, 512, JSON_THROW_ON_ERROR))->toBeArray();
+})->with(fn (): array => array_values(array_filter(ReportFormatEnum::cases(), static fn (ReportFormatEnum $format): bool => $format->isMachineReadable())));
+
+it('still prints the banner before the excubia:check table', function () {
+    $this->app->setBasePath(cachedOutdatedProject());
+
+    Artisan::call('excubia:check', ['--only' => 'php-eol', '--offline' => true, '--fail-on' => 'none']);
+
+    expect(Artisan::output())->toContain('Health checks for Laravel apps.');
 });
 
 it('exits 2 when the application has no composer.lock', function () {
