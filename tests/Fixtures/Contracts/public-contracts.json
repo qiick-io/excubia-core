@@ -13,7 +13,7 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "bffa77bba1a02a14bf09a8df5a0040dcf43a2a4ee9a510833b1d78f9313049b2"
+            "sha256": "45f662851b88def7953cdd2f28b37749ac4265f9e89b2839b4f47a4aa47fb687"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "db811d953b58ca057d964c7d7bb29649b58f6bc447a153a2e686f6419d25f33c"
+            "sha256": "b402381ce4736bd0dcc136096be6acda3619f7d24a15f691b57cd92722643bf8"
         }
     },
     "checkIds": [
