@@ -12,6 +12,7 @@ use Qiick\Excubia\Checks\ComposerOutdatedCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
 use Qiick\Excubia\Checks\DependencyLicensesCheck;
 use Qiick\Excubia\Checks\EnvExampleSyncCheck;
+use Qiick\Excubia\Checks\LaravelApiTokensCheck;
 use Qiick\Excubia\Checks\LaravelAppKeyCheck;
 use Qiick\Excubia\Checks\LaravelBackupsCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
@@ -284,6 +285,7 @@ final class HealthCheckRunnerService
             new LaravelOctaneConfigCheck,
             new LaravelReverbCheck,
             new LaravelCashierCheck,
+            new LaravelApiTokensCheck,
         ];
     }
 }

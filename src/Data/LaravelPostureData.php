@@ -63,6 +63,7 @@ final readonly class LaravelPostureData
      * @param  array{server: string, maxRequests: int|null}|null  $octane  Laravel Octane's server (`swoole`, `roadrunner`, `frankenphp`, else `unknown`) and `octane.max_requests` (null when unset or not an integer) (#213); null when laravel/octane is not installed
      * @param  array{isBroadcastDriver: bool, isReachable: bool|null, latencyMs: float|null}|null  $reverb  Laravel Reverb (#215): whether the default broadcast connection uses the `reverb` driver, whether a TCP connect to its configured host and port succeeded (null when it is not the driver or no host is configured) and how long the connect took in ms; never the host or port; null when laravel/reverb is not installed or not probed
      * @param  list<array{provider: string, isWebhookSecretConfigured: bool, isWebhookRouteRegistered: bool, hasTestKeys: bool}>|null  $cashier  Laravel Cashier (#217), one entry per installed package (`stripe` for laravel/cashier, `paddle` for laravel/cashier-paddle): whether the webhook secret is set, whether a route reaches Cashier's webhook controller, and whether the keys are test keys (by prefix, or Paddle's sandbox flag); booleans only, never a key, secret or prefix; null when neither is installed or not probed
+     * @param  list<array{provider: 'sanctum', expirationMinutes: int|null, hasStatefulWildcard: bool, isStatefulEmpty: bool, tokenCount: int|null, nonExpiringTokenCount: int|null, staleTokenCount: int|null, neverUsedTokenCount: int|null}|array{provider: 'passport', hasKeys: bool, isPrivateKeyTooOpen: bool|null, accessTokenLifetimeMinutes: int, refreshTokenLifetimeMinutes: int, personalAccessTokenLifetimeMinutes: int, personalAccessClientCount: int|null}>|null  $apiTokens  Laravel Sanctum and Passport token posture (#219), one entry per installed package: Sanctum's `expiration` (minutes, null when tokens never expire), whether `stateful` has a wildcard or no domain, and counts of its unexpired personal access tokens (all, without `expires_at`, unused for 90 days, never used; null when the table is missing or unreadable); Passport's keys (present, private key file mode too open, null when it comes from the configuration), token lifetimes in minutes and active personal access clients (null when the table is missing). Counts and booleans only, never a token, name, ability, user id or domain; null when neither is installed or not probed
      */
     public function __construct(
         public string $environment,
@@ -107,6 +108,7 @@ final readonly class LaravelPostureData
         public ?array $octane = null,
         public ?array $reverb = null,
         public ?array $cashier = null,
+        public ?array $apiTokens = null,
     ) {}
 
     /**

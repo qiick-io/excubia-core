@@ -327,6 +327,14 @@
                                 "text": "Cashier billing"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-api-tokens",
+                            "name": "API tokens",
+                            "shortDescription": {
+                                "text": "API tokens"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

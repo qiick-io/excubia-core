@@ -71,6 +71,7 @@ final class SarifRenderer implements ReportRendererContract
         'laravel-octane-config' => 'config/octane.php',
         'laravel-reverb' => 'config/broadcasting.php',
         'laravel-cashier' => 'config/cashier.php',
+        'laravel-api-tokens' => 'config/auth.php',
     ];
 
     /**

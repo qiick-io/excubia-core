@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyWritten;
@@ -38,6 +41,7 @@ use Laravel\Reverb\Application as ReverbApplication;
 use Laravel\Reverb\Contracts\Connection as ReverbConnection;
 use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
 use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
+use Laravel\Sanctum\Events\TokenAuthenticated;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -49,6 +53,7 @@ use Qiick\Excubia\Tests\Support\FakeAiTool;
 require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
 require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
+require_once dirname(__DIR__).'/Support/FakeApiTokenClasses.php';
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -66,8 +71,9 @@ require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
  * Monolog processor that learns the log channel (#174) per log entry, and the
  * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run,
  * the fifth the `octane` listeners (#213) per Octane request and tick, the
- * sixth the `reverb` listeners (#215) per Reverb message, and the seventh the
- * `billingWebhook` listeners (#217) per Cashier webhook.
+ * sixth the `reverb` listeners (#215) per Reverb message, the seventh the
+ * `billingWebhook` listeners (#217) per Cashier webhook, and the eighth the
+ * `auth` listeners (#219) per authentication event.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -516,6 +522,58 @@ it('adds little per Cashier webhook, with the billingWebhook type on', function 
     fwrite(STDERR, sprintf(
         "\nLaravel Cashier over %d webhooks (faked events; PHP %s, Laravel %s)\n  billing off: %.4f ms/webhook\n  billing on:  %.4f ms/webhook (delta %.4f ms)\n  collector:   %.4f ms/webhook (received and handled, no flush)\n",
         $webhooks,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per authentication event, with the auth type on', function () {
+    $authentications = 4 * BENCHMARK_REQUESTS;
+    $user = new GenericUser(['id' => 1, 'email' => 'user@example.test']);
+    $login = new Login('web', $user, false);
+    $failed = new Failed('web', $user, ['email' => 'user@example.test', 'password' => 'secret']);
+    $token = new TokenAuthenticated((object) ['id' => 1]);
+
+    // A login, a failed login and a Sanctum token authentication through the dispatcher.
+    $dispatchMilliseconds = function () use ($authentications, $login, $failed, $token): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $authentications; $i++) {
+            $events->dispatch($login);
+            $events->dispatch($failed);
+            $events->dispatch($token);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (3 * $authentications);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'auth' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $authentications; $i++) {
+        $collector->recordAuthentication($login);
+        $collector->recordAuthentication($failed);
+        $collector->recordAuthentication($token);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (3 * $authentications);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel auth over %d events (Sanctum faked; PHP %s, Laravel %s)\n  auth off:  %.4f ms/event\n  auth on:   %.4f ms/event (delta %.4f ms)\n  collector: %.4f ms/event (no flush)\n",
+        3 * $authentications,
         PHP_VERSION,
         Application::VERSION,
         $off,

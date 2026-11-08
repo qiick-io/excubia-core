@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Laravel;
 
 use Closure;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyForgotten;
@@ -77,6 +80,7 @@ use Laravel\Reverb\Events\ChannelRemoved;
 use Laravel\Reverb\Events\ConnectionPruned;
 use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
 use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
+use Laravel\Sanctum\Events\TokenAuthenticated;
 use Monolog\Logger as MonologLogger;
 use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -117,8 +121,9 @@ use WeakReference;
  * options, or AI prompts, attachments, messages, responses, reasoning, tool
  * arguments or results and conversations, Octane URLs, request or task
  * data, worker ids or PIDs, Reverb message payloads, channel names,
- * socket ids, origins or app keys and secrets, or anything of a Cashier
- * webhook payload but its event type.
+ * socket ids, origins or app keys and secrets, anything of a Cashier
+ * webhook payload but its event type, or the user, credentials, token or
+ * request of an authentication event.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -266,6 +271,18 @@ final class RuntimeCollectorService
             'subscription_cancelled' => 'subscriptionCanceledCount',
         ],
     ];
+
+    /**
+     * An auth guard name (#219) is kept only when it looks like a config key;
+     * anything else becomes `unknown`.
+     */
+    private const AUTH_GUARD_PATTERN = '/^[A-Za-z0-9_.-]{1,64}$/';
+
+    /**
+     * The guard Laravel Sanctum registers, under which its token
+     * authentications are counted.
+     */
+    private const SANCTUM_GUARD = 'sanctum';
 
     private const LOG_LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
 
@@ -448,6 +465,12 @@ final class RuntimeCollectorService
     private ?array $pendingBillingWebhook = null;
 
     /**
+     * `auth.defaults.guard`, under which lockouts are counted (#219):
+     * Laravel's `Lockout` event carries the request only, no guard.
+     */
+    private string $defaultAuthGuard = 'unknown';
+
+    /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
      */
     public function __construct(
@@ -566,6 +589,10 @@ final class RuntimeCollectorService
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::BillingWebhook) && (class_exists(StripeWebhookReceived::class) || class_exists(PaddleWebhookReceived::class))) {
             $collector->listenToBillingWebhooks($events);
+        }
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Auth)) {
+            $collector->listenToAuth($application, $events);
         }
 
         $application->terminating(function () use ($collector): void {
@@ -2117,6 +2144,61 @@ final class RuntimeCollectorService
             'paymentActionRequiredCount' => $signal === 'paymentActionRequiredCount' ? 1 : 0,
             'subscriptionCanceledCount' => $signal === 'subscriptionCanceledCount' ? 1 : 0,
         ]);
+    }
+
+    /**
+     * Listen to Laravel's authentication events (#219): `Login` (also a
+     * login through the remember cookie), `Failed` and `Lockout`, and, when
+     * Laravel Sanctum is installed (it is not a dependency), its
+     * `TokenAuthenticated`, fired for each request a personal access token
+     * authenticates. Passport fires no event when a token authenticates a
+     * request, so its token requests are not counted here.
+     */
+    public function listenToAuth(Application $application, Dispatcher $events): void
+    {
+        $defaultGuard = $application->make('config')->get('auth.defaults.guard');
+        $this->defaultAuthGuard = $this->authGuard($defaultGuard);
+
+        $events->listen([Login::class, Failed::class, Lockout::class], fn (Login|Failed|Lockout $event) => $this->recordAuthentication($event));
+
+        if (class_exists(TokenAuthenticated::class)) {
+            $events->listen(TokenAuthenticated::class, fn (TokenAuthenticated $event) => $this->recordAuthentication($event));
+        }
+    }
+
+    /**
+     * One `auth` aggregate per guard: `errorCount` 1 for a failed login and
+     * one of `loginCount`, `lockoutCount` or `tokenAuthenticationCount`
+     * otherwise. Only the guard name is read: never the user, the
+     * credentials, the token or the request (no username, email, id or IP).
+     * A lockout has no guard and counts under `auth.defaults.guard`, a
+     * Sanctum token authentication under `sanctum`.
+     */
+    public function recordAuthentication(Login|Failed|Lockout|TokenAuthenticated $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if (! $this->isSampled(RuntimeTypeEnum::Auth)) {
+                return;
+            }
+
+            $guard = match (true) {
+                $event instanceof Lockout => $this->defaultAuthGuard,
+                $event instanceof TokenAuthenticated => self::SANCTUM_GUARD,
+                default => $this->authGuard($event->guard),
+            };
+
+            $this->record(RuntimeTypeEnum::Auth, ['guard' => $guard], [
+                'errorCount' => $event instanceof Failed ? 1 : 0,
+                'loginCount' => $event instanceof Login ? 1 : 0,
+                'lockoutCount' => $event instanceof Lockout ? 1 : 0,
+                'tokenAuthenticationCount' => $event instanceof TokenAuthenticated ? 1 : 0,
+            ]);
+        });
+    }
+
+    private function authGuard(mixed $guard): string
+    {
+        return is_string($guard) && preg_match(self::AUTH_GUARD_PATTERN, $guard) === 1 ? $guard : 'unknown';
     }
 
     /**

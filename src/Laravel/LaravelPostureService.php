@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Laravel;
 
 use Closure;
+use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Queue\Failed\FailedJobProviderInterface;
 use Illuminate\Queue\Failed\NullFailedJobProvider;
 use PDO;
+use Qiick\Excubia\Checks\LaravelApiTokensCheck;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
@@ -71,6 +74,11 @@ use Throwable;
  * Paddle is installed, it reads whether the webhook secret is set, whether
  * the keys start with a test prefix (or Paddle's sandbox flag), and whether
  * a route reaches Cashier's webhook controller: booleans only.
+ *
+ * For `laravel-api-tokens` (#219), when Laravel Sanctum or Passport is
+ * installed, it reads their token settings and key files and counts
+ * tokens and personal access clients with read-only queries (3 s statement
+ * timeout on MySQL and PostgreSQL): counts and booleans only.
  *
  * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
  * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
@@ -154,6 +162,30 @@ final class LaravelPostureService
     private const STRIPE_TEST_KEY_PREFIXES = ['sk_test_', 'rk_test_', 'pk_test_'];
 
     private const PADDLE_TEST_KEY_PREFIXES = ['pdl_sdbx_', 'test_'];
+
+    /**
+     * Laravel Sanctum and Laravel Passport (#219): the classes that tell each
+     * one is installed (neither is a dependency), and the tables they create.
+     */
+    private const SANCTUM = 'Laravel\\Sanctum\\Sanctum';
+
+    private const PASSPORT = 'Laravel\\Passport\\Passport';
+
+    private const SANCTUM_TOKEN_TABLE = 'personal_access_tokens';
+
+    private const PASSPORT_CLIENT_TABLE = 'oauth_clients';
+
+    /**
+     * The private key file modes league/oauth2-server (Passport's OAuth
+     * server) accepts without a notice; `passport:keys` writes 0600.
+     */
+    private const PASSPORT_KEY_MODES = [0400, 0440, 0600, 0640, 0660];
+
+    /**
+     * Statement timeout, in milliseconds, of the token queries (MySQL and
+     * PostgreSQL).
+     */
+    private const QUERY_TIMEOUT_MS = 3000;
 
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
@@ -245,6 +277,7 @@ final class LaravelPostureService
             octane: $isProbed('laravel-octane-config') ? $this->octane($config) : null,
             reverb: $isProbed('laravel-reverb') ? $this->reverb($config) : null,
             cashier: $isProbed('laravel-cashier') ? $this->cashier($application, $config) : null,
+            apiTokens: $isProbed('laravel-api-tokens') ? $this->apiTokens($application, $config, $now) : null,
         );
     }
 
@@ -335,6 +368,215 @@ final class LaravelPostureService
         }
 
         return false;
+    }
+
+    /**
+     * Laravel Sanctum and Passport token posture (#219), one entry per
+     * installed package, or null when neither is (neither is a dependency):
+     * its class is missing, or its `sanctum` / `passport` configuration is
+     * (both service providers always merge it).
+     *
+     * @return list<array<string, bool|int|string|null>>|null
+     */
+    private function apiTokens(Application $application, Repository $config, DateTimeImmutable $now): ?array
+    {
+        $packages = [];
+        $sanctum = $config->get('sanctum');
+
+        if (class_exists(self::SANCTUM) && is_array($sanctum)) {
+            $packages[] = $this->sanctum($application, $config, $sanctum, $now);
+        }
+
+        if (class_exists(self::PASSPORT) && is_array($config->get('passport'))) {
+            $packages[] = $this->passport($application, $config);
+        }
+
+        return $packages === [] ? null : $packages;
+    }
+
+    /**
+     * Sanctum's `expiration` (minutes; null or 0 means tokens never expire,
+     * as for Sanctum's guard) and `stateful` domains (a `*` pattern, or no
+     * domain at all), plus counts from `personal_access_tokens` on the
+     * default connection: the tokens still valid (no past `expires_at`,
+     * younger than `expiration`), those without `expires_at`, those not
+     * used for STALE_TOKEN_DAYS (`last_used_at`, or `created_at` for a
+     * token never used) and those never used. Timestamps are compared in
+     * the app's timezone, as Eloquent writes them. A missing or unreadable
+     * table leaves the counts null. Never a token, a name, an ability, a
+     * user id or a domain.
+     *
+     * ponytail: the table is always `personal_access_tokens` on the default
+     * connection; read the model of `Sanctum::$personalAccessTokenModel`
+     * if an app with a custom token table ever needs it.
+     *
+     * @param  array<mixed>  $sanctum
+     * @return array{provider: 'sanctum', expirationMinutes: int|null, hasStatefulWildcard: bool, isStatefulEmpty: bool, tokenCount: int|null, nonExpiringTokenCount: int|null, staleTokenCount: int|null, neverUsedTokenCount: int|null}
+     */
+    private function sanctum(Application $application, Repository $config, array $sanctum, DateTimeImmutable $now): array
+    {
+        $expiration = $sanctum['expiration'] ?? null;
+        $expirationMinutes = is_numeric($expiration) && (int) $expiration > 0 ? (int) $expiration : null;
+        $domains = array_values(array_filter(
+            array_map(static fn (mixed $domain): string => is_string($domain) ? trim($domain) : '', (array) ($sanctum['stateful'] ?? [])),
+            static fn (string $domain): bool => $domain !== '',
+        ));
+        $local = $now->setTimezone(new DateTimeZone(date_default_timezone_get()));
+        $timestamp = static fn (DateTimeImmutable $at): string => $at->format('Y-m-d H:i:s');
+        $default = $config->get('database.default');
+        $counts = is_string($default) ? $this->probeDatabase($application, $config, $default, function (ConnectionInterface $connection) use ($expirationMinutes, $local, $timestamp): ?array {
+            if (! $connection->getSchemaBuilder()->hasTable(self::SANCTUM_TOKEN_TABLE)) {
+                return null;
+            }
+
+            $query = $connection->table(self::SANCTUM_TOKEN_TABLE)
+                ->selectRaw(
+                    $this->queryTimeoutHint($connection).'count(*) as token_count, '
+                    .'coalesce(sum(case when expires_at is null then 1 else 0 end), 0) as non_expiring_count, '
+                    .'coalesce(sum(case when coalesce(last_used_at, created_at) < ? then 1 else 0 end), 0) as stale_count, '
+                    .'coalesce(sum(case when last_used_at is null then 1 else 0 end), 0) as never_used_count',
+                    [$timestamp($local->modify('-'.LaravelApiTokensCheck::STALE_TOKEN_DAYS.' days'))],
+                )
+                ->where(static fn ($where) => $where->whereNull('expires_at')->orWhere('expires_at', '>', $timestamp($local)));
+
+            if ($expirationMinutes !== null) {
+                $query->where('created_at', '>', $timestamp($local->modify('-'.$expirationMinutes.' minutes')));
+            }
+
+            $row = (array) $this->withQueryTimeout($connection, static fn (): mixed => $query->first());
+
+            return [
+                'tokenCount' => (int) ($row['token_count'] ?? 0),
+                'nonExpiringTokenCount' => (int) ($row['non_expiring_count'] ?? 0),
+                'staleTokenCount' => (int) ($row['stale_count'] ?? 0),
+                'neverUsedTokenCount' => (int) ($row['never_used_count'] ?? 0),
+            ];
+        }) : null;
+
+        return [
+            'provider' => 'sanctum',
+            'expirationMinutes' => $expirationMinutes,
+            'hasStatefulWildcard' => array_filter($domains, static fn (string $domain): bool => str_contains($domain, '*')) !== [],
+            'isStatefulEmpty' => $domains === [],
+            'tokenCount' => $counts['tokenCount'] ?? null,
+            'nonExpiringTokenCount' => $counts['nonExpiringTokenCount'] ?? null,
+            'staleTokenCount' => $counts['staleTokenCount'] ?? null,
+            'neverUsedTokenCount' => $counts['neverUsedTokenCount'] ?? null,
+        ];
+    }
+
+    /**
+     * Passport's keys, token lifetimes and personal access clients. A key
+     * comes from `passport.private_key` / `passport.public_key`, else from
+     * the file `Passport::keyPath()` names, as Passport's provider loads it;
+     * the private key file is too open when its mode is not one that
+     * league/oauth2-server accepts (0400, 0440, 0600, 0640, 0660; not
+     * checked on Windows). The lifetimes are `Passport::$tokensExpireIn`,
+     * `$refreshTokensExpireIn` and `$personalAccessTokensExpireIn`, one year
+     * each when unset. Active personal access clients are counted in
+     * `oauth_clients` on `passport.connection`: `grant_types` holding
+     * `personal_access` (Passport 13), or `personal_access_client`
+     * (Passport 12). Never a key, a path, a client name, id or secret.
+     *
+     * @return array{provider: 'passport', hasKeys: bool, isPrivateKeyTooOpen: bool|null, accessTokenLifetimeMinutes: int, refreshTokenLifetimeMinutes: int, personalAccessTokenLifetimeMinutes: int, personalAccessClientCount: int|null}
+     */
+    private function passport(Application $application, Repository $config): array
+    {
+        $passport = self::PASSPORT;
+        $keyFile = static function (string $type) use ($passport, $config): ?string {
+            $key = $config->get('passport.'.$type.'_key');
+
+            if (is_string($key) && trim($key) !== '') {
+                return null;
+            }
+
+            try {
+                $file = $passport::keyPath('oauth-'.$type.'.key');
+            } catch (Throwable) {
+                return '';
+            }
+
+            return is_string($file) && is_file($file) ? $file : '';
+        };
+        $privateKeyFile = $keyFile('private');
+        $publicKeyFile = $keyFile('public');
+        $connection = $config->get('passport.connection');
+        $connection = is_string($connection) && $connection !== '' ? $connection : $config->get('database.default');
+
+        return [
+            'provider' => 'passport',
+            'hasKeys' => $privateKeyFile !== '' && $publicKeyFile !== '',
+            'isPrivateKeyTooOpen' => is_string($privateKeyFile) && $privateKeyFile !== '' && PHP_OS_FAMILY !== 'Windows'
+                ? ! in_array(@fileperms($privateKeyFile) & 0777, self::PASSPORT_KEY_MODES, true)
+                : null,
+            'accessTokenLifetimeMinutes' => $this->passportLifetimeMinutes('tokensExpireIn'),
+            'refreshTokenLifetimeMinutes' => $this->passportLifetimeMinutes('refreshTokensExpireIn'),
+            'personalAccessTokenLifetimeMinutes' => $this->passportLifetimeMinutes('personalAccessTokensExpireIn'),
+            'personalAccessClientCount' => is_string($connection) ? $this->probeDatabase($application, $config, $connection, function (ConnectionInterface $connection): ?int {
+                $schema = $connection->getSchemaBuilder();
+
+                if (! $schema->hasTable(self::PASSPORT_CLIENT_TABLE)) {
+                    return null;
+                }
+
+                $query = $connection->table(self::PASSPORT_CLIENT_TABLE)
+                    ->selectRaw($this->queryTimeoutHint($connection).'count(*) as client_count')
+                    ->where('revoked', false);
+                $schema->hasColumn(self::PASSPORT_CLIENT_TABLE, 'grant_types')
+                    ? $query->where('grant_types', 'like', '%personal_access%')
+                    : $query->where('personal_access_client', true);
+                $row = (array) $this->withQueryTimeout($connection, static fn (): mixed => $query->first());
+
+                return (int) ($row['client_count'] ?? 0);
+            }) : null,
+        ];
+    }
+
+    /**
+     * One of Passport's lifetime properties in minutes (counted from the
+     * Unix epoch), or Passport's default of one year when it is unset.
+     */
+    private function passportLifetimeMinutes(string $property): int
+    {
+        $passport = self::PASSPORT;
+        $interval = property_exists($passport, $property) ? $passport::${$property} : null;
+        $interval = $interval instanceof DateInterval ? $interval : new DateInterval('P1Y');
+
+        return intdiv((new DateTimeImmutable('@0'))->add($interval)->getTimestamp(), 60);
+    }
+
+    /**
+     * MySQL's optimizer hint that stops the select after QUERY_TIMEOUT_MS,
+     * placed right after `select`; empty for the other drivers.
+     */
+    private function queryTimeoutHint(ConnectionInterface $connection): string
+    {
+        return $connection instanceof Connection && $connection->getDriverName() === 'mysql'
+            ? '/*+ MAX_EXECUTION_TIME('.self::QUERY_TIMEOUT_MS.') */ '
+            : '';
+    }
+
+    /**
+     * Runs `$select`, on PostgreSQL inside a transaction with a local
+     * `statement_timeout` of QUERY_TIMEOUT_MS that ends with it. MySQL uses
+     * queryTimeoutHint(); SQLite reads a local file.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $select
+     * @return TResult
+     */
+    private function withQueryTimeout(ConnectionInterface $connection, Closure $select): mixed
+    {
+        if (! $connection instanceof Connection || $connection->getDriverName() !== 'pgsql') {
+            return $select();
+        }
+
+        return $connection->transaction(static function () use ($connection, $select): mixed {
+            $connection->statement('set local statement_timeout = '.self::QUERY_TIMEOUT_MS);
+
+            return $select();
+        });
     }
 
     /**

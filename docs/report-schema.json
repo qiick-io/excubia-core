@@ -929,6 +929,23 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-api-tokens"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/laravelApiTokensDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1640,6 +1657,42 @@
                     "description": "Stripe: a key starts with sk_test_, rk_test_ or pk_test_. Paddle: cashier.sandbox is on, or the API key or client-side token is a sandbox one (pdl_sdbx_, test_). Reported as a problem in production only.",
                     "type": "boolean"
                 }
+            }
+        },
+        "laravelApiTokensDetails": {
+            "description": "laravel-api-tokens finding (#219): the token posture of Laravel Sanctum or Laravel Passport, by provider. Counts, minutes and booleans only: never a token, a token name or ability, a user id, a key, a path or a domain.",
+            "oneOf": [
+                { "$ref": "#/$defs/laravelApiTokensSanctumDetails" },
+                { "$ref": "#/$defs/laravelApiTokensPassportDetails" }
+            ]
+        },
+        "laravelApiTokensSanctumDetails": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "expirationMinutes", "hasStatefulWildcard", "isStatefulEmpty", "tokenCount", "nonExpiringTokenCount", "staleTokenCount", "neverUsedTokenCount"],
+            "properties": {
+                "provider": { "const": "sanctum" },
+                "expirationMinutes": { "type": ["integer", "null"], "minimum": 1, "description": "sanctum.expiration in minutes; null when tokens never expire unless they carry their own expires_at." },
+                "hasStatefulWildcard": { "type": "boolean", "description": "A sanctum.stateful entry contains *." },
+                "isStatefulEmpty": { "type": "boolean", "description": "sanctum.stateful names no domain." },
+                "tokenCount": { "type": ["integer", "null"], "minimum": 0, "description": "Personal access tokens still valid (no past expires_at, younger than expirationMinutes). Null when personal_access_tokens is missing or could not be read; so are the three counts below." },
+                "nonExpiringTokenCount": { "type": ["integer", "null"], "minimum": 0, "description": "Of those, tokens without expires_at." },
+                "staleTokenCount": { "type": ["integer", "null"], "minimum": 0, "description": "Of those, tokens not used for 90 days or more (last_used_at, or created_at for a token never used)." },
+                "neverUsedTokenCount": { "type": ["integer", "null"], "minimum": 0, "description": "Of those, tokens never used (last_used_at null), whatever their age." }
+            }
+        },
+        "laravelApiTokensPassportDetails": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "hasKeys", "isPrivateKeyTooOpen", "accessTokenLifetimeMinutes", "refreshTokenLifetimeMinutes", "personalAccessTokenLifetimeMinutes", "personalAccessClientCount"],
+            "properties": {
+                "provider": { "const": "passport" },
+                "hasKeys": { "type": "boolean", "description": "Both keys are available: passport.private_key / passport.public_key, else the oauth-private.key / oauth-public.key files." },
+                "isPrivateKeyTooOpen": { "type": ["boolean", "null"], "description": "The private key file mode is not 0400, 0440, 0600, 0640 or 0660 (what league/oauth2-server accepts). Null when the key comes from the configuration, the file is missing, or on Windows." },
+                "accessTokenLifetimeMinutes": { "type": "integer", "minimum": 0, "description": "Passport::tokensExpireIn() in minutes (one year by default)." },
+                "refreshTokenLifetimeMinutes": { "type": "integer", "minimum": 0, "description": "Passport::refreshTokensExpireIn() in minutes (one year by default)." },
+                "personalAccessTokenLifetimeMinutes": { "type": "integer", "minimum": 0, "description": "Passport::personalAccessTokensExpireIn() in minutes (one year by default)." },
+                "personalAccessClientCount": { "type": ["integer", "null"], "minimum": 0, "description": "Active (not revoked) personal access clients in oauth_clients. Null when the table is missing or could not be read." }
             }
         },
         "upgradeStep": {

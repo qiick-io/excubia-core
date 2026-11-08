@@ -554,6 +554,10 @@
                 "billing": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Laravel Cashier (laravel/cashier for Stripe, laravel/cashier-paddle) webhooks counted per provider and event type: received, handled, failed (a 5xx before the handler returned), handling time, and the payment signals failed payment, payment action required and canceled subscription. Records nothing unless Cashier is installed. Never anything of the payload but its event type: no amounts, currencies, customer or subscription ids, emails or cards. Off by default (#217)."
+                },
+                "auth": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel authentication counted per guard: successful logins (Login), failed logins (Failed), lockouts (Lockout, counted under auth.defaults.guard) and, with laravel/sanctum installed, Sanctum token authentications (TokenAuthenticated, guard sanctum). Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default (#219)."
                 }
             }
         },
