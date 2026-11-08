@@ -68,6 +68,7 @@ final class SarifRenderer implements ReportRendererContract
         'laravel-redis-memory' => 'config/database.php',
         'php-opcache' => 'composer.json',
         'php-production-ini' => 'composer.json',
+        'laravel-octane-config' => 'config/octane.php',
     ];
 
     /**

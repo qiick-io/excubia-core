@@ -69,6 +69,7 @@ In run order, the same list and order as `checkIds` in the snapshot (`PublicCont
 | 35 | `laravel-redis-memory` |
 | 36 | `php-opcache` |
 | 37 | `php-production-ini` |
+| 38 | `laravel-octane-config` |
 
 Ids 1 to 14 are the 1.0.0-beta.1 set; every later id was appended, additively. The id and its meaning (what it checks) are the contract; its default severity can change in a minor (`docs/VERSIONING.md`). New check ids are appended, so every existing id keeps its position. `upgrade-plan` is a report section, not a check id.
 
@@ -145,6 +146,8 @@ Additive runtime aggregate type from #188 (versions stay `1`): `health`, minute-
 Additive runtime aggregate types from #198 (versions stay `1`), recorded only when the Laravel AI SDK (`laravel/ai`) is installed: `ai`, with the dimensions `operation` (`agent`, `image`, `embeddings`, `transcription`, `reranking`, `audio`), `agent` (agent class, present for `agent` only), `provider` and `model`; the metric fields `count` (attempts), `errorCount` (failed attempts), `failoverCount` (summed on merge), `totalMs`, `maxMs` and the optional `histogram`, and the nullable usage counts `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens`, `reasoningTokens`, `imageInputTokens`, `imageOutputTokens` (integers), `audioSeconds` and `searchUnits` (numbers), always present, summed on merge and null only when every entry is null. `aiTool`, with the dimensions `agent` and `tool` (class names), `count`, `errorCount` (`ToolFailed`), `totalMs`, `maxMs` and the optional `histogram`. `$defs.ai`, `$defs.aiTool`, `$defs.usageCount` and `$defs.usageAmount` in `docs/runtime-schema.json`, and the `excubia.json` keys `runtime.ai` and `runtime.aiTools` (`enabled`, default `false`; `sampleRate`).
 
 Additive `ai` operation from #201 (versions stay `1`): `operation` `classification`, from the Laravel AI SDK's `Classifying`, `Classified` and `ClassificationFailed` events, with the same timing (start to done or failed through the invocation id), the same failover counting (`ProviderFailedOver`) and the usage of its `TextUsage`; no `agent`. Never the classified text or data, the questions, attachments or answers. An app must accept an `operation` value it does not know.
+
+Additive check id and runtime aggregate type from #213 (versions stay `1`), for Laravel Octane, which is not a dependency: the check id `laravel-octane-config` (appended, Artisan only, skipped without `laravel/octane`) with the finding `details` `server` and `maxRequests` (`$defs.laravelOctaneConfigDetails` in `docs/report-schema.json`). The runtime type `octane`, recorded only when `laravel/octane` is installed, with the dimensions `server` (as for `server`), `octaneServer` (`swoole`, `roadrunner`, `frankenphp`, `unknown`) and `workerType` (`http`, `task`), and the metric fields `count`, `errorCount` (worker errors), `workerStarts`, `workerStops`, `requests`, `tasks`, `ticks` and `totalRequestsAtStop` (summed on merge), `maxRequestsAtStop` (integer, the larger wins) and `maxMb` and `maxGrowthMb` (MiB, the larger wins), all always present. `$defs.octane` in `docs/runtime-schema.json`, and the `excubia.json` key `runtime.octane` (`enabled`, default `false`; `sampleRate`). An app must accept an `octaneServer` or `workerType` value it does not know.
 
 ### Health endpoint
 

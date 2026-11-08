@@ -27,6 +27,7 @@ use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
 use Qiick\Excubia\Checks\LaravelLogLevelCheck;
 use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelNextMajorBlockerCheck;
+use Qiick\Excubia\Checks\LaravelOctaneConfigCheck;
 use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
 use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
 use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
@@ -278,6 +279,7 @@ final class HealthCheckRunnerService
             new LaravelRedisMemoryCheck,
             new PhpOpcacheCheck,
             new PhpProductionIniCheck,
+            new LaravelOctaneConfigCheck,
         ];
     }
 }

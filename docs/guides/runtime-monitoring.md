@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) and Laravel Octane workers (restarts, requests, errors and memory growth per worker). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -54,7 +54,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "commands": { "enabled": true },
     "health": { "enabled": true },
     "ai": { "enabled": true },
-    "aiTools": { "enabled": true }
+    "aiTools": { "enabled": true },
+    "octane": { "enabled": true }
   }
 }
 ```
@@ -118,10 +119,11 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `health` | One sample of the fast Artisan checks per `excubia:push-runtime` run, at most once a minute, on each server | The check failed |
 | `ai` | Laravel AI SDK: `PromptingAgent` / `StreamingAgent` → `AgentPrompted` / `AgentStreamed` / `AgentFailed` / `AgentFailedOver`, and the start, done and failed events of images, embeddings, transcriptions, reranking, audio and classification (`Classifying` → `Classified` / `ClassificationFailed`), plus `ProviderFailedOver` | The attempt failed |
 | `aiTools` | Laravel AI SDK: `ToolInvoked` / `ToolFailed` | The tool threw |
+| `octane` | Laravel Octane: `WorkerStarting`, `RequestReceived` / `RequestTerminated`, `TaskReceived`, `TickReceived`, `WorkerErrorOccurred`, `WorkerStopping` | A worker error |
 
 Notes on the newer types:
 
-- **Memory** is PHP's peak (`memory_get_peak_usage()`) in MiB; the average is `totalMb / count`. `jobMemory` resets the peak when each job starts, so it reports the job's own peak; a request that runs sync jobs still reports its whole peak. Under Octane the request peak only grows across requests.
+- **Memory** is PHP's peak (`memory_get_peak_usage()`) in MiB; the average is `totalMb / count`. `jobMemory` resets the peak when each job starts, so it reports the job's own peak; a request that runs sync jobs still reports its whole peak. Under Octane the request peak only grows across requests; use `octane` for per-worker memory.
 - **Queue wait** needs the push time. With `queueWait` on, Excubia adds an `excubiaQueuedAt` timestamp to every job payload pushed by the app; Horizon's `pushedAt` is used when that key is missing. The job's delay is subtracted, retries are not counted, and clock differences between the pushing server and the worker show up in the wait.
 - **Cache** keys are never sent. Only the store name and the prefix before the first `:` or `.` are kept, through the exception message masks; a prefix that still looks like an id, a token or personal data becomes `[masked]`. Use prefixes such as `users:` or `reports.` in your keys to get useful rows.
 - **Mail failures** (#175): Laravel has no event for a failed mail, but its mailer fires `MessageSent` right after the transport returns. A `MessageSending` with no `MessageSent` by the end of its scope is counted as one failed mail: the scope ends at the next send in the same process, when the queued job or job attempt ends (`JobProcessed`, `JobExceptionOccurred`, `JobFailed`, so a failed `SendQueuedMailable` or queued mail notification counts once per attempt), when an Artisan command ends, and when the request or process terminates. This works with [exception capture](./exception-capture.md) off and does not depend on it: with capture on, the reported transport exception is not counted again, and a failure your code catches is still counted. Limits: only sends through Laravel's mailer are seen (a Symfony transport used directly is not); a `MessageSending` listener of your own that cancels the send by returning `false` or throws is counted as a failed mail when it runs after Excubia's; a queued listener on the sync driver that runs inside `MessageSending` counts that send as failed and then as sent; a worker killed by a job timeout during the send loses it.
@@ -208,11 +210,32 @@ With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) i
 - Read: class names, provider and model names, invocation ids (in memory only, to time an operation) and the usage counts. Never the prompt, the instructions, attachments, messages, the response text, reasoning, tool arguments or results, conversation ids or users, or exception messages.
 - Cost (`vendor/bin/pest --group=benchmark`): about 0.02 ms per agent run with one tool call in the collector, and 0.03–0.04 ms end to end through the SDK's fake gateway, against provider calls that take hundreds of milliseconds.
 
+### Laravel Octane
+
+[Laravel Octane](https://laravel.com/docs/octane) keeps each worker alive between requests, so a memory leak or stale state builds up per worker until the worker restarts after `max_requests`. `runtime.octane` (1.0.0-beta.4, #213) shows it per worker type. Excubia does not depend on Octane: without `laravel/octane` installed the type registers nothing and records nothing, whatever `excubia.json` says.
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "octane": { "enabled": true }
+  }
+}
+```
+
+- Rows are keyed by `server` (the server name or hashed id, as for `server`), `octaneServer` (`swoole`, `roadrunner` or `frankenphp`, from the client Octane binds in the worker, else `octane.server`; `unknown` otherwise) and `workerType` (`task` for a Swoole task worker, which runs the tasks and ticks, else `http`).
+- `workerStarts` and `workerStops` count `WorkerStarting` and `WorkerStopping` (`max_requests` reached, a reload or a shutdown; a worker that crashed fires none, so starts well above stops is a crash loop). `requests`, `tasks` and `ticks` count what the workers handled; `errorCount` counts `WorkerErrorOccurred` (an exception that escaped a request, task or tick; the request it ended still counts in `requests`).
+- `maxMb` is the most memory in use (`memory_get_usage()`) after a request, read at `RequestTerminated`; `maxGrowthMb` the largest growth of it since the worker's first request. A `maxGrowthMb` that keeps rising from minute to minute is the leak signal.
+- `totalRequestsAtStop` and `maxRequestsAtStop` are the requests each stopped worker received since it started (`totalRequestsAtStop / workerStops` is the average). Compare them with `max_requests`, which the `laravel-octane-config` check reports with the server type; it warns in production when `max_requests` is unset or 0.
+- The buffer is written when a worker starts, errs or stops, at the end of each request (the request's own row lands with the next one), and at most once a minute from tasks and ticks.
+- Read: the Octane client's class, the Swoole server's `taskworker` flag, `octane.server`, `memory_get_usage()` and a request counter. Never URLs, routes, the request, the response, task data, exception messages, worker ids or PIDs.
+- Cost (`vendor/bin/pest --group=benchmark`): about 0.01 ms per request and tick in the collector, through Laravel's dispatcher included.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

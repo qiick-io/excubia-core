@@ -303,6 +303,14 @@
                                 "text": "Production php.ini"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-octane-config",
+                            "name": "Octane configuration",
+                            "shortDescription": {
+                                "text": "Octane configuration"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

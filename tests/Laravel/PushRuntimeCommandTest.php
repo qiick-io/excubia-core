@@ -34,6 +34,7 @@ use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\TextResponse;
 use Laravel\Ai\Tools\ToolNameResolver;
+use Laravel\Octane\Events\WorkerStarting;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
@@ -49,6 +50,8 @@ use Qiick\Excubia\Tests\Support\FakeServerResources;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
+
+require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 
 const RUNTIME_ENDPOINT = 'https://excubia.example.test/api/runtime';
 const RUNTIME_TOKEN = 'runtime-token-secret';
@@ -323,6 +326,7 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     event(new CommandStarting('migrate', new ArrayInput([]), new NullOutput));
     event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 1));
     (new FakeAiAgent)->prompt('hello');
+    event(new WorkerStarting($this->app));
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);
