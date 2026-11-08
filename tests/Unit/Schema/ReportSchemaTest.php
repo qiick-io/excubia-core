@@ -146,8 +146,9 @@ it('documents the details keys per check id', function () {
             'php-opcache',
             'php-production-ini',
         ])
-        ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem', 'kind'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($schema['$defs']['dependencyLicensesDetails']['properties']['kind']['enum'])->toBe(['denied', 'copyleft', 'unknown'])
         ->and($keys('envExampleMissingKeyDetails'))->toBe(['key', 'configFiles'])
         ->and($keys('envExampleUnusedKeysDetails'))->toBe(['keys'])
         ->and($keys('outdatedDetails'))->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])

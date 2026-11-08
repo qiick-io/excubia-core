@@ -155,7 +155,7 @@ The JSON report also carries, as optional fields of schema version 1:
 | `laravel-cors-wildcard` | `hasCredentials` |
 | `laravel-production-drivers` | `component` (`queue`, `cache`, `session`, `mail`), `driver` |
 | `laravel-dev-packages` | `package` |
-| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`) |
+| `dependency-licenses` | `package`, `lockedVersion`, `licenses` (list of SPDX ids or expressions as declared, empty when none), `ecosystem` (`composer` or `npm`), `kind` (`denied`, `copyleft` or `unknown`, #204) |
 | `laravel-database` | `connection` |
 | `laravel-cache` | `store` |
 | `laravel-storage` | `directory` (`storage` or `bootstrap/cache`) |

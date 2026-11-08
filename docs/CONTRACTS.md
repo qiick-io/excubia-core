@@ -158,6 +158,8 @@ Additive schedule inventory from #146 (versions stay `1`): an optional top-level
 
 Additive report fields from #21 (`schemaVersion` stays `1`): top-level `javascriptLockfile` and `npm-advisories` `details.lockfile`, both `package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`.
 
+Additive report field from #204 (`schemaVersion` stays `1`): `dependency-licenses` `details.kind`, `denied` (in `checks.dependency-licenses.denied`, fail, high), `copyleft` (strong copyleft, warn, medium) or `unknown` (missing or unknown license, warn, low). Every finding carries it from 1.0.0-beta.4; it is optional in the schema, so an app falls back to status and severity for reports from older versions.
+
 ### GitHub Action
 
 Inputs (default): `path` (`.`), `fail-on` (`critical`), `only` (empty), `skip` (empty), `github-token` (empty), `upload-sarif` (`true`), `php-version` (`8.4`). Outputs: `sarif-file`, `exit-code` (the `check` exit code above).
