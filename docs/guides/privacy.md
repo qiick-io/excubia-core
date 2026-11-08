@@ -55,7 +55,7 @@ Each check that would send names (`composer-advisories`, `npm-advisories`, `comp
 
 ## Push
 
-`excubia push` / `excubia:push` send the JSON report (`docs/report-schema.json`) to `POST {url}/api/reports`: package names and versions, runtime versions and findings (check id, severity, status, subject, message, fix hint, evidence URL, advisory id), inside an envelope with `protocolVersion`, `batchId` and `sentAt`. Reports and runtime and exception batches also carry the `release` identifier you or your platform set (`release`, `EXCUBIA_RELEASE`, the CI commit variables or, for the standalone CLI, the commit id read from `.git`), and `push --deploy` adds `deployedAt`. No branch name, author or commit message is read or sent.
+`excubia push` / `excubia:push` send the JSON report (`docs/report-schema.json`) to `POST {url}/api/reports`: package names and versions, runtime versions and findings (check id, severity, status, subject, message, fix hint, evidence URL, advisory id), inside an envelope with `protocolVersion`, `batchId` and `sentAt`. Reports and runtime and exception batches also carry the `release` identifier you or your platform set (`release`, `EXCUBIA_RELEASE`, the CI commit variables or, for the standalone CLI, the commit id read from `.git`), and `push --deploy` adds `deployedAt`. No branch name, author or commit message is read or sent. Reports from the Artisan commands and runtime batches also carry the Laravel environment name (`app.env`, for example `production`), only when it is a short name without dots, so never a hostname.
 
 - Nothing is sent until an app URL and a project token are configured.
 - HTTPS only; plain HTTP only to `localhost`, `127.0.0.1` and `[::1]`.

@@ -244,13 +244,33 @@ it('adds the release to the runtime batch, from excubia.json or the environment,
     $runtime = $client->postedPayloads[0]['runtime'];
 
     expect($runtime['release'] ?? null)->toBe($expected)
-        ->and(array_keys($runtime))->toBe($expected === null ? ['bucketSeconds', 'aggregates'] : ['bucketSeconds', 'release', 'aggregates'])
+        ->and(array_keys($runtime))->toBe($expected === null ? ['bucketSeconds', 'environment', 'aggregates'] : ['bucketSeconds', 'release', 'environment', 'aggregates'])
         ->and(runtimeSchemaErrors($runtime))->toBe([]);
 })->with([
     'environment' => [[], 'v2.3.4', 'v2.3.4'],
     'config wins' => [['release' => 'v9.0.0'], 'v2.3.4', 'v9.0.0'],
     'invalid' => [[], 'not valid!', null],
     'none' => [[], null, null],
+]);
+
+it('adds the Laravel environment to the runtime batch and omits one that is not a short name', function (string $environment, ?string $expected) {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client);
+    recordOneRequest($this);
+    $this->app['env'] = $environment;
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtime = $client->postedPayloads[0]['runtime'];
+
+    expect($runtime['environment'] ?? null)->toBe($expected)
+        ->and(runtimeSchemaErrors($runtime))->toBe([]);
+})->with([
+    'production' => ['production', 'production'],
+    'staging' => ['staging', 'staging'],
+    'hostname' => ['app.example.com', null],
+    'too long' => [str_repeat('a', 65), null],
+    'spaces' => ['my env', null],
 ]);
 
 it('does not read .git for runtime batches', function () {

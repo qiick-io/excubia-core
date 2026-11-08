@@ -150,7 +150,7 @@ final class HealthCheckRunnerService
             $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
-        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults), javascriptLockfile: $snapshot->javascriptLockfileName(), schedule: $snapshot->laravelPosture?->scheduledTasks);
+        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults), javascriptLockfile: $snapshot->javascriptLockfileName(), schedule: $snapshot->laravelPosture?->scheduledTasks, environment: HealthReportData::environmentName($snapshot->laravelPosture?->environment));
         $report = $raw->withoutIgnoredFindings($configuration, $this->today);
 
         return [
@@ -162,6 +162,7 @@ final class HealthCheckRunnerService
                 $report->project,
                 javascriptLockfile: $report->javascriptLockfile,
                 schedule: $report->schedule,
+                environment: $report->environment,
             ),
             'expiredIgnoreWarnings' => $configuration->expiredIgnoreWarnings($raw->findings(), $this->today),
         ];

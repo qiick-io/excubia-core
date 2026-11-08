@@ -109,7 +109,7 @@ The app marks a project stale when no report arrives within a window you configu
 ```
 
 - `batchId` is a new UUID per run, kept across HTTP retries, so a retried send is stored once.
-- `report` is the same document as `--format=json` ([`docs/report-schema.json`](../report-schema.json)): package names and versions, runtime versions and findings, with `generatedAt`, `excubiaVersion`, `release` and `deployedAt` (`--deploy` only) when set, `project` (each runtime's version, endoflife.date cycle and support end dates, present on every report so the EOL calendar covers healthy projects) and the per-finding `fingerprint` and `details` the app uses for its fleet views. Envelope schema: [`docs/push-schema.json`](../push-schema.json).
+- `report` is the same document as `--format=json` ([`docs/report-schema.json`](../report-schema.json)): package names and versions, runtime versions and findings, with `generatedAt`, `excubiaVersion`, `release`, `deployedAt` (`--deploy` only) and `environment` (the Laravel `app.env`, Artisan commands only) when set, `project` (each runtime's version, endoflife.date cycle and support end dates, present on every report so the EOL calendar covers healthy projects) and the per-finding `fingerprint` and `details` the app uses for its fleet views. Envelope schema: [`docs/push-schema.json`](../push-schema.json).
 - The token is never printed, cached or written to a report.
 
 Full list per feature: [privacy](./privacy.md).

@@ -15,6 +15,11 @@
             "pattern": "^[A-Za-z0-9._+/@-]+$",
             "description": "Optional (#129): the release when the batch was sent, one value for every entry of the batch. Release identifier of the deployed code: the release key of excubia.json, EXCUBIA_RELEASE, then GITHUB_SHA, CI_COMMIT_SHA, VERCEL_GIT_COMMIT_SHA, FORGE_DEPLOY_COMMIT or LARAVEL_CLOUD_COMMIT (no git fallback). Omitted when unknown. It is an extra dimension the app can group by."
         },
+        "environment": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Optional (#203): the Laravel environment of the sending app (app.env), for example production or staging, one value for every entry of the batch. A short name only, never a hostname: omitted when app.env does not match the pattern. Exception groups carry their own environment (docs/exception-schema.json)."
+        },
         "bucketSeconds": {
             "const": 60,
             "description": "Width of a time bucket. Every bucket starts on a whole UTC minute."
