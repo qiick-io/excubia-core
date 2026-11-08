@@ -8,6 +8,8 @@ use Illuminate\Auth\GenericUser;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyWritten;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Events\RequestHandled;
@@ -15,6 +17,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Log\Logger;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -37,11 +42,14 @@ use Laravel\Octane\Events\RequestReceived;
 use Laravel\Octane\Events\RequestTerminated;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Pennant\Events\FeatureRetrieved;
 use Laravel\Reverb\Application as ReverbApplication;
 use Laravel\Reverb\Contracts\Connection as ReverbConnection;
 use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
 use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
 use Laravel\Sanctum\Events\TokenAuthenticated;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Jobs\MakeSearchable;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -54,6 +62,8 @@ require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
 require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
 require_once dirname(__DIR__).'/Support/FakeApiTokenClasses.php';
+require_once dirname(__DIR__).'/Support/FakePennantEvents.php';
+require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -72,8 +82,10 @@ require_once dirname(__DIR__).'/Support/FakeApiTokenClasses.php';
  * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run,
  * the fifth the `octane` listeners (#213) per Octane request and tick, the
  * sixth the `reverb` listeners (#215) per Reverb message, the seventh the
- * `billingWebhook` listeners (#217) per Cashier webhook, and the eighth the
- * `auth` listeners (#219) per authentication event.
+ * `billingWebhook` listeners (#217) per Cashier webhook, the eighth the
+ * `auth` listeners (#219) per authentication event, the ninth the `scout`
+ * listeners (#221) per Scout index job and search, and the tenth the
+ * `pennant` listener (#225) per feature check.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -574,6 +586,107 @@ it('adds little per authentication event, with the auth type on', function () {
     fwrite(STDERR, sprintf(
         "\nLaravel auth over %d events (Sanctum faked; PHP %s, Laravel %s)\n  auth off:  %.4f ms/event\n  auth on:   %.4f ms/event (delta %.4f ms)\n  collector: %.4f ms/event (no flush)\n",
         3 * $authentications,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Scout index job and search, with the scout type on', function () {
+    $operations = 2 * BENCHMARK_REQUESTS;
+    $model = new class extends Model {};
+    $models = new EloquentCollection([(clone $model)->forceFill(['id' => 1]), (clone $model)->forceFill(['id' => 2])]);
+    $payload = json_encode(['displayName' => MakeSearchable::class, 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call', 'data' => ['commandName' => MakeSearchable::class, 'command' => serialize(new MakeSearchable($models))]], JSON_THROW_ON_ERROR);
+    $job = new SyncJob($this->app, $payload, 'sync', 'default');
+
+    // One index job's JobProcessing and JobProcessed, and one search builder, through the dispatcher and the container.
+    $operationMilliseconds = function () use ($operations, $job, $model): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $operations; $i++) {
+            $events->dispatch(new JobProcessing('sync', $job));
+            $events->dispatch(new JobProcessed('sync', $job));
+            $this->app->make(ScoutBuilder::class, ['model' => $model, 'query' => 'query']);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $operations);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true, 'jobs' => ['enabled' => false]]);
+    $off = $operationMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'jobs' => ['enabled' => false], 'scout' => ['enabled' => true]]);
+    $on = $operationMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $builder = new ScoutBuilder($model, 'query');
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $operations; $i++) {
+        $collector->startScoutJob(new JobProcessing('sync', $job));
+        $collector->recordScoutJob(new JobProcessed('sync', $job));
+        $collector->recordScoutSearch($builder);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $operations);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Scout over %d operations (Scout faked; PHP %s, Laravel %s)\n  scout off: %.4f ms/operation\n  scout on:  %.4f ms/operation (delta %.4f ms)\n  collector: %.4f ms/operation (an index job flushes)\n",
+        2 * $operations,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.1);
+})->group('benchmark');
+
+it('adds little per Pennant feature check, with the pennant type on', function () {
+    $checks = 4 * BENCHMARK_REQUESTS;
+    $active = new FeatureRetrieved('new-checkout', 'user:1', true);
+    $inactive = new FeatureRetrieved('App\\Features\\PurchaseButton', 'user:1', false);
+
+    // Two feature checks through the dispatcher, as Pennant's decorator fires them.
+    $dispatchMilliseconds = function () use ($checks, $active, $inactive): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $checks; $i++) {
+            $events->dispatch($active);
+            $events->dispatch($inactive);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $checks);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'pennant' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $checks; $i++) {
+        $collector->recordFeature($active);
+        $collector->recordFeature($inactive);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $checks);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Pennant over %d feature checks (Pennant faked; PHP %s, Laravel %s)\n  pennant off: %.4f ms/check\n  pennant on:  %.4f ms/check (delta %.4f ms)\n  collector:   %.4f ms/check (no flush)\n",
+        2 * $checks,
         PHP_VERSION,
         Application::VERSION,
         $off,
