@@ -895,6 +895,23 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-reverb"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/laravelReverbDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1565,6 +1582,22 @@
                 "maxRequests": {
                     "description": "octane.max_requests, null when it is not set (or not an integer).",
                     "type": ["integer", "null"]
+                }
+            }
+        },
+        "laravelReverbDetails": {
+            "description": "laravel-reverb finding (#215): whether a TCP connect to the host and port of the Reverb broadcast connection succeeded within 2 s. A boolean and milliseconds only: never the host or the port.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["isReachable", "latencyMs"],
+            "properties": {
+                "isReachable": {
+                    "type": "boolean"
+                },
+                "latencyMs": {
+                    "description": "How long the TCP connect took, in ms with 1 decimal; null when it failed.",
+                    "type": ["number", "null"],
+                    "minimum": 0
                 }
             }
         },

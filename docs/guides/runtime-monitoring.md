@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) and Laravel Octane workers (restarts, requests, errors and memory growth per worker). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) and Laravel Reverb servers (connections, messages, errors and channels per app). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -55,7 +55,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "health": { "enabled": true },
     "ai": { "enabled": true },
     "aiTools": { "enabled": true },
-    "octane": { "enabled": true }
+    "octane": { "enabled": true },
+    "reverb": { "enabled": true }
   }
 }
 ```
@@ -120,6 +121,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `ai` | Laravel AI SDK: `PromptingAgent` / `StreamingAgent` → `AgentPrompted` / `AgentStreamed` / `AgentFailed` / `AgentFailedOver`, and the start, done and failed events of images, embeddings, transcriptions, reranking, audio and classification (`Classifying` → `Classified` / `ClassificationFailed`), plus `ProviderFailedOver` | The attempt failed |
 | `aiTools` | Laravel AI SDK: `ToolInvoked` / `ToolFailed` | The tool threw |
 | `octane` | Laravel Octane: `WorkerStarting`, `RequestReceived` / `RequestTerminated`, `TaskReceived`, `TickReceived`, `WorkerErrorOccurred`, `WorkerStopping` | A worker error |
+| `reverb` | Laravel Reverb: `MessageReceived`, `MessageSent`, `ConnectionPruned`, `ChannelCreated`, `ChannelRemoved`, plus a connection sample once a minute | A `pusher:error` sent to an established connection |
 
 Notes on the newer types:
 
@@ -231,11 +233,34 @@ With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) i
 - Read: the Octane client's class, the Swoole server's `taskworker` flag, `octane.server`, `memory_get_usage()` and a request counter. Never URLs, routes, the request, the response, task data, exception messages, worker ids or PIDs.
 - Cost (`vendor/bin/pest --group=benchmark`): about 0.01 ms per request and tick in the collector, through Laravel's dispatcher included.
 
+### Laravel Reverb
+
+[Laravel Reverb](https://laravel.com/docs/reverb) is the WebSocket server `php artisan reverb:start` runs. `runtime.reverb` (1.0.0-beta.4, #215) counts what it does per app, and the `laravel-reverb` check tells whether it answers. Excubia does not depend on Reverb: without `laravel/reverb` installed the type registers nothing and records nothing, whatever `excubia.json` says.
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "reverb": { "enabled": true }
+  }
+}
+```
+
+- Rows are keyed by `server` (the server name or hashed id, as for `server`) and `appId`: the Reverb app id (`REVERB_APP_ID`), or the first 12 hex characters of its sha256 when it is not 1 to 32 characters of `A-Z a-z 0-9 _ -`.
+- `messagesReceived` counts `MessageReceived` (client messages Reverb handled, Pusher pings and subscriptions included); `messagesSent` counts `MessageSent` (one per receiving connection for a broadcast, plus protocol frames).
+- `connectionsOpened` counts the `pusher:connection_established` frames Reverb sends; `connectionsRejected` the `pusher:error` frames sent to a connection before that (over `max_connections`, or an origin not in `allowed_origins`); `errorCount` the other `pusher:error` frames (rate limit, unauthorized private or presence subscription, invalid message); `connectionsPruned` counts `ConnectionPruned` (no pong in time). Excubia compares only the fixed start of each frame, never its data.
+- Reverb fires no event when a client closes its connection, so there is no "closed" count. `maxConnections` instead samples, once a minute, the connections subscribed to at least one channel on this server, as Reverb's own `connections` API and Pulse count them.
+- `publicChannelsCreated`, `privateChannelsCreated`, `presenceChannelsCreated` and the matching `…Removed` count `ChannelCreated` and `ChannelRemoved` (the last subscriber left) by name prefix only: `private…` (`private-encrypted-` and `private-cache-` included), `presence…`, else public. The name itself is never kept.
+- The Reverb server is one long-lived process: it boots the app once and never terminates between messages. When `reverb:start` starts, Excubia adds a 60 s timer to its event loop (ReactPHP's global loop); each tick takes the connection sample and writes the buffer, the same `storage/excubia/runtime` file the scheduled `excubia:push-runtime` reads. So the scheduler on the same machine (and `storage/` directory) sends Reverb's rows like every other row, within about two minutes; a Reverb server on a machine without the scheduler needs `excubia:push-runtime` scheduled there too. What was recorded after the last tick is lost when the server is killed or stops on a signal; `reverb:restart` ends it normally and flushes.
+- Read: the app id of each connection, the first bytes of the frames Reverb sends (three fixed Pusher prefixes), the first characters of channel names and the number of subscribed connections. Never message payloads, event or channel names, socket ids, origins, app keys or secrets.
+- The `laravel-reverb` check (Artisan only) connects over TCP, with a 2 s timeout, to the host and port of the default broadcast connection when it uses the `reverb` driver (`REVERB_HOST`, `REVERB_PORT`; 443, or 80 for the `http` scheme, when the port is unset), the address your app broadcasts to. It fails at high when nothing answers, and reports only `isReachable` and `latencyMs`, never the host or port.
+- Cost (`vendor/bin/pest --group=benchmark`): about 0.005 ms per message sent or received in the collector, 0.006 ms through Laravel's dispatcher; a broadcast to 1,000 subscribers costs about 6 ms. Lower `sampleRate` for very busy servers.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

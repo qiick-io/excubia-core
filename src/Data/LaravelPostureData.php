@@ -61,6 +61,7 @@ final readonly class LaravelPostureData
      * @param  list<array{connection: string, isCacheConnection: bool, usedBytes: int|null, maxBytes: int|null, policy: string|null}>|null  $redisMemory  `INFO memory` of each Redis connection used by the default cache store, queue connection or session, or of `checks.laravel-redis-memory.connections` (#170): used and max memory in bytes (`maxBytes` 0 when unbounded) and the eviction policy; `usedBytes` null when the connection could not be read; an empty list when no Redis connection is used; null when not measured
      * @param  array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null  $phpRuntime  OPcache status and production php.ini directives (#172): the web-SAPI snapshot the health endpoint stored (`sapi` `web`, `ageMinutes` its age); null when there is none, because the CLI values of this run are never used
      * @param  array{server: string, maxRequests: int|null}|null  $octane  Laravel Octane's server (`swoole`, `roadrunner`, `frankenphp`, else `unknown`) and `octane.max_requests` (null when unset or not an integer) (#213); null when laravel/octane is not installed
+     * @param  array{isBroadcastDriver: bool, isReachable: bool|null, latencyMs: float|null}|null  $reverb  Laravel Reverb (#215): whether the default broadcast connection uses the `reverb` driver, whether a TCP connect to its configured host and port succeeded (null when it is not the driver or no host is configured) and how long the connect took in ms; never the host or port; null when laravel/reverb is not installed or not probed
      */
     public function __construct(
         public string $environment,
@@ -103,6 +104,7 @@ final readonly class LaravelPostureData
         public ?array $redisMemory = null,
         public ?array $phpRuntime = null,
         public ?array $octane = null,
+        public ?array $reverb = null,
     ) {}
 
     /**

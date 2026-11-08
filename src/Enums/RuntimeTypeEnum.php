@@ -12,11 +12,11 @@ namespace Qiick\Excubia\Enums;
  * The five types of 1.0.0-beta.1 are on by default once `runtime.enabled`
  * is true. The types added in 1.0.0-beta.2 (#132, #133) and later
  * (`duplicateQuery`, #148, `server`, #149, `command`, #152, `health`, #188,
- * `ai` and `aiTool`, #198, `octane`, #213) are off by default, so an
- * excubia-app that does not know them yet never receives them. `ai` and
- * `aiTool` also need the Laravel AI SDK (`laravel/ai`) installed, and
- * `octane` needs Laravel Octane (`laravel/octane`); without them they record
- * nothing.
+ * `ai` and `aiTool`, #198, `octane`, #213, `reverb`, #215) are off by
+ * default, so an excubia-app that does not know them yet never receives
+ * them. `ai` and `aiTool` also need the Laravel AI SDK (`laravel/ai`)
+ * installed, `octane` needs Laravel Octane (`laravel/octane`) and `reverb`
+ * Laravel Reverb (`laravel/reverb`); without them they record nothing.
  *
  * `server` is not an event type: `excubia:push-runtime` takes one sample
  * of the machine per run (ServerMetricsService). Neither is `health` (#188):
@@ -58,6 +58,7 @@ enum RuntimeTypeEnum: string
     case Ai = 'ai';
     case AiTool = 'aiTool';
     case Octane = 'octane';
+    case Reverb = 'reverb';
 
     /**
      * The `excubia.json` key under `runtime` that switches this type.
@@ -85,6 +86,7 @@ enum RuntimeTypeEnum: string
             self::Ai => 'ai',
             self::AiTool => 'aiTools',
             self::Octane => 'octane',
+            self::Reverb => 'reverb',
         };
     }
 

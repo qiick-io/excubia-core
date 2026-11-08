@@ -48,7 +48,8 @@ qiick-io/excubia-core
 │   │   ├── LaravelRedisMemoryCheck.php     (laravel-redis-memory)         # INFO memory of the Redis connections in use: used / max, policy
 │   │   ├── PhpOpcacheCheck.php             (php-opcache)                  # OPcache on, validate_timestamps, hit rate and memory (web snapshot)
 │   │   ├── PhpProductionIniCheck.php       (php-production-ini)           # display_errors, expose_php, log_errors in production
-│   │   └── LaravelOctaneConfigCheck.php    (laravel-octane-config)        # Octane server type, max_requests in production
+│   │   ├── LaravelOctaneConfigCheck.php    (laravel-octane-config)        # Octane server type, max_requests in production
+│   │   └── LaravelReverbCheck.php          (laravel-reverb)               # TCP connect to the Reverb broadcast host and port
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string

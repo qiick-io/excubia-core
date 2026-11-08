@@ -62,6 +62,11 @@ use Throwable;
  * For `laravel-octane-config` (#213), when Laravel Octane is installed, it
  * reads `octane.server` and `octane.max_requests`, nothing else.
  *
+ * For `laravel-reverb` (#215), when Laravel Reverb is installed and is the
+ * default broadcast driver, it opens one TCP connection to the host and port
+ * the app broadcasts to, with a 2 s timeout, sends nothing and closes it.
+ * Only whether it connected and how long it took are kept.
+ *
  * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
  * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
  * Without one the PHP runtime stays unknown: the CLI that runs Artisan has
@@ -118,6 +123,14 @@ final class LaravelPostureService
      * is installed (it is not a dependency of this package).
      */
     private const OCTANE_WORKER_STARTING = 'Laravel\\Octane\\Events\\WorkerStarting';
+
+    /**
+     * Laravel Reverb's message event, used only to tell whether Reverb is
+     * installed (it is not a dependency of this package).
+     */
+    private const REVERB_MESSAGE_SENT = 'Laravel\\Reverb\\Events\\MessageSent';
+
+    private const REVERB_CONNECT_TIMEOUT_SECONDS = 2.0;
 
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
@@ -207,6 +220,7 @@ final class LaravelPostureService
             redisMemory: $isProbed('laravel-redis-memory') ? $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames) : null,
             phpRuntime: $isProbed('php-opcache', 'php-production-ini') ? $this->phpRuntime($application, $now) : null,
             octane: $isProbed('laravel-octane-config') ? $this->octane($config) : null,
+            reverb: $isProbed('laravel-reverb') ? $this->reverb($config) : null,
         );
     }
 
@@ -232,6 +246,57 @@ final class LaravelPostureService
             'server' => in_array($server, RuntimeCollectorService::OCTANE_SERVERS, true) ? $server : 'unknown',
             'maxRequests' => is_int($maxRequests) || (is_string($maxRequests) && preg_match('/^-?\d+$/', $maxRequests) === 1) ? (int) $maxRequests : null,
         ];
+    }
+
+    /**
+     * Whether the Reverb server answers (#215), or null when Reverb is not
+     * installed: its event classes are missing, or its `reverb`
+     * configuration is (its service provider always merges it). Only when the default broadcast connection uses the
+     * `reverb` driver: a TCP connect to its `options.host` and
+     * `options.port` (443, or 80 for the `http` scheme, when unset), the
+     * address the app broadcasts to. The connect error is dropped: it names
+     * the host.
+     *
+     * ponytail: a host name is resolved by the system resolver, which the
+     * 2 s timeout does not cover; a broken resolver can make the check wait
+     * longer.
+     *
+     * @return array{isBroadcastDriver: bool, isReachable: bool|null, latencyMs: float|null}|null
+     */
+    private function reverb(Repository $config): ?array
+    {
+        if (! class_exists(self::REVERB_MESSAGE_SENT) || ! is_array($config->get('reverb'))) {
+            return null;
+        }
+
+        $default = $config->get('broadcasting.default');
+        $connection = is_string($default) && $default !== '' ? $config->get('broadcasting.connections.'.$default) : null;
+
+        if (! is_array($connection) || ($connection['driver'] ?? null) !== 'reverb') {
+            return ['isBroadcastDriver' => false, 'isReachable' => null, 'latencyMs' => null];
+        }
+
+        $options = is_array($connection['options'] ?? null) ? $connection['options'] : [];
+        $host = $options['host'] ?? null;
+        $port = $options['port'] ?? null;
+        $port = is_int($port) || (is_string($port) && ctype_digit($port)) ? (int) $port : (($options['scheme'] ?? 'https') === 'http' ? 80 : 443);
+
+        if (! is_string($host) || $host === '' || $port < 1 || $port > 65535) {
+            return ['isBroadcastDriver' => true, 'isReachable' => null, 'latencyMs' => null];
+        }
+
+        $address = str_contains($host, ':') && ! str_starts_with($host, '[') ? '['.$host.']' : $host;
+        $startedAt = hrtime(true);
+        $socket = @stream_socket_client('tcp://'.$address.':'.$port, $errorCode, $errorMessage, self::REVERB_CONNECT_TIMEOUT_SECONDS);
+        $latencyMs = round((hrtime(true) - $startedAt) / 1e6, 1);
+
+        if ($socket === false) {
+            return ['isBroadcastDriver' => true, 'isReachable' => false, 'latencyMs' => null];
+        }
+
+        fclose($socket);
+
+        return ['isBroadcastDriver' => true, 'isReachable' => true, 'latencyMs' => $latencyMs];
     }
 
     /**

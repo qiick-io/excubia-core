@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "3cd50079266117ae5efb1cfd3dbda1c4b042eb253188995baa3bdda133a8081c"
+            "sha256": "5de23c1cdcf79f06458f3c0c636a801a00848d86a127eb0e91a69cf744d91904"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -13,7 +13,7 @@
         "docs/runtime-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/runtime-schema.json",
             "x-excubia-version": 1,
-            "sha256": "3e35a773cbc6a88969e28f893b05a0b38247a3f9b69264c9a7790406d1f6d07f"
+            "sha256": "b744787e24d60976135ddfe5e1ef04782d801b17d4858a17d651062f3536eff1"
         },
         "docs/exception-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/exception-schema.json",
@@ -23,7 +23,7 @@
         "excubia.schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/excubia.schema.json",
             "x-excubia-version": 1,
-            "sha256": "c16eb195437b4c2180c48207e6c44ffc5fc051a1181bc74ac1a8e1974f09f668"
+            "sha256": "608e0d12dbdd3b8e25394bc0d12bb7c43f5320f26ded70425f693efadc45081f"
         }
     },
     "checkIds": [
@@ -64,7 +64,8 @@
         "laravel-redis-memory",
         "php-opcache",
         "php-production-ini",
-        "laravel-octane-config"
+        "laravel-octane-config",
+        "laravel-reverb"
     ],
     "sarif": {
         "fingerprintKeys": [
