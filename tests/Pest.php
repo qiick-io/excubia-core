@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Collection;
 use Qiick\Excubia\Services\ReleaseService;
+use Qiick\Excubia\Services\RuntimeBufferService;
 use Qiick\Excubia\Tests\Support\LaravelTestCase;
 
 // CI sets GITHUB_SHA (and a developer may set EXCUBIA_RELEASE or
@@ -59,6 +62,35 @@ function contractSnapshot(string $area): array
     );
 
     return $snapshot[$area];
+}
+
+/**
+ * The aggregates written to the local buffer so far.
+ *
+ * @return list<array<string, mixed>>
+ */
+function bufferedRuntime(Application $app): array
+{
+    $path = $app->storagePath('excubia/runtime/'.RuntimeBufferService::BUFFER_FILE);
+
+    if (! is_file($path)) {
+        return [];
+    }
+
+    return array_map(
+        fn (string $line): array => json_decode($line, true, 512, JSON_THROW_ON_ERROR),
+        array_values(array_filter(explode("\n", (string) file_get_contents($path)))),
+    );
+}
+
+/**
+ * The merged buffered aggregates of one type.
+ *
+ * @return Collection<int, array<string, mixed>>
+ */
+function bufferedOfType(Application $app, string $type): Collection
+{
+    return collect(RuntimeBufferService::merge(bufferedRuntime($app)))->where('type', $type)->values();
 }
 
 pest()->extend(LaravelTestCase::class)->in('Laravel');
