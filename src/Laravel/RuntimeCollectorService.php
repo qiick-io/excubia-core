@@ -81,6 +81,10 @@ use Laravel\Reverb\Events\ConnectionPruned;
 use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
 use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
 use Laravel\Sanctum\Events\TokenAuthenticated;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Jobs\MakeSearchable;
+use Laravel\Scout\Jobs\RemoveFromSearch;
+use Laravel\Scout\Scout;
 use Monolog\Logger as MonologLogger;
 use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
@@ -122,8 +126,9 @@ use WeakReference;
  * arguments or results and conversations, Octane URLs, request or task
  * data, worker ids or PIDs, Reverb message payloads, channel names,
  * socket ids, origins or app keys and secrets, anything of a Cashier
- * webhook payload but its event type, or the user, credentials, token or
- * request of an authentication event.
+ * webhook payload but its event type, the user, credentials, token or
+ * request of an authentication event, or Scout search queries, record ids
+ * or record data.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -273,10 +278,19 @@ final class RuntimeCollectorService
     ];
 
     /**
-     * An auth guard name (#219) is kept only when it looks like a config key;
-     * anything else becomes `unknown`.
+     * An auth guard name (#219) or a Scout engine name (#221) is kept only
+     * when it looks like a config key; anything else becomes `unknown`.
      */
-    private const AUTH_GUARD_PATTERN = '/^[A-Za-z0-9_.-]{1,64}$/';
+    private const CONFIG_NAME_PATTERN = '/^[A-Za-z0-9_.-]{1,64}$/';
+
+    /**
+     * The models of a Scout index job (#221), in its serialized command:
+     * Laravel's `SerializesModels` writes the collection as a
+     * `ModelIdentifier` whose `class` is the model class (null for an empty
+     * collection) and whose `id` is the array of keys. Only the class and the
+     * length of that array are read, never the keys.
+     */
+    private const SCOUT_MODELS_PATTERN = '/"Illuminate\\\\Contracts\\\\Database\\\\ModelIdentifier":\d+:\{s:5:"class";(?:s:\d+:"([^"]+)"|N);s:2:"id";a:(\d+):/';
 
     /**
      * The guard Laravel Sanctum registers, under which its token
@@ -471,6 +485,20 @@ final class RuntimeCollectorService
     private string $defaultAuthGuard = 'unknown';
 
     /**
+     * `scout.driver`, the engine dimension of the `scout` aggregates (#221),
+     * read when the Scout listeners are registered.
+     */
+    private string $scoutEngine = 'unknown';
+
+    /**
+     * Dimensions, record count and start time of each running Scout index
+     * job that is sampled (#221).
+     *
+     * @var WeakMap<object, array{dimensions: array{model: string, engine: string, operation: string}, modelCount: int, startedAt: float}>
+     */
+    private WeakMap $scoutJobs;
+
+    /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
      */
     public function __construct(
@@ -483,6 +511,7 @@ final class RuntimeCollectorService
         $this->recordedTasks = new WeakMap;
         $this->outerQueryShapes = new WeakMap;
         $this->establishedReverbConnections = new WeakMap;
+        $this->scoutJobs = new WeakMap;
         $this->isCountingQueryShapes = $configuration->isTypeEnabled(RuntimeTypeEnum::DuplicateQuery);
     }
 
@@ -593,6 +622,10 @@ final class RuntimeCollectorService
 
         if ($configuration->isTypeEnabled(RuntimeTypeEnum::Auth)) {
             $collector->listenToAuth($application, $events);
+        }
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Scout) && class_exists(ScoutBuilder::class)) {
+            $collector->listenToScout($application, $events);
         }
 
         $application->terminating(function () use ($collector): void {
@@ -2157,7 +2190,7 @@ final class RuntimeCollectorService
     public function listenToAuth(Application $application, Dispatcher $events): void
     {
         $defaultGuard = $application->make('config')->get('auth.defaults.guard');
-        $this->defaultAuthGuard = $this->authGuard($defaultGuard);
+        $this->defaultAuthGuard = self::configName($defaultGuard);
 
         $events->listen([Login::class, Failed::class, Lockout::class], fn (Login|Failed|Lockout $event) => $this->recordAuthentication($event));
 
@@ -2184,7 +2217,7 @@ final class RuntimeCollectorService
             $guard = match (true) {
                 $event instanceof Lockout => $this->defaultAuthGuard,
                 $event instanceof TokenAuthenticated => self::SANCTUM_GUARD,
-                default => $this->authGuard($event->guard),
+                default => self::configName($event->guard),
             };
 
             $this->record(RuntimeTypeEnum::Auth, ['guard' => $guard], [
@@ -2196,9 +2229,127 @@ final class RuntimeCollectorService
         });
     }
 
-    private function authGuard(mixed $guard): string
+    /**
+     * A guard or engine name from the config when it matches
+     * CONFIG_NAME_PATTERN, else `unknown`.
+     */
+    private static function configName(mixed $name): string
     {
-        return is_string($guard) && preg_match(self::AUTH_GUARD_PATTERN, $guard) === 1 ? $guard : 'unknown';
+        return is_string($name) && preg_match(self::CONFIG_NAME_PATTERN, $name) === 1 ? $name : 'unknown';
+    }
+
+    /**
+     * Listen to Laravel Scout (#221), only when `laravel/scout` is installed
+     * (it is not a dependency). Scout fires no event when it updates an
+     * index or runs a search, so this records what Laravel itself shows:
+     * the queued index jobs (`MakeSearchable`, `RemoveFromSearch` and their
+     * subclasses, run when `scout.queue` is on), timed from `JobProcessing`
+     * to `JobProcessed` or `JobFailed`, and each search builder the
+     * container makes (`Model::search()`), counted without a duration.
+     *
+     * ponytail: with `scout.queue` off the observer updates the engine
+     * inline and nothing is recorded, and search latency is not measured;
+     * both would need Scout's builder or engines wrapped. The engine is
+     * `scout.driver`; a model that overrides `searchableUsing()` is still
+     * counted under it.
+     */
+    public function listenToScout(Application $application, Dispatcher $events): void
+    {
+        $this->scoutEngine = self::configName($application->make('config')->get('scout.driver'));
+
+        $events->listen(JobProcessing::class, fn (JobProcessing $event) => $this->startScoutJob($event));
+        $events->listen([JobProcessed::class, JobFailed::class], fn (JobProcessed|JobFailed $event) => $this->recordScoutJob($event));
+        $application->afterResolving(ScoutBuilder::class, fn (object $builder) => $this->recordScoutSearch($builder));
+    }
+
+    /**
+     * Remember a sampled Scout index job when it starts: its operation
+     * (`index` or `remove`), model class and record count from the payload.
+     */
+    public function startScoutJob(JobProcessing $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $operation = self::scoutOperation($event->job->resolveName());
+
+            if ($operation === null || ! $this->isSampled(RuntimeTypeEnum::Scout)) {
+                return;
+            }
+
+            $command = $event->job->payload()['data']['command'] ?? null;
+            $hasModels = is_string($command) && preg_match(self::SCOUT_MODELS_PATTERN, $command, $matches) === 1;
+
+            $this->scoutJobs[$event->job] = [
+                'dimensions' => [
+                    'model' => $hasModels && $matches[1] !== '' ? $this->className($matches[1]) : 'unknown',
+                    'engine' => $this->scoutEngine,
+                    'operation' => $operation,
+                ],
+                'modelCount' => $hasModels ? (int) $matches[2] : 0,
+                'startedAt' => $this->now(),
+            ];
+        });
+    }
+
+    /**
+     * Record a Scout index job that ends, processed or failed, and flush.
+     * A job released for a retry fires neither event and is not counted
+     * until its last attempt.
+     */
+    public function recordScoutJob(JobProcessed|JobFailed $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $pending = $this->scoutJobs[$event->job] ?? null;
+
+            if ($pending === null) {
+                return;
+            }
+
+            unset($this->scoutJobs[$event->job]);
+            $this->add(RuntimeTypeEnum::Scout, $pending['dimensions'], ($this->now() - $pending['startedAt']) * 1000, $event instanceof JobFailed, [
+                'modelCount' => $pending['modelCount'],
+            ]);
+            $this->flush();
+        });
+    }
+
+    /**
+     * Count one search: a Scout builder made by `Model::search()`. Only the
+     * model class is read, never the query, the callback or the results.
+     */
+    public function recordScoutSearch(object $builder): void
+    {
+        $this->guard(function () use ($builder): void {
+            if (! $this->isSampled(RuntimeTypeEnum::Scout)) {
+                return;
+            }
+
+            $model = $builder->model ?? null;
+
+            $this->record(RuntimeTypeEnum::Scout, [
+                'model' => is_object($model) ? $this->className($model::class) : 'unknown',
+                'engine' => $this->scoutEngine,
+                'operation' => 'search',
+            ], ['modelCount' => 0]);
+        });
+    }
+
+    /**
+     * `index` for Scout's `MakeSearchable` job (or a subclass, or the class
+     * set with `Scout::makeSearchableUsing()`), `remove` for
+     * `RemoveFromSearch`, else null. A name that is not a loaded class (a
+     * queued closure) is never autoloaded.
+     */
+    private static function scoutOperation(string $job): ?string
+    {
+        if (! class_exists($job, false)) {
+            return null;
+        }
+
+        return match (true) {
+            is_a($job, MakeSearchable::class, true) || $job === Scout::$makeSearchableJob => 'index',
+            is_a($job, RemoveFromSearch::class, true) || $job === Scout::$removeFromSearchJob => 'remove',
+            default => null,
+        };
     }
 
     /**

@@ -558,6 +558,10 @@
                 "auth": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Laravel authentication counted per guard: successful logins (Login), failed logins (Failed), lockouts (Lockout, counted under auth.defaults.guard) and, with laravel/sanctum installed, Sanctum token authentications (TokenAuthenticated, guard sanctum). Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default (#219)."
+                },
+                "scout": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Scout counted per model class, engine (scout.driver) and operation: queued index jobs (MakeSearchable, RemoveFromSearch; with scout.queue on) with their record count, failures and duration, and searches started (Model::search(), no duration). Records nothing unless laravel/scout is installed. Never search queries, record ids or record data. Off by default (#221)."
                 }
             }
         },
