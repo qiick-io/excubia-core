@@ -15,6 +15,7 @@ use Qiick\Excubia\Checks\EnvExampleSyncCheck;
 use Qiick\Excubia\Checks\LaravelAppKeyCheck;
 use Qiick\Excubia\Checks\LaravelBackupsCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
+use Qiick\Excubia\Checks\LaravelCashierCheck;
 use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseConnectionsCheck;
@@ -282,6 +283,7 @@ final class HealthCheckRunnerService
             new PhpProductionIniCheck,
             new LaravelOctaneConfigCheck,
             new LaravelReverbCheck,
+            new LaravelCashierCheck,
         ];
     }
 }

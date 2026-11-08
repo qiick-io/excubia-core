@@ -12,11 +12,13 @@ namespace Qiick\Excubia\Enums;
  * The five types of 1.0.0-beta.1 are on by default once `runtime.enabled`
  * is true. The types added in 1.0.0-beta.2 (#132, #133) and later
  * (`duplicateQuery`, #148, `server`, #149, `command`, #152, `health`, #188,
- * `ai` and `aiTool`, #198, `octane`, #213, `reverb`, #215) are off by
- * default, so an excubia-app that does not know them yet never receives
- * them. `ai` and `aiTool` also need the Laravel AI SDK (`laravel/ai`)
- * installed, `octane` needs Laravel Octane (`laravel/octane`) and `reverb`
- * Laravel Reverb (`laravel/reverb`); without them they record nothing.
+ * `ai` and `aiTool`, #198, `octane`, #213, `reverb`, #215,
+ * `billingWebhook`, #217) are off by default, so an excubia-app that does
+ * not know them yet never receives them. `ai` and `aiTool` also need the
+ * Laravel AI SDK (`laravel/ai`) installed, `octane` needs Laravel Octane
+ * (`laravel/octane`), `reverb` Laravel Reverb (`laravel/reverb`) and
+ * `billingWebhook` Laravel Cashier (`laravel/cashier` or
+ * `laravel/cashier-paddle`); without them they record nothing.
  *
  * `server` is not an event type: `excubia:push-runtime` takes one sample
  * of the machine per run (ServerMetricsService). Neither is `health` (#188):
@@ -24,7 +26,7 @@ namespace Qiick\Excubia\Enums;
  * appends one aggregate per check (HealthSampleService).
  *
  * The duration types (`request`, `slowQuery`, `job`, `scheduledTask`,
- * `outgoingHttp`, `queueWait`, `command`, `ai`, `aiTool`) also carry a latency `histogram` (#147) with
+ * `outgoingHttp`, `queueWait`, `command`, `ai`, `aiTool`, `billingWebhook`) also carry a latency `histogram` (#147) with
  * the bucket bounds below, a public contract (`docs/CONTRACTS.md`).
  */
 enum RuntimeTypeEnum: string
@@ -59,6 +61,7 @@ enum RuntimeTypeEnum: string
     case AiTool = 'aiTool';
     case Octane = 'octane';
     case Reverb = 'reverb';
+    case BillingWebhook = 'billingWebhook';
 
     /**
      * The `excubia.json` key under `runtime` that switches this type.
@@ -87,6 +90,7 @@ enum RuntimeTypeEnum: string
             self::AiTool => 'aiTools',
             self::Octane => 'octane',
             self::Reverb => 'reverb',
+            self::BillingWebhook => 'billing',
         };
     }
 

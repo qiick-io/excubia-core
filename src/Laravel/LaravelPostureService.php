@@ -67,6 +67,11 @@ use Throwable;
  * the app broadcasts to, with a 2 s timeout, sends nothing and closes it.
  * Only whether it connected and how long it took are kept.
  *
+ * For `laravel-cashier` (#217), when Laravel Cashier (Stripe) or Cashier
+ * Paddle is installed, it reads whether the webhook secret is set, whether
+ * the keys start with a test prefix (or Paddle's sandbox flag), and whether
+ * a route reaches Cashier's webhook controller: booleans only.
+ *
  * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
  * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
  * Without one the PHP runtime stays unknown: the CLI that runs Artisan has
@@ -131,6 +136,24 @@ final class LaravelPostureService
     private const REVERB_MESSAGE_SENT = 'Laravel\\Reverb\\Events\\MessageSent';
 
     private const REVERB_CONNECT_TIMEOUT_SECONDS = 2.0;
+
+    /**
+     * Laravel Cashier (Stripe, `laravel/cashier`) and Cashier Paddle
+     * (`laravel/cashier-paddle`) (#217): the class that tells each one is
+     * installed (neither is a dependency) and its webhook controller.
+     */
+    private const CASHIER_PACKAGES = [
+        'stripe' => ['Laravel\\Cashier\\Cashier', 'Laravel\\Cashier\\Http\\Controllers\\WebhookController'],
+        'paddle' => ['Laravel\\Paddle\\Cashier', 'Laravel\\Paddle\\Http\\Controllers\\WebhookController'],
+    ];
+
+    /**
+     * Prefixes of Stripe's test keys (secret, restricted, publishable) and
+     * of Paddle Billing's sandbox API key and test client-side token.
+     */
+    private const STRIPE_TEST_KEY_PREFIXES = ['sk_test_', 'rk_test_', 'pk_test_'];
+
+    private const PADDLE_TEST_KEY_PREFIXES = ['pdl_sdbx_', 'test_'];
 
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
@@ -221,6 +244,7 @@ final class LaravelPostureService
             phpRuntime: $isProbed('php-opcache', 'php-production-ini') ? $this->phpRuntime($application, $now) : null,
             octane: $isProbed('laravel-octane-config') ? $this->octane($config) : null,
             reverb: $isProbed('laravel-reverb') ? $this->reverb($config) : null,
+            cashier: $isProbed('laravel-cashier') ? $this->cashier($application, $config) : null,
         );
     }
 
@@ -246,6 +270,71 @@ final class LaravelPostureService
             'server' => in_array($server, RuntimeCollectorService::OCTANE_SERVERS, true) ? $server : 'unknown',
             'maxRequests' => is_int($maxRequests) || (is_string($maxRequests) && preg_match('/^-?\d+$/', $maxRequests) === 1) ? (int) $maxRequests : null,
         ];
+    }
+
+    /**
+     * Laravel Cashier's webhook and key posture (#217), one entry per
+     * installed package, or null when none is: its class is missing, or its
+     * `cashier` configuration is (its service provider always merges it).
+     * Stripe's secret is `cashier.webhook.secret` and its keys
+     * `cashier.secret` and `cashier.key`; Paddle's are
+     * `cashier.webhook_secret`, `cashier.api_key`, `cashier.client_side_token`
+     * and `cashier.sandbox`. Only booleans leave this method.
+     *
+     * @return list<array{provider: string, isWebhookSecretConfigured: bool, isWebhookRouteRegistered: bool, hasTestKeys: bool}>|null
+     */
+    private function cashier(Application $application, Repository $config): ?array
+    {
+        $cashier = $config->get('cashier');
+
+        if (! is_array($cashier)) {
+            return null;
+        }
+
+        $isFilled = static fn (mixed $value): bool => is_string($value) && trim($value) !== '';
+        $hasPrefix = static fn (mixed $value, array $prefixes): bool => is_string($value) && array_filter($prefixes, static fn (string $prefix): bool => str_starts_with($value, $prefix)) !== [];
+        $packages = [];
+
+        foreach (self::CASHIER_PACKAGES as $provider => [$cashierClass, $controllerClass]) {
+            if (! class_exists($cashierClass)) {
+                continue;
+            }
+
+            $webhook = is_array($cashier['webhook'] ?? null) ? $cashier['webhook'] : [];
+
+            $packages[] = [
+                'provider' => $provider,
+                'isWebhookSecretConfigured' => $isFilled($provider === 'stripe' ? ($webhook['secret'] ?? null) : ($cashier['webhook_secret'] ?? null)),
+                'isWebhookRouteRegistered' => $this->hasRouteTo($application, $controllerClass),
+                'hasTestKeys' => $provider === 'stripe'
+                    ? $hasPrefix($cashier['secret'] ?? null, self::STRIPE_TEST_KEY_PREFIXES) || $hasPrefix($cashier['key'] ?? null, self::STRIPE_TEST_KEY_PREFIXES)
+                    : filter_var($cashier['sandbox'] ?? false, FILTER_VALIDATE_BOOL) || $hasPrefix($cashier['api_key'] ?? null, self::PADDLE_TEST_KEY_PREFIXES) || $hasPrefix($cashier['client_side_token'] ?? null, self::PADDLE_TEST_KEY_PREFIXES),
+            ];
+        }
+
+        return $packages === [] ? null : $packages;
+    }
+
+    /**
+     * Whether a registered route uses this controller or a subclass of it
+     * (Cashier's docs tell apps to extend its webhook controller). False
+     * when the routes cannot be read.
+     */
+    private function hasRouteTo(Application $application, string $controllerClass): bool
+    {
+        try {
+            foreach ($application->make('router')->getRoutes()->getRoutes() as $route) {
+                $routeController = $route->getControllerClass();
+
+                if (is_string($routeController) && is_a($routeController, $controllerClass, true)) {
+                    return true;
+                }
+            }
+        } catch (Throwable) {
+            return false;
+        }
+
+        return false;
     }
 
     /**

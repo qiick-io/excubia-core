@@ -62,6 +62,7 @@ final readonly class LaravelPostureData
      * @param  array{sapi: string, ageMinutes: int, isOpcacheEnabled: bool, hitRate: float|null, memoryUsedPercent: float|null, cachedScripts: int|null, isValidateTimestampsEnabled: bool, isDisplayErrorsEnabled: bool, isExposePhpEnabled: bool, isLogErrorsEnabled: bool}|null  $phpRuntime  OPcache status and production php.ini directives (#172): the web-SAPI snapshot the health endpoint stored (`sapi` `web`, `ageMinutes` its age); null when there is none, because the CLI values of this run are never used
      * @param  array{server: string, maxRequests: int|null}|null  $octane  Laravel Octane's server (`swoole`, `roadrunner`, `frankenphp`, else `unknown`) and `octane.max_requests` (null when unset or not an integer) (#213); null when laravel/octane is not installed
      * @param  array{isBroadcastDriver: bool, isReachable: bool|null, latencyMs: float|null}|null  $reverb  Laravel Reverb (#215): whether the default broadcast connection uses the `reverb` driver, whether a TCP connect to its configured host and port succeeded (null when it is not the driver or no host is configured) and how long the connect took in ms; never the host or port; null when laravel/reverb is not installed or not probed
+     * @param  list<array{provider: string, isWebhookSecretConfigured: bool, isWebhookRouteRegistered: bool, hasTestKeys: bool}>|null  $cashier  Laravel Cashier (#217), one entry per installed package (`stripe` for laravel/cashier, `paddle` for laravel/cashier-paddle): whether the webhook secret is set, whether a route reaches Cashier's webhook controller, and whether the keys are test keys (by prefix, or Paddle's sandbox flag); booleans only, never a key, secret or prefix; null when neither is installed or not probed
      */
     public function __construct(
         public string $environment,
@@ -105,6 +106,7 @@ final readonly class LaravelPostureData
         public ?array $phpRuntime = null,
         public ?array $octane = null,
         public ?array $reverb = null,
+        public ?array $cashier = null,
     ) {}
 
     /**

@@ -249,7 +249,7 @@ it('documents the runtime histogram bounds in the runtime schema, from the one c
     expect($histogram['x-excubia-bucket-bounds-ms'])->toBe(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS)
         ->and($histogram['minItems'])->toBe(count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1)
         ->and($histogram['maxItems'])->toBe(count(RuntimeTypeEnum::HISTOGRAM_BOUNDS_MS) + 1)
-        ->and($durationTypes)->toEqualCanonicalizing(['request', 'slowQuery', 'job', 'scheduledTask', 'outgoingHttp', 'queueWait', 'command', 'ai', 'aiTool']);
+        ->and($durationTypes)->toEqualCanonicalizing(['request', 'slowQuery', 'job', 'scheduledTask', 'outgoingHttp', 'queueWait', 'command', 'ai', 'aiTool', 'billingWebhook']);
 
     foreach ($durationTypes as $type) {
         expect($schema['$defs'][$type]['properties']['histogram'])->toBe(['$ref' => '#/$defs/histogram'])

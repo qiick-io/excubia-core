@@ -912,6 +912,23 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-cashier"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/laravelCashierDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1598,6 +1615,30 @@
                     "description": "How long the TCP connect took, in ms with 1 decimal; null when it failed.",
                     "type": ["number", "null"],
                     "minimum": 0
+                }
+            }
+        },
+        "laravelCashierDetails": {
+            "description": "laravel-cashier finding (#217): the webhook and key posture of one installed Cashier package. Booleans only: never a key, a secret or a prefix of either.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "isWebhookSecretConfigured", "isWebhookRouteRegistered", "hasTestKeys"],
+            "properties": {
+                "provider": {
+                    "description": "stripe (laravel/cashier) or paddle (laravel/cashier-paddle).",
+                    "type": "string"
+                },
+                "isWebhookSecretConfigured": {
+                    "description": "cashier.webhook.secret (Stripe) or cashier.webhook_secret (Paddle) is set.",
+                    "type": "boolean"
+                },
+                "isWebhookRouteRegistered": {
+                    "description": "A registered route uses Cashier's webhook controller or a subclass of it.",
+                    "type": "boolean"
+                },
+                "hasTestKeys": {
+                    "description": "Stripe: a key starts with sk_test_, rk_test_ or pk_test_. Paddle: cashier.sandbox is on, or the API key or client-side token is a sandbox one (pdl_sdbx_, test_). Reported as a problem in production only.",
+                    "type": "boolean"
                 }
             }
         },
