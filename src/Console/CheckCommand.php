@@ -162,7 +162,9 @@ final class CheckCommand extends Command
     {
         $scan = $this->scan($path, $options, $output);
         $rendered = $this->renderer($options['format'] ?? null, $output, $options['output'] ?? null, $path)->render($scan['report']);
-        $this->writeReport($rendered, $options['output'] ?? null, $options['no-banner'] ?? false, $output);
+        $isBannerHidden = ($options['no-banner'] ?? false)
+            || ReportFormatEnum::tryFrom($options['format'] ?? '')?->isMachineReadable() === true;
+        $this->writeReport($rendered, $options['output'] ?? null, $isBannerHidden, $output);
         $exitCode = $scan['report']->exitCodeFor($scan['configuration']->failOnSeverity, $scan['configuration']->isStrict);
 
         if ($exitCode === ExitCodeEnum::DataSourceFailure) {
@@ -410,6 +412,7 @@ final class CheckCommand extends Command
 
     /**
      * Write the rendered report to stdout or `--output`, optionally with the banner.
+     * Machine-readable formats never get the banner, so their stdout parses as-is.
      *
      * @throws InvalidConfigurationException
      */

@@ -121,7 +121,7 @@ Options:
   --offline                      Use cache only; checks without cached data are `skipped`
   --no-cache                     Bypass the cache
   --config=FILE                  Config file (default: ./excubia.json if present)
-  --no-banner                    Hide the ASCII banner (brand/excubia/cli/banner.txt)
+  --no-banner                    Hide the ASCII banner (brand/excubia/cli/banner.txt); json and sarif never print it
   --strict                       Exit 3 when a data-source failure skipped a check (also `"strict": true` in excubia.json)
   -q | -v | -vv                  Quiet / verbose / debug (HTTP calls listed)
 

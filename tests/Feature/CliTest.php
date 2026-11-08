@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Console\ClearCacheCommand;
+use Qiick\Excubia\Enums\ReportFormatEnum;
 use Qiick\Excubia\Laravel\ExcubiaCheckCommand;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -131,6 +132,32 @@ it('names the artisan alias and prints the banner and version', function () {
 
     expect($exitCode)->toBe(0)
         ->and(implode("\n", $output))->toContain('Excubia');
+});
+
+it('prints only the report on stdout of the standalone binary for every machine-readable format', function (ReportFormatEnum $format) {
+    // No locked packages and no PHP constraint, so the offline scan makes no request.
+    $project = temporaryProject([
+        'composer.json' => '{}',
+        'composer.lock' => '{"packages": [], "packages-dev": []}',
+        'excubia.json' => json_encode(['cache' => ['directory' => temporaryProject([])]], JSON_THROW_ON_ERROR),
+    ]);
+    $binary = dirname(__DIR__, 2).'/bin/excubia';
+    exec('php '.escapeshellarg($binary).' check '.escapeshellarg($project).' --offline --fail-on=none --format='.$format->value.' 2>/dev/null', $output, $exitCode);
+    $stdout = implode("\n", $output);
+
+    expect($exitCode)->toBe(0)
+        ->and($stdout)->not->toContain('Health checks for Laravel apps.')
+        ->and(json_decode($stdout, true, 512, JSON_THROW_ON_ERROR))->toBeArray();
+})->with(fn (): array => array_values(array_filter(ReportFormatEnum::cases(), static fn (ReportFormatEnum $format): bool => $format->isMachineReadable())));
+
+it('treats json and sarif as the machine-readable formats', function () {
+    $machineReadable = [];
+
+    foreach (ReportFormatEnum::cases() as $format) {
+        $machineReadable[$format->value] = $format->isMachineReadable();
+    }
+
+    expect($machineReadable)->toBe(['table' => false, 'json' => true, 'markdown' => false, 'sarif' => true]);
 });
 
 it('registers check, push, and cache:clear in the standalone binary', function () {
