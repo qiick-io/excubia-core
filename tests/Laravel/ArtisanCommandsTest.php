@@ -127,6 +127,25 @@ it('exits 2 from excubia:push when no excubia-app is configured', function () {
         ->assertExitCode(2);
 });
 
+it('puts the Laravel environment in the excubia:check report and omits one that is not a short name', function () {
+    $this->app->setBasePath(cachedOutdatedProject());
+    $report = static function (): array {
+        Artisan::call('excubia:check', ['--only' => 'php-eol', '--offline' => true, '--fail-on' => 'none', '--no-banner' => true, '--format' => 'json']);
+
+        return json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+    };
+
+    expect($report()['environment'])->toBe('testing');
+
+    $this->app['env'] = 'staging';
+
+    expect($report()['environment'])->toBe('staging');
+
+    $this->app['env'] = 'staging.example.com';
+
+    expect($report())->not->toHaveKey('environment');
+});
+
 it('puts the release from the environment in the excubia:check report, without the git fallback', function () {
     $project = cachedOutdatedProject();
     file_put_contents($project.'/.git', 'gitdir: '.temporaryProject(['HEAD' => "0123456789abcdef0123456789abcdef01234567\n"])."\n");

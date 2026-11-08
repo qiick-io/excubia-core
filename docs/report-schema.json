@@ -57,6 +57,11 @@
             "items": {
                 "$ref": "#/$defs/scheduledTask"
             }
+        },
+        "environment": {
+            "description": "Optional (#203): the Laravel environment of the app (app.env), for example production or staging, set by php artisan excubia:check and excubia:push only; the standalone CLI omits it. A short name only, never a hostname: omitted when app.env does not match the pattern.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
         }
     },
     "$defs": {

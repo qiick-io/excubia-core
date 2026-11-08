@@ -25,10 +25,19 @@ use Qiick\Excubia\Enums\SeverityEnum;
  * `schedule` is the app's schedule inventory (#146), set by the runner from
  * the Laravel posture of the Artisan commands; the standalone CLI cannot
  * boot the app, so it is null there and omitted.
+ * `environment` is the Laravel environment (`app.env`, #203), set by the
+ * runner from the same posture, so it is null and omitted for the
+ * standalone CLI too.
  */
 final readonly class HealthReportData
 {
     public const SCHEMA_VERSION = 1;
+
+    /**
+     * A short environment name such as `production` or `staging` (#203).
+     * No dot, so a hostname or URL never passes.
+     */
+    public const ENVIRONMENT_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
 
     public int $schemaVersion;
 
@@ -47,8 +56,18 @@ final readonly class HealthReportData
         public ?DateTimeImmutable $deployedAt = null,
         public ?string $javascriptLockfile = null,
         public ?array $schedule = null,
+        public ?string $environment = null,
     ) {
         $this->schemaVersion = self::SCHEMA_VERSION;
+    }
+
+    /**
+     * The environment name when it matches `ENVIRONMENT_PATTERN`, else null,
+     * so an unexpected `app.env` is left out instead of sent.
+     */
+    public static function environmentName(?string $environment): ?string
+    {
+        return $environment !== null && preg_match(self::ENVIRONMENT_PATTERN, $environment) === 1 ? $environment : null;
     }
 
     /**
@@ -145,12 +164,12 @@ final readonly class HealthReportData
             );
         }
 
-        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $this->deployedAt, $this->javascriptLockfile, $this->schedule);
+        return new self($checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $this->deployedAt, $this->javascriptLockfile, $this->schedule, $this->environment);
     }
 
     public function withRelease(?string $release): self
     {
-        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $release, $this->deployedAt, $this->javascriptLockfile, $this->schedule);
+        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $release, $this->deployedAt, $this->javascriptLockfile, $this->schedule, $this->environment);
     }
 
     /**
@@ -159,7 +178,7 @@ final readonly class HealthReportData
      */
     public function withDeployedAt(DateTimeImmutable $deployedAt): self
     {
-        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $deployedAt, $this->javascriptLockfile, $this->schedule);
+        return new self($this->checkResults, $this->upgradeSteps, $this->generatedAt, $this->excubiaVersion, $this->project, $this->release, $deployedAt, $this->javascriptLockfile, $this->schedule, $this->environment);
     }
 
     /**
