@@ -72,7 +72,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "aiTools": { "enabled": false, "sampleRate": 1 },
     "octane": { "enabled": false, "sampleRate": 1 },
     "reverb": { "enabled": false, "sampleRate": 1 },
-    "billing": { "enabled": false, "sampleRate": 1 }
+    "billing": { "enabled": false, "sampleRate": 1 },
+    "auth": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -324,6 +325,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.billing` | object | | Laravel Cashier (`laravel/cashier`, `laravel/cashier-paddle`) webhooks per provider and event type: received, handled, failed, handling time, failed payments, payments needing action and canceled subscriptions. Records nothing unless Cashier is installed; never anything of the payload but its event type. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-cashier). |
 | `runtime.billing.enabled` | boolean | `false` | Collect Cashier webhook events. |
 | `runtime.billing.sampleRate` | number 0–1 | `1` | Share of webhooks recorded. |
+| `runtime.auth` | object | | Authentication per guard: successful and failed logins, lockouts and, with `laravel/sanctum`, Sanctum token authentications. Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default. See [runtime monitoring](./runtime-monitoring.md#authentication). |
+| `runtime.auth.enabled` | boolean | `false` | Collect authentication events. |
+| `runtime.auth.sampleRate` | number 0–1 | `1` | Share of authentication events recorded. |
 
 ## Exception capture
 

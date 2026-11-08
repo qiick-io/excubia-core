@@ -50,7 +50,8 @@ qiick-io/excubia-core
 │   │   ├── PhpProductionIniCheck.php       (php-production-ini)           # display_errors, expose_php, log_errors in production
 │   │   ├── LaravelOctaneConfigCheck.php    (laravel-octane-config)        # Octane server type, max_requests in production
 │   │   ├── LaravelReverbCheck.php          (laravel-reverb)               # TCP connect to the Reverb broadcast host and port
-│   │   └── LaravelCashierCheck.php         (laravel-cashier)              # Cashier webhook secret, test keys in production, webhook route
+│   │   ├── LaravelCashierCheck.php         (laravel-cashier)              # Cashier webhook secret, test keys in production, webhook route
+│   │   └── LaravelApiTokensCheck.php       (laravel-api-tokens)           # Sanctum expiration, stale tokens, stateful domains; Passport keys and lifetimes
 │   ├── Contracts/
 │   │   ├── HealthCheckContract.php          # id(), name(), run(ProjectSnapshotData): CheckResultData
 │   │   ├── ReportRendererContract.php       # render(HealthReportData): string

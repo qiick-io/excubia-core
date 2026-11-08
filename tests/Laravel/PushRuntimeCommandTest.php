@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\Events\Failed;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFinished;
@@ -335,6 +336,7 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     event(new WorkerStarting($this->app));
     event(new ReverbMessageReceived(new ReverbConnection(new ReverbApplication('123456')), '{}'));
     event(new StripeWebhookReceived(['type' => 'invoice.payment_failed']));
+    event(new Failed('web', null, ['email' => 'someone@example.test', 'password' => 'secret']));
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);
