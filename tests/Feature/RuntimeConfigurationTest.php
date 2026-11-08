@@ -48,7 +48,7 @@ it('keeps the types added in 1.0.0-beta.2 off by default and reads their switche
     $load = static fn (array $runtime) => (new ExcubiaConfigurationLoader)->load(null, temporaryProject([
         'excubia.json' => json_encode(['runtime' => $runtime], JSON_THROW_ON_ERROR),
     ]))->runtime;
-    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command, RuntimeTypeEnum::Health, RuntimeTypeEnum::Ai, RuntimeTypeEnum::AiTool, RuntimeTypeEnum::Octane, RuntimeTypeEnum::Reverb, RuntimeTypeEnum::BillingWebhook, RuntimeTypeEnum::Auth];
+    $added = [RuntimeTypeEnum::RequestMemory, RuntimeTypeEnum::JobMemory, RuntimeTypeEnum::QueueWait, RuntimeTypeEnum::Cache, RuntimeTypeEnum::Mail, RuntimeTypeEnum::Notification, RuntimeTypeEnum::LogLevel, RuntimeTypeEnum::Deprecation, RuntimeTypeEnum::DuplicateQuery, RuntimeTypeEnum::Server, RuntimeTypeEnum::Command, RuntimeTypeEnum::Health, RuntimeTypeEnum::Ai, RuntimeTypeEnum::AiTool, RuntimeTypeEnum::Octane, RuntimeTypeEnum::Reverb, RuntimeTypeEnum::BillingWebhook, RuntimeTypeEnum::Auth, RuntimeTypeEnum::Pennant];
     $defaults = $load(['enabled' => true]);
 
     foreach (RuntimeTypeEnum::cases() as $type) {

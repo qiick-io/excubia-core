@@ -73,7 +73,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "octane": { "enabled": false, "sampleRate": 1 },
     "reverb": { "enabled": false, "sampleRate": 1 },
     "billing": { "enabled": false, "sampleRate": 1 },
-    "auth": { "enabled": false, "sampleRate": 1 }
+    "auth": { "enabled": false, "sampleRate": 1 },
+    "pennant": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -328,6 +329,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.auth` | object | | Authentication per guard: successful and failed logins, lockouts and, with `laravel/sanctum`, Sanctum token authentications. Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default. See [runtime monitoring](./runtime-monitoring.md#authentication). |
 | `runtime.auth.enabled` | boolean | `false` | Collect authentication events. |
 | `runtime.auth.sampleRate` | number 0–1 | `1` | Share of authentication events recorded. |
+| `runtime.pennant` | object | | Laravel Pennant (`laravel/pennant`) feature checks per feature name: active, inactive, first resolutions and checks of undefined features. Records nothing unless Pennant is installed; feature names are hashed unless they are short names or class names; never the scope or the value. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-pennant). |
+| `runtime.pennant.enabled` | boolean | `false` | Collect Pennant feature checks. |
+| `runtime.pennant.sampleRate` | number 0–1 | `1` | Share of feature events recorded. Checks can be frequent: a value below 1 keeps the buffer small. |
 
 ## Exception capture
 
