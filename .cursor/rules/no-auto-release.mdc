@@ -1,23 +1,24 @@
 ---
-description: Do not ship Excubia to main, tag it, or publish it unless the user explicitly asks.
+description: Never release, tag or merge to main without the maintainer
 alwaysApply: true
 ---
 
-# No automatic release
+<!-- Generated from qiick-io/app-ui standards: do not edit, run the sync. Repo-only rules go in AGENTS.md or another .mdc file. -->
 
-Agents must not ship Excubia (`qiick/excubia-core`) to `main` without an explicit user request. `develop` is the integration branch. `main` is for releases.
+# Releases: never without the maintainer
 
-## Allowed
+`develop` is the integration branch. `main` holds releases only.
 
-- Open a `develop` → `main` release pull request when the user asks for a release
-- Stop after that pull request is open
+Agents may, when asked for a release:
 
-## Forbidden unless the user explicitly asks
+- open a `develop` → `main` release pull request with a full body (changelog, included PRs), then **stop**.
 
-- Merge a release pull request (`develop` → `main`)
-- Create git tags (`vX.Y.Z` or otherwise)
-- Run `gh release create` or publish a GitHub Release
-- Push to `main` to cut a release
-- Publish `qiick/excubia-core` to Packagist
+Agents must not, unless the maintainer explicitly says so in this conversation:
 
-Claiming the Packagist vendor `qiick` and the trademark search before `v0.1.0` are human steps (`docs/SPEC.md` D5 and D13).
+- merge a release pull request or anything into `main` / `release/*`;
+- bump versions, create tags (`vX.Y.Z` or any other), run `gh release create` or publish a GitHub Release;
+- push to `main` / `master` / `release/*`;
+- publish packages (Packagist, npm) or images (Docker Hub, GHCR);
+- change repository visibility.
+
+How a release goes, for reference: release PR → the maintainer merges it → tag `vX.Y.Z` on the merge commit → GitHub Release titled exactly with the tag, listing the included PRs → `main` is merged back into `develop`.
