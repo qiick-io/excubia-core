@@ -97,7 +97,9 @@ Symfony Console's global options (`-q`, `-v`, `--version`, …) come with the fr
 
 ### Scheduled entries and heartbeat keys
 
-The service provider schedules `excubia:heartbeat` every minute (`* * * * *`), always, and `excubia:push-runtime` every minute when `runtime.enabled` or `exceptions.enabled` is true. The heartbeat stores the Unix time under the cache key `excubia:scheduler-heartbeat` in the default cache store.
+The service provider schedules `excubia:heartbeat` every minute (`* * * * *`), always, and `excubia:push-runtime` every minute when `runtime.enabled` or `exceptions.enabled` is true.
+
+Scheduler heartbeat (#205): `excubia:heartbeat` stores the time of its run under the cache key `excubia:scheduler-heartbeat` in the app's default cache store. Value: an integer, the Unix time in seconds (UTC); no expiry, overwritten on every run. Readers in the same app and cache store, such as `laravel-scheduler-heartbeat` and the excubia-app System page, take a missing or non-integer value as "the scheduler never ran". The key name and the value format are stable (`ExcubiaHeartbeatCommand::CACHE_KEY`, snapshot `artisan.heartbeatCacheKey`, and `tests/Laravel/ScheduleAndRouteContractTest.php` checks this paragraph against the constant and the stored value).
 
 The provider also always registers the queue worker heartbeat (#151, additive): a queue worker stores the Unix time under `excubia:worker-heartbeat:<connection>:<queue>` in the default cache store, at most once a minute per connection and queue, for `laravel-queue-workers`. The prefix `excubia:worker-heartbeat:` is in the snapshot (`artisan.workerHeartbeatCacheKeyPrefix`).
 
