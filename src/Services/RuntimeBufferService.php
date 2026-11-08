@@ -45,23 +45,24 @@ final class RuntimeBufferService
      * Metric fields that add up when two aggregates merge: integer counters
      * and decimal totals. A type carries only the ones it needs (#132,
      * `totalRepeats` for `duplicateQuery`, #148, and `failoverCount` for
-     * `ai`, #198).
+     * `ai`, #198, and the worker counts of `octane`, #213).
      */
-    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount'];
+    private const COUNTER_FIELDS = ['count', 'errorCount', 'hits', 'misses', 'writes', 'deletes', 'totalRepeats', 'failoverCount', 'workerStarts', 'workerStops', 'requests', 'tasks', 'ticks', 'totalRequestsAtStop'];
 
     private const TOTAL_FIELDS = ['totalMs', 'totalMb'];
 
     /**
-     * Metric fields that keep the larger value when two aggregates merge.
+     * Metric fields that keep the larger value when two aggregates merge
+     * (`maxGrowthMb` of `octane`, #213).
      */
-    private const MAXIMUM_FIELDS = ['maxMs', 'maxMb'];
+    private const MAXIMUM_FIELDS = ['maxMs', 'maxMb', 'maxGrowthMb'];
 
     /**
      * Integer metric fields that keep the larger value when two aggregates
      * merge, and stay integers (`maxRepeats` of `duplicateQuery`, #148,
-     * `findingCount` of `health`, #188).
+     * `findingCount` of `health`, #188, `maxRequestsAtStop` of `octane`, #213).
      */
-    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats', 'findingCount'];
+    private const MAXIMUM_COUNTER_FIELDS = ['maxRepeats', 'findingCount', 'maxRequestsAtStop'];
 
     /**
      * Outcome fields of the `health` type (#188). Two samples of one check

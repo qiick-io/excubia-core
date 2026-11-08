@@ -542,6 +542,10 @@
                 "aiTools": {
                     "$ref": "#/$defs/optInRuntimeType",
                     "description": "Laravel AI SDK (laravel/ai) agent tool calls counted per agent class and tool class, with their duration and failures. Records nothing unless laravel/ai is installed. Never tool arguments or results. Off by default (#198)."
+                },
+                "octane": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Octane (laravel/octane) workers counted per server, Octane server and worker type: worker starts and stops, requests, tasks and ticks handled, worker errors, the memory in use after each request and its growth since the worker's first request, and the requests a worker handled when it stopped. Records nothing unless laravel/octane is installed. Never URLs, request or task data, worker ids or PIDs, or exception messages. Off by default (#213)."
                 }
             }
         },

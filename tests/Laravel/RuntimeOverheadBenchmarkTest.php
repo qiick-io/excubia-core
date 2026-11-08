@@ -28,6 +28,10 @@ use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\TextResponse;
 use Laravel\Ai\Tools\ToolNameResolver;
+use Laravel\Octane\Events\RequestReceived;
+use Laravel\Octane\Events\RequestTerminated;
+use Laravel\Octane\Events\TickReceived;
+use Laravel\Octane\Events\WorkerStarting;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
@@ -35,6 +39,8 @@ use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
 use Qiick\Excubia\Tests\Support\FakeAiAgent;
 use Qiick\Excubia\Tests\Support\FakeAiTool;
+
+require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -50,7 +56,8 @@ use Qiick\Excubia\Tests\Support\FakeAiTool;
  * times (an N+1 that `duplicateQuery` records), so the cache, log level and
  * query listeners run as in a typical request. The third test prices the
  * Monolog processor that learns the log channel (#174) per log entry, and the
- * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run.
+ * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run,
+ * and the fifth the `octane` listeners (#213) per Octane request and tick.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -345,6 +352,61 @@ it('adds little per Laravel AI SDK agent run and tool call, with the AI types on
     fwrite(STDERR, sprintf(
         "\nLaravel AI SDK over %d agent runs with one tool call each (fake gateway; PHP %s, Laravel %s)\n  ai types off: %.4f ms/run\n  ai types on:  %.4f ms/run (delta %.4f ms)\n  collector:    %.4f ms/run (start + tool + done, no flush)\n",
         $runs,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Octane request and tick, with the octane type on', function () {
+    $requests = 4 * BENCHMARK_REQUESTS;
+    $app = $this->app;
+    $request = Request::create('/benchmark');
+    $received = new RequestReceived($app, $app, $request);
+    $terminated = new RequestTerminated($app, $app, $request, new Response('ok'));
+    $tick = new TickReceived($app, $app);
+
+    // Octane's events through the dispatcher, as the worker fires them.
+    $dispatchMilliseconds = function () use ($app, $requests, $received, $terminated, $tick): float {
+        $events = $app->make('events');
+        $events->dispatch(new WorkerStarting($app));
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $requests; $i++) {
+            $events->dispatch($received);
+            $events->dispatch($terminated);
+            $events->dispatch($tick);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $requests;
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'octane' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    // The collector alone: one request (received + terminated) and one tick.
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $requests; $i++) {
+        $collector->receiveOctaneRequest($received);
+        $collector->recordOctaneRequest($terminated);
+        $collector->recordOctaneOperation($tick);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / $requests;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Octane over %d requests and ticks (faked events; PHP %s, Laravel %s)\n  octane off: %.4f ms/request\n  octane on:  %.4f ms/request (delta %.4f ms)\n  collector:  %.4f ms/request (received + terminated + tick, no flush)\n",
+        $requests,
         PHP_VERSION,
         Application::VERSION,
         $off,

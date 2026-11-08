@@ -69,7 +69,8 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] },
     "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 },
     "ai": { "enabled": false, "sampleRate": 1 },
-    "aiTools": { "enabled": false, "sampleRate": 1 }
+    "aiTools": { "enabled": false, "sampleRate": 1 },
+    "octane": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -312,6 +313,9 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.aiTools` | object | | Laravel AI SDK agent tool calls per agent and tool class, with their duration and failures. Records nothing unless `laravel/ai` is installed; never tool arguments or results. Off by default. |
 | `runtime.aiTools.enabled` | boolean | `false` | Collect AI tool calls. |
 | `runtime.aiTools.sampleRate` | number 0–1 | `1` | Share of tool calls recorded. |
+| `runtime.octane` | object | | Laravel Octane (`laravel/octane`) workers per server, Octane server and worker type: starts, stops, requests, tasks, ticks, worker errors, memory after each request and its growth since the worker's first request, and requests handled at stop. Records nothing unless `laravel/octane` is installed; never URLs, request or task data, or PIDs. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-octane). |
+| `runtime.octane.enabled` | boolean | `false` | Collect Octane worker events. |
+| `runtime.octane.sampleRate` | number 0–1 | `1` | Share of worker events recorded. |
 
 ## Exception capture
 

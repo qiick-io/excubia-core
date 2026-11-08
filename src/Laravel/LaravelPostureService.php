@@ -59,6 +59,9 @@ use Throwable;
  * session use (or on `checks.laravel-redis-memory.connections`): used and
  * max memory and the eviction policy, nothing else of the reply.
  *
+ * For `laravel-octane-config` (#213), when Laravel Octane is installed, it
+ * reads `octane.server` and `octane.max_requests`, nothing else.
+ *
  * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
  * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
  * Without one the PHP runtime stays unknown: the CLI that runs Artisan has
@@ -109,6 +112,12 @@ final class LaravelPostureService
      * is not a dependency of this package).
      */
     private const BACKUP_DESTINATION = 'Spatie\\Backup\\BackupDestination\\BackupDestination';
+
+    /**
+     * Laravel Octane's first event class, used only to tell whether Octane
+     * is installed (it is not a dependency of this package).
+     */
+    private const OCTANE_WORKER_STARTING = 'Laravel\\Octane\\Events\\WorkerStarting';
 
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
@@ -197,7 +206,32 @@ final class LaravelPostureService
             databaseSize: $databaseStatistics['size'],
             redisMemory: $isProbed('laravel-redis-memory') ? $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames) : null,
             phpRuntime: $isProbed('php-opcache', 'php-production-ini') ? $this->phpRuntime($application, $now) : null,
+            octane: $isProbed('laravel-octane-config') ? $this->octane($config) : null,
         );
+    }
+
+    /**
+     * Octane's server and `max_requests` (#213), or null when Octane is not
+     * installed: its event classes are missing, or its `octane`
+     * configuration is (its service provider always merges it).
+     *
+     * @return array{server: string, maxRequests: int|null}|null
+     */
+    private function octane(Repository $config): ?array
+    {
+        $octane = $config->get('octane');
+
+        if (! class_exists(self::OCTANE_WORKER_STARTING) || ! is_array($octane)) {
+            return null;
+        }
+
+        $server = $octane['server'] ?? null;
+        $maxRequests = $octane['max_requests'] ?? null;
+
+        return [
+            'server' => in_array($server, RuntimeCollectorService::OCTANE_SERVERS, true) ? $server : 'unknown',
+            'maxRequests' => is_int($maxRequests) || (is_string($maxRequests) && preg_match('/^-?\d+$/', $maxRequests) === 1) ? (int) $maxRequests : null,
+        ];
     }
 
     /**

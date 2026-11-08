@@ -113,6 +113,7 @@ it('documents the details keys per check id', function () {
         ->and($keys('diskSpaceDetails'))->toBe(['usedPercent'])
         ->and($keys('queueBacklogDetails'))->toBe(['queue', 'pendingCount', 'oldestAgeMinutes'])
         ->and($keys('platformRequirementsDetails'))->toBe(['requirement', 'requiredBy', 'checkedPhpVersion', 'isStandaloneCli'])
+        ->and($keys('laravelOctaneConfigDetails'))->toBe(['server', 'maxRequests'])
         ->and($ruledCheckIds)->toBe([
             'composer-advisories',
             'npm-advisories',
@@ -145,6 +146,7 @@ it('documents the details keys per check id', function () {
             'laravel-redis-memory',
             'php-opcache',
             'php-production-ini',
+            'laravel-octane-config',
         ])
         ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem', 'kind'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])

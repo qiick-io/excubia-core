@@ -61,11 +61,19 @@ use Laravel\Ai\Events\ToolFailed;
 use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Events\TranscriptionFailed;
 use Laravel\Ai\Events\TranscriptionGenerated;
+use Laravel\Octane\Events\RequestReceived;
+use Laravel\Octane\Events\RequestTerminated;
+use Laravel\Octane\Events\TaskReceived;
+use Laravel\Octane\Events\TickReceived;
+use Laravel\Octane\Events\WorkerErrorOccurred;
+use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Octane\Events\WorkerStopping;
 use Monolog\Logger as MonologLogger;
 use Monolog\LogRecord;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Services\RuntimeBufferService;
+use Qiick\Excubia\Services\ServerMetricsService;
 use Throwable;
 use WeakMap;
 use WeakReference;
@@ -97,7 +105,8 @@ use WeakReference;
  * whole cache keys or values, recipients, log messages or context, absolute
  * paths, the line and stack of a deprecation, command arguments and
  * options, or AI prompts, attachments, messages, responses, reasoning, tool
- * arguments or results and conversations.
+ * arguments or results and conversations, or Octane URLs, request or task
+ * data, worker ids or PIDs.
  *
  * Every listener swallows its own exceptions: monitoring must never break or
  * slow down the host application. Excubia never logs, and the log listener
@@ -165,6 +174,28 @@ final class RuntimeCollectorService
     public const MAX_PENDING_AI_INVOCATIONS = 200;
 
     private const BYTES_PER_MEGABYTE = 1048576;
+
+    /**
+     * The Octane servers `octane.server` may name (#213).
+     */
+    public const OCTANE_SERVERS = ['swoole', 'roadrunner', 'frankenphp'];
+
+    /**
+     * The container key of the client Octane binds in each worker, and the
+     * server of each client class.
+     */
+    private const OCTANE_CLIENT = 'Laravel\\Octane\\Contracts\\Client';
+
+    private const OCTANE_CLIENT_SERVERS = [
+        'Laravel\\Octane\\Swoole\\SwooleClient' => 'swoole',
+        'Laravel\\Octane\\RoadRunner\\RoadRunnerClient' => 'roadrunner',
+        'Laravel\\Octane\\FrankenPhp\\FrankenPhpClient' => 'frankenphp',
+    ];
+
+    /**
+     * The container key of the Swoole server Octane binds in a Swoole worker.
+     */
+    private const SWOOLE_SERVER = 'Swoole\\Http\\Server';
 
     private const LOG_LEVELS = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
 
@@ -282,6 +313,39 @@ final class RuntimeCollectorService
     private ?array $lastAiFailure = null;
 
     /**
+     * Dimensions of this Octane worker's `octane` aggregates (#213): the
+     * server identity, the Octane server and the worker type. Read once,
+     * from the first Octane event the worker fires.
+     *
+     * @var array{server: string, octaneServer: string, workerType: string}|null
+     */
+    private ?array $octaneDimensions = null;
+
+    /**
+     * Requests this Octane worker received since it started, sampled or
+     * not: its count when it stops, to compare with `max_requests`.
+     */
+    private int $octaneRequestCount = 0;
+
+    /**
+     * Whether a request was received and has not terminated yet: one that
+     * ends in a worker error is counted with the error.
+     */
+    private bool $isOctaneRequestOpen = false;
+
+    /**
+     * Memory in use after the worker's first request, the base of the
+     * growth (the leak signal).
+     */
+    private ?int $octaneFirstRequestBytes = null;
+
+    /**
+     * When an Octane listener last flushed the buffer. A worker never
+     * terminates, so tasks and ticks flush at most once a minute.
+     */
+    private float $octaneFlushedAt = 0.0;
+
+    /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
      */
     public function __construct(
@@ -387,6 +451,10 @@ final class RuntimeCollectorService
 
         if (class_exists(PromptingAgent::class)) {
             $collector->listenToAi($events);
+        }
+
+        if ($configuration->isTypeEnabled(RuntimeTypeEnum::Octane) && class_exists(WorkerStarting::class)) {
+            $collector->listenToOctane($events);
         }
 
         $application->terminating(function () use ($collector): void {
@@ -1441,6 +1509,213 @@ final class RuntimeCollectorService
     }
 
     /**
+     * Listen to Laravel Octane (`laravel/octane`, #213), which the provider
+     * only calls when its events exist: Excubia does not depend on it. The
+     * provider boots once per worker, before Octane fires `WorkerStarting`,
+     * and Octane fires every later event on the same dispatcher (through the
+     * request, task or tick sandbox).
+     */
+    public function listenToOctane(Dispatcher $events): void
+    {
+        $events->listen(WorkerStarting::class, $this->startOctaneWorker(...));
+        $events->listen(RequestReceived::class, $this->receiveOctaneRequest(...));
+        $events->listen(RequestTerminated::class, $this->recordOctaneRequest(...));
+        $events->listen([TaskReceived::class, TickReceived::class], $this->recordOctaneOperation(...));
+        $events->listen(WorkerStopping::class, $this->stopOctaneWorker(...));
+
+        if (class_exists(WorkerErrorOccurred::class)) {
+            $events->listen(WorkerErrorOccurred::class, $this->recordOctaneError(...));
+        }
+    }
+
+    /**
+     * One worker start, flushed right away so a crash loop shows up.
+     */
+    public function startOctaneWorker(WorkerStarting $event): void
+    {
+        $this->guard(function () use ($event): void {
+            $this->octaneDimensions = null;
+            $this->octaneRequestCount = 0;
+            $this->isOctaneRequestOpen = false;
+            $this->octaneFirstRequestBytes = null;
+
+            if ($this->isSampled(RuntimeTypeEnum::Octane)) {
+                $this->recordOctane($event->app, ['workerStarts' => 1]);
+            }
+
+            $this->flushOctane();
+        });
+    }
+
+    /**
+     * Count the request for the worker's total. Nothing of the request is
+     * read.
+     */
+    public function receiveOctaneRequest(RequestReceived $event): void
+    {
+        $this->octaneRequestCount++;
+        $this->isOctaneRequestOpen = true;
+    }
+
+    /**
+     * One handled request with the memory in use after it (after the
+     * kernel terminated) and its growth since the worker's first request.
+     * Nothing of the request or the response is read.
+     *
+     * ponytail: the request's aggregate is written by the next request's
+     * terminating flush, a task, tick or worker stop, or at most a minute
+     * later; an idle worker holds it until then.
+     */
+    public function recordOctaneRequest(RequestTerminated $event): void
+    {
+        $this->isOctaneRequestOpen = false;
+
+        $this->guard(function () use ($event): void {
+            $memoryBytes = memory_get_usage();
+            $this->octaneFirstRequestBytes ??= $memoryBytes;
+
+            if ($this->isSampled(RuntimeTypeEnum::Octane)) {
+                $this->recordOctane($event->sandbox, [
+                    'requests' => 1,
+                    'maxMb' => self::megabytes($memoryBytes),
+                    'maxGrowthMb' => self::megabytes($memoryBytes - $this->octaneFirstRequestBytes),
+                ]);
+            }
+
+            $this->flushOctaneEveryMinute();
+        });
+    }
+
+    /**
+     * One task (`TaskReceived`) or tick (`TickReceived`, Swoole's every
+     * second timer). The task data is never read.
+     */
+    public function recordOctaneOperation(TaskReceived|TickReceived $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if ($this->isSampled(RuntimeTypeEnum::Octane)) {
+                $this->recordOctane($event->sandbox, $event instanceof TaskReceived ? ['tasks' => 1] : ['ticks' => 1]);
+            }
+
+            $this->flushOctaneEveryMinute();
+        });
+    }
+
+    /**
+     * One worker error: an exception that escaped a request, task or tick.
+     * A request it ended is counted here. The exception is never read.
+     */
+    public function recordOctaneError(WorkerErrorOccurred $event): void
+    {
+        $hasOpenRequest = $this->isOctaneRequestOpen;
+        $this->isOctaneRequestOpen = false;
+
+        $this->guard(function () use ($event, $hasOpenRequest): void {
+            if ($this->isSampled(RuntimeTypeEnum::Octane)) {
+                $this->recordOctane($event->sandbox, ['errorCount' => 1, 'requests' => $hasOpenRequest ? 1 : 0]);
+            }
+
+            $this->flushOctane();
+        });
+    }
+
+    /**
+     * One worker stop with the requests it handled (`max_requests` reached,
+     * a reload or a shutdown), then flush.
+     */
+    public function stopOctaneWorker(WorkerStopping $event): void
+    {
+        $this->guard(function () use ($event): void {
+            if ($this->isSampled(RuntimeTypeEnum::Octane)) {
+                $this->recordOctane($event->app, [
+                    'workerStops' => 1,
+                    'totalRequestsAtStop' => $this->octaneRequestCount,
+                    'maxRequestsAtStop' => $this->octaneRequestCount,
+                ]);
+            }
+
+            $this->flushOctane();
+        });
+    }
+
+    /**
+     * One `octane` event with every metric field: the ones not given are 0.
+     *
+     * @param  array<string, int|float>  $metrics
+     */
+    private function recordOctane(Application $application, array $metrics): void
+    {
+        $this->octaneDimensions ??= $this->octaneDimensions($application);
+
+        $this->record(RuntimeTypeEnum::Octane, $this->octaneDimensions, [
+            'workerStarts' => 0,
+            'workerStops' => 0,
+            'requests' => 0,
+            'tasks' => 0,
+            'ticks' => 0,
+            'totalRequestsAtStop' => 0,
+            'maxRequestsAtStop' => 0,
+            'maxMb' => 0.0,
+            'maxGrowthMb' => 0.0,
+            ...$metrics,
+        ]);
+    }
+
+    /**
+     * The server identity (as for `server`: the configured name, else a
+     * hash of the hostname and the app key, never the hostname), the Octane
+     * server (`swoole`, `roadrunner`, `frankenphp`, else `unknown`) from the
+     * client Octane bound, else `octane.server`, and the worker type: `task`
+     * in a Swoole task worker (which also runs the ticks), else `http`.
+     *
+     * @return array{server: string, octaneServer: string, workerType: string}
+     */
+    private function octaneDimensions(Application $application): array
+    {
+        /** @var Repository $config */
+        $config = $application->make('config');
+        $applicationKey = $config->get('app.key');
+        $hostname = gethostname();
+        $client = $application->bound(self::OCTANE_CLIENT) ? $application->make(self::OCTANE_CLIENT) : null;
+        $configuredServer = $config->get('octane.server');
+        $octaneServer = null;
+
+        foreach (self::OCTANE_CLIENT_SERVERS as $clientClass => $server) {
+            if ($client instanceof $clientClass) {
+                $octaneServer = $server;
+
+                break;
+            }
+        }
+
+        $swooleServer = $application->bound(self::SWOOLE_SERVER) ? $application->make(self::SWOOLE_SERVER) : null;
+
+        return [
+            'server' => ServerMetricsService::serverIdentity($this->configuration->serverName, is_string($hostname) ? $hostname : '', is_string($applicationKey) ? $applicationKey : ''),
+            'octaneServer' => $octaneServer ?? (in_array($configuredServer, self::OCTANE_SERVERS, true) ? $configuredServer : 'unknown'),
+            'workerType' => is_object($swooleServer) && ($swooleServer->taskworker ?? false) === true ? 'task' : 'http',
+        ];
+    }
+
+    private function flushOctane(): void
+    {
+        $this->octaneFlushedAt = $this->now();
+        $this->flush();
+    }
+
+    private function flushOctaneEveryMinute(): void
+    {
+        if ($this->now() - $this->octaneFlushedAt >= 60) {
+            $this->flushOctane();
+        }
+    }
+
+    private static function megabytes(int $bytes): float
+    {
+        return round(max($bytes, 0) / self::BYTES_PER_MEGABYTE, 3);
+    }
+
+    /**
      * Write the pending aggregates to the buffer and forget them.
      */
     public function flush(): void
@@ -1532,7 +1807,7 @@ final class RuntimeCollectorService
      */
     private function addMemory(RuntimeTypeEnum $type, array $dimensions, int $peakBytes): void
     {
-        $peakMegabytes = round(max($peakBytes, 0) / self::BYTES_PER_MEGABYTE, 3);
+        $peakMegabytes = self::megabytes($peakBytes);
 
         $this->record($type, $dimensions, ['totalMb' => $peakMegabytes, 'maxMb' => $peakMegabytes]);
     }

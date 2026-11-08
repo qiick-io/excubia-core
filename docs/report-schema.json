@@ -878,6 +878,23 @@
                             }
                         }
                     }
+                },
+                {
+                    "if": {
+                        "required": ["checkId", "details"],
+                        "properties": {
+                            "checkId": {
+                                "const": "laravel-octane-config"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "details": {
+                                "$ref": "#/$defs/laravelOctaneConfigDetails"
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -1532,6 +1549,22 @@
                     "description": "Minutes since the health endpoint stored the web snapshot.",
                     "type": "integer",
                     "minimum": 0
+                }
+            }
+        },
+        "laravelOctaneConfigDetails": {
+            "description": "laravel-octane-config finding (#213): the info row with the server type, and in production the max_requests warning. Names and integers only.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["server", "maxRequests"],
+            "properties": {
+                "server": {
+                    "description": "octane.server: swoole, roadrunner or frankenphp, else unknown.",
+                    "enum": ["swoole", "roadrunner", "frankenphp", "unknown"]
+                },
+                "maxRequests": {
+                    "description": "octane.max_requests, null when it is not set (or not an integer).",
+                    "type": ["integer", "null"]
                 }
             }
         },
