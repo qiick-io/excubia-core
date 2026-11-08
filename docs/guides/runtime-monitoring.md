@@ -1,6 +1,6 @@
 # Runtime monitoring
 
-In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) Laravel Reverb servers (connections, messages, errors and channels per app), Laravel Cashier webhooks (received, handled, failed and payment signals per provider and event type) and authentication (logins, failed logins, lockouts and Sanctum token authentications per guard). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
+In a Laravel 12 or 13 app, Excubia can send runtime aggregates to your own `excubia-app`: request, slow query, job, scheduled task and outgoing HTTP timings, and, opt-in per type, memory, queue wait, cache, mail, notification, log level and PHP deprecation counts, N+1 duplicate query detection, Artisan command runs and Laravel AI SDK usage (calls, latency, failures, failovers and tokens per agent, provider and model, and agent tool calls) Laravel Octane workers (restarts, requests, errors and memory growth per worker) Laravel Reverb servers (connections, messages, errors and channels per app), Laravel Cashier webhooks (received, handled, failed and payment signals per provider and event type) authentication (logins, failed logins, lockouts and Sanctum token authentications per guard) and Laravel Scout (queued index jobs and searches per model and engine). It is off by default. While it is off, the service provider registers no listener and no schedule, and nothing runs.
 
 ## Prerequisites
 
@@ -58,7 +58,8 @@ More types, added in 1.0.0-beta.2, are off by default. Switch on the ones you wa
     "octane": { "enabled": true },
     "reverb": { "enabled": true },
     "billing": { "enabled": true },
-    "auth": { "enabled": true }
+    "auth": { "enabled": true },
+    "scout": { "enabled": true }
   }
 }
 ```
@@ -125,6 +126,7 @@ It prints `Sent N runtime batches to excubia-app.`, `No runtime data to send.`, 
 | `octane` | Laravel Octane: `WorkerStarting`, `RequestReceived` / `RequestTerminated`, `TaskReceived`, `TickReceived`, `WorkerErrorOccurred`, `WorkerStopping` | A worker error |
 | `reverb` | Laravel Reverb: `MessageReceived`, `MessageSent`, `ConnectionPruned`, `ChannelCreated`, `ChannelRemoved`, plus a connection sample once a minute | A `pusher:error` sent to an established connection |
 | `auth` | `Login`, `Failed`, `Lockout`, and Laravel Sanctum's `TokenAuthenticated` | A failed login |
+| `scout` | Laravel Scout: `JobProcessing` / `JobProcessed` / `JobFailed` of its index jobs, and the container resolving its search builder | The index job failed |
 | `billingWebhook` | Laravel Cashier and Cashier Paddle: `WebhookReceived`, `WebhookHandled`, and `RequestHandled` for the response status | The request ended with a 5xx before Cashier's handler returned |
 
 Notes on the newer types:
@@ -303,11 +305,33 @@ With the [Laravel AI SDK](https://laravel.com/docs/13.x/ai-sdk) (`laravel/ai`) i
 - The `laravel-api-tokens` check (Artisan only) reports, for Sanctum, tokens that never expire (`sanctum.expiration` null while some token has no `expires_at`; low, medium in production), tokens not used for 90 days (low) and, in production, a `stateful` domain with a wildcard (medium) or none at all (low). For Passport: missing keys (high in production), a private key file others can read (mode other than 0400, 0440, 0600, 0640 or 0660; high in production) and very long token lifetimes (access tokens over 30 days, refresh or personal access tokens over a year; low). It counts tokens and personal access clients with read-only queries (3 s statement timeout on MySQL and PostgreSQL); a missing table only leaves the counts out. Counts and booleans only.
 - Cost (`vendor/bin/pest --group=benchmark`): about 0.005 ms per authentication event, in the collector and through Laravel's dispatcher.
 
+### Laravel Scout
+
+`runtime.scout` (1.0.0-beta.4, #221) records [Laravel Scout](https://laravel.com/docs/scout) index updates and searches when Scout is installed. Excubia does not depend on it.
+
+```json
+{
+  "runtime": {
+    "enabled": true,
+    "scout": { "enabled": true }
+  }
+}
+```
+
+- Rows are keyed by `model` (the searchable model class), `engine` (`scout.driver`: `algolia`, `meilisearch`, `typesense`, `database`, `collection`, …) and `operation`.
+- Scout fires no event when it updates an index or runs a search, so Excubia records what Laravel shows. `index` and `remove` are Scout's queued index jobs (`MakeSearchable`, `RemoveFromSearch`, their `*Uniquely` variants, and the classes set with `Scout::makeSearchableUsing()` / `removeFromSearchUsing()`): `count` counts the jobs that ended, `errorCount` those that failed, `modelCount` the records they carried, and `totalMs`, `maxMs` and the histogram time each job. A job released for a retry is counted once, when its last attempt ends.
+- Index jobs exist only with `scout.queue` on (recommended in production). With it off, Scout updates the engine inline while the model saves, and nothing is recorded.
+- `search` counts `Model::search()` calls (each search builder the container makes), with `modelCount` 0 and no duration: search latency is not measured, because that would mean wrapping Scout's builder or engines. Algolia, Meilisearch and Typesense calls go through their own HTTP clients, so they are not in `outgoingHttp` either; the `database` engine's queries are in `slowQueries`.
+- A model that overrides `searchableUsing()` is still counted under `scout.driver`.
+- The jobs also appear in `jobs` (with queue and connection); this type adds the model, the engine and the record count.
+- Read: the job class, and in the serialized job the model class and the number of keys (never the keys), and the class of the search builder's model. Never the search query, record ids or record data.
+- Cost (`vendor/bin/pest --group=benchmark`): about 0.06 ms per index job and search, mostly the buffer write after each index job, as for `jobs`.
+
 Envelope: `protocolVersion` `1`, `type` `runtime`, `batchId`, `sentAt` and `runtime`. Schemas: [`docs/runtime-schema.json`](../runtime-schema.json) and `$defs.runtimeEnvelope` in [`docs/push-schema.json`](../push-schema.json).
 
 ## What is sent
 
-Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, Cashier webhook providers and event types with webhook and payment signal counts, auth guard names with login, failed login, lockout and token authentication counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, anything of a Cashier webhook but its event type (amounts, currencies, customer or subscription ids, emails, cards), the user, credentials, token or request of an authentication event (usernames, emails, user ids, passwords, IP addresses), hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
+Route names (`unnamed` for routes without a name), HTTP methods and status classes; slow SQL without bindings, with inline literals (quoted strings, numbers, hex and dollar-quoted literals) replaced by `?`, and the connection name; job class, queue and connection names; scheduled task descriptions (paths made relative, secrets masked), else `artisan <command name>` or the executable's file name, without arguments; the host of outgoing calls; with the newer types, peak memory, queue wait times, cache store names and masked key prefixes, mailable, mailer, notification and channel names, log levels, the source package, masked message and PHP version of deprecations, the normalised SQL, connection, route name or job class and repeat counts of duplicate queries, Artisan command names and exit code classes, Laravel AI SDK operation, agent and tool class names, provider and model names and token counts, Octane server and worker types with worker counts and memory, Reverb app ids with connection, message and channel counts, Cashier webhook providers and event types with webhook and payment signal counts, auth guard names with login, failed login, lockout and token authentication counts, Scout model classes, engines and operations with index job, record and search counts, and the server name or hashed id with its load, CPU core count and container CPU quota, memory and disk sizes, and whether it runs in a container. Never cache keys or values, mail recipients, notifiables, log messages, URLs or query strings, bodies, headers, cookies, users, IP addresses, query bindings, exception messages, the file, line or stack of a deprecation, command arguments or options, AI prompts, instructions, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, Octane request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, anything of a Cashier webhook but its event type (amounts, currencies, customer or subscription ids, emails, cards), the user, credentials, token or request of an authentication event (usernames, emails, user ids, passwords, IP addresses), Scout search queries, record ids or record data, hostnames, `.env` values or absolute paths. Details: [privacy](./privacy.md#runtime-monitoring).
 
 Name your routes (`->name('orders.show')`) to get useful request rows.
 

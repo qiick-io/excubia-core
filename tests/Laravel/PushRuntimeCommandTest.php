@@ -7,6 +7,7 @@ use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Notifications\Events\NotificationSent;
@@ -40,6 +41,7 @@ use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Reverb\Application as ReverbApplication;
 use Laravel\Reverb\Contracts\Connection as ReverbConnection;
 use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
+use Laravel\Scout\Builder as ScoutBuilder;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
@@ -58,6 +60,7 @@ use Symfony\Component\Mailer\Exception\TransportException;
 
 require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
 require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
+require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
 require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
 
 const RUNTIME_ENDPOINT = 'https://excubia.example.test/api/runtime';
@@ -337,6 +340,7 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     event(new ReverbMessageReceived(new ReverbConnection(new ReverbApplication('123456')), '{}'));
     event(new StripeWebhookReceived(['type' => 'invoice.payment_failed']));
     event(new Failed('web', null, ['email' => 'someone@example.test', 'password' => 'secret']));
+    $this->app->make(ScoutBuilder::class, ['model' => new class extends Model {}, 'query' => 'someone@example.test']);
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);

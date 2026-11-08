@@ -16,6 +16,7 @@ declare(strict_types=1);
  */
 
 namespace Laravel\Scout {
+    use Illuminate\Database\Eloquent\Collection;
     use Laravel\Scout\Jobs\MakeSearchable;
     use Laravel\Scout\Jobs\RemoveFromSearch;
 
@@ -64,7 +65,7 @@ namespace Laravel\Scout {
         }
 
         /**
-         * @param  \Illuminate\Database\Eloquent\Collection<int, static>  $models
+         * @param  Collection<int, static>  $models
          */
         public function queueMakeSearchable($models): void
         {
@@ -72,7 +73,7 @@ namespace Laravel\Scout {
         }
 
         /**
-         * @param  \Illuminate\Database\Eloquent\Collection<int, static>  $models
+         * @param  Collection<int, static>  $models
          */
         public function queueRemoveFromSearch($models): void
         {
@@ -84,6 +85,8 @@ namespace Laravel\Scout {
 namespace Laravel\Scout\Jobs {
     use Illuminate\Bus\Queueable;
     use Illuminate\Contracts\Queue\ShouldQueue;
+    use Illuminate\Database\Eloquent\Collection;
+    use Illuminate\Database\Eloquent\Model;
     use Illuminate\Queue\SerializesModels;
 
     class MakeSearchable implements ShouldQueue
@@ -91,7 +94,7 @@ namespace Laravel\Scout\Jobs {
         use Queueable, SerializesModels;
 
         /**
-         * @param  \Illuminate\Database\Eloquent\Collection<int, \Illuminate\Database\Eloquent\Model>  $models
+         * @param  Collection<int, Model>  $models
          */
         public function __construct(public $models) {}
 
@@ -112,7 +115,7 @@ namespace Laravel\Scout\Jobs {
         use Queueable, SerializesModels;
 
         /**
-         * @param  \Illuminate\Database\Eloquent\Collection<int, \Illuminate\Database\Eloquent\Model>  $models
+         * @param  Collection<int, Model>  $models
          */
         public function __construct(public $models) {}
 
