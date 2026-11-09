@@ -174,6 +174,7 @@ Excubia is the open-source (MIT) health check for Laravel apps in the qiick suit
 
 - Source of truth: `docs/SPEC.md` and `docs/ARCHITECTURE.md`. Roadmap: `docs/ROADMAP.md`. Decisions D1–D13 and A1–A2 are final.
 - Anything marked **[PROPOSAL]** or labelled `needs-decision` is not approved: do not build it.
+- **Feature freeze until 1.0.0** (#233): from 1.0.0-beta.4 on, this package takes fixes only. No new check ids, runtime types, `excubia.json` keys, CLI or Artisan options, or report / push / runtime / exception schema fields; `docs/CONTRACTS.md` stays as beta.4 shipped it. New feature issues go to the v1.1.0 milestone. A contract change that turns out to be needed ships in a new beta or rc first (#88). See `docs/ROADMAP.md`.
 - Opt-in runtime monitoring (Phase B, approved 2026-11-02) lives in this package, enabled via config, and reaches `excubia-app` only through the push protocol (`docs/SPEC.md` sections 12–13). There is no `excubia-probe`. The multi-project dashboard is the separate repo `qiick-io/excubia-app`, which consumes this package.
 - Display name is "Excubia" alone, never "qiick Excubia", in user-facing strings and docs.
 
