@@ -2,7 +2,7 @@
 
 # qiick standards
 
-These rules bind every agent and contributor in this repo from the first task. They are the same in every qiick repo (source: https://github.com/qiick-io/app-ui/tree/develop/standards), and CI fails when this block differs from the source. Rules for this repo only live outside this block; where they are more specific, they win.
+These rules bind every agent and contributor in this repo from the first task. They are the same in every qiick repo (source: https://github.com/qiick-io/app-ui/tree/develop/standards), and CI fails when this block differs from the source. Rules for this repo only live outside this block; where they are more specific, they win. Starting a new qiick product: https://github.com/qiick-io/app-ui/blob/develop/docs/new-product.md.
 
 ## Code standard
 
@@ -83,7 +83,7 @@ Do not invent other role nouns (`...Normalizer`, `...Publisher`, `...Recorder`, 
 4. **Authorization in Policies**, called through `Gate::authorize()` or a FormRequest `authorize()`, not scattered checks.
 5. **One domain for every surface.** The Inertia UI, the REST / GraphQL API, MCP / AI tools and the CLI call the same `*Action` and `*Service` classes; domain logic is never duplicated per surface.
 
-The Pest architecture test (`tests/Arch/NamingArchitectureTest.php`) enforces the suffixes, readonly DTOs, `declare(strict_types=1)`, no debugging helpers, no `env()` outside `config/`, and no `DB` facade in controllers.
+The Pest architecture test (`tests/Arch/NamingArchitectureTest.php`) enforces the suffixes, readonly DTOs, `declare(strict_types=1)`, no debugging helpers, no `env()` outside `config/`, no `DB` facade in controllers, and at most five public methods per controller (existing debt ratcheted in `naming-architecture.php`).
 
 ### Formatting
 
@@ -210,6 +210,13 @@ Agents must not, unless the maintainer explicitly says so in this conversation:
 
 How a release goes, for reference: release PR → the maintainer merges it → tag `vX.Y.Z` on the merge commit → GitHub Release titled exactly with the tag, listing the included PRs → `main` is merged back into `develop`.
 
+### Lifecycle (what the release PR prepares)
+
+- **Versions:** Semantic Versioning. Pre-releases are `vX.Y.Z-beta.N`, then `vX.Y.Z-rc.N`, then `vX.Y.Z`; Composer packages declare them with `@beta` / `@RC` stability. Before `1.0.0` a minor may break; the notes say so.
+- **`CHANGELOG.md`:** [Keep a Changelog](https://keepachangelog.com/en/1.1.0/): `[Unreleased]` collects `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` as PRs land; the release PR moves it to `[X.Y.Z] - YYYY-MM-DD` with an **Upgrade notes** subsection (commands to run, config or env changes, breaking changes, data migrations that take long) and the compare link.
+- **Versions in files:** `composer.json` / `package.json` `version`, the app's version constant or config, and the docs site version, bumped in the release PR only.
+- **Required checks** on `develop` and `main` (the maintainer sets them; agents ask): the repo's own test, lint and type jobs, `pr-title / commitlint`, `app-ui-drift / standards`, and in apps `app-ui-drift / drift`, `ui-quality / ui-quality`, `migrations-frozen / migrations-frozen`, `distribution-smoke / smoke`.
+
 ## Automated checks
 
 Machines enforce these in CI; keep them green, and never silence one to get green.
@@ -218,6 +225,8 @@ Machines enforce these in CI; keep them green, and never silence one to get gree
 - **Strict models.** Each app's `AppServiceProvider::boot()` calls `Model::shouldBeStrict(! app()->isProduction())`: lazy loading, silently discarded attributes and missing attributes throw outside production. Fix the query (eager load, `$fillable`, select the column), never turn it off.
 - **Larastan ratchet.** Each repo runs Larastan one level above where it started. Its `phpstan-baseline.neon` may only shrink: `scripts/qiick-ratchet.mjs phpstan` fails CI when the baseline holds more errors than on the base branch (only the PR that raises `level:` may baseline that level's errors). Never add to the baseline; fix the new error.
 - **Theme tokens only.** In apps with the qiick UI, `scripts/check-ui-tokens.mjs` (synced by the pack, part of `npm run lint`) fails on arbitrary font sizes (`text-[11px]`) and on raw palette / `#hex` classes beyond `scripts/ui-token-baseline.txt`; the baseline only shrinks. The reusable `ui-quality.yml` runs it with the WCAG 2.2 AA contrast check of the installed theme and the app's axe smoke browser test (light, dark, high contrast).
+- **Ratcheted code rules (ESLint repos).** `qiickRatchetedRules()` from `qiick-standards.eslint.js` turns prose rules into checks: only `lucide-react` icons and shadcn primitives (`no-restricted-imports` on other icon and component libraries), toasts only through `@/lib/toast` (not `sonner`), the clipboard only through `@/lib/clipboard` (`no-restricted-properties` on `navigator.clipboard`), booleans prefixed `is` / `has` / `can` / `should` (`@typescript-eslint/naming-convention`, type-aware; destructured contract names exempt), no single-letter names (`id-length`; `i`, `j`, `k`, `t`, `_` allowed). They run only in `npm run lint:standards` (`QIICK_RATCHET=1`), ratcheted per file and rule against `qiick-lint-baseline.json`: existing debt is listed, new findings fail, paid debt must be removed (`--update`).
+- **Thin controllers.** The architecture test fails on a controller with more than five public methods of its own; controllers that already have more are listed with their count in `tests/Arch/naming-architecture.php` (`controllerPublicMethods`), and the test fails when a count grows or when it shrinks without the entry being lowered.
 - **No hard-coded UI strings.** `i18next/no-literal-string` (JSX text only, not attributes such as `className` or `data-*`) flags visible text that bypasses translations: use `t('…')` with keys in every locale file. Existing debt is in `i18n-literal-baseline.json`; `scripts/qiick-ratchet.mjs lint` fails when a file's count grows, and when a count shrinks without the baseline being lowered (`--update`).
 
 <!-- qiick-standards:end -->
