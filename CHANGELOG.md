@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exception capture works behind a decorating exception handler (#241): the `reportable()` callback is registered on Laravel's handler or on any handler that forwards `reportable()`, such as `nunomaduro/collision`'s console handler, so failed queued jobs and `report()` in Artisan commands and queue workers reach the buffer again. Registered once per handler. `php artisan excubia:check` warns when exception capture is on and no handler accepts the callback. No contract change.
 - A push answered with HTTP 429 and a `Retry-After` longer than 5 seconds is reported as rate limited, not unreachable (#256): the HTTP client no longer retries a response (such as a 429) whose `Retry-After` cannot fit in the 15 s request limit, so `excubia:push`, `excubia:push-runtime` and the data-source requests return at once with `excubia-app did not accept … (HTTP 429)` instead of waiting into a timeout. The data is kept for the next run as before. Shorter `Retry-After` values are still honoured. No contract change.
 
 ## [1.0.0-beta.4] - 2026-11-08
