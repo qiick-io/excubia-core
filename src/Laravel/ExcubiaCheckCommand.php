@@ -6,6 +6,7 @@ namespace Qiick\Excubia\Laravel;
 
 use Closure;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
 
@@ -36,6 +37,7 @@ final class ExcubiaCheckCommand extends Command
     public function handle(): int
     {
         $configPath = $this->stringOption('config');
+        $this->warnWhenExceptionCaptureIsDetached();
         $laravelPosture = (new LaravelPostureService)->collect($this->getLaravel(), configuration: LaravelPostureService::configuration($this->getLaravel(), $configPath));
 
         return HealthEndpointService::recording($this->laravel, $configPath, fn (?Closure $reportListener): int => (new CheckCommand(reportListener: $reportListener, laravelPosture: $laravelPosture))->runWithOptions(self::applicationBasePath($this->getLaravel()), [
@@ -71,6 +73,26 @@ final class ExcubiaCheckCommand extends Command
         }
 
         return $basePath;
+    }
+
+    /**
+     * Exception capture is on but its `reportable()` callback reached no
+     * exception handler (one that is neither Laravel's nor a decorator
+     * forwarding `reportable()`): say so instead of capturing nothing quietly.
+     * Resolving the handler runs the pending attach first.
+     */
+    private function warnWhenExceptionCaptureIsDetached(): void
+    {
+        if (! $this->laravel->bound(ExceptionCollectorService::class)) {
+            return;
+        }
+
+        $this->laravel->make(ExceptionHandler::class);
+        $collector = $this->laravel->make(ExceptionCollectorService::class);
+
+        if ($collector instanceof ExceptionCollectorService && ! $collector->isAttached()) {
+            CheckCommand::writeError($this->output, 'Exception capture is enabled (exceptions.enabled), but the exception handler does not accept a reportable() callback, so no exception is captured.');
+        }
     }
 
     private function stringOption(string $name): ?string

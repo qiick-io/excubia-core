@@ -10,7 +10,6 @@ use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
@@ -25,7 +24,8 @@ use WeakMap;
  * Opt-in exception capture (`docs/exception-schema.json`, SPEC sections 7
  * and 13, D17).
  *
- * Registers one `reportable()` callback on Laravel's exception handler. The
+ * Registers one `reportable()` callback on Laravel's exception handler (or
+ * on a decorator that forwards `reportable()`, like Collision's). The
  * callback returns nothing, so the host app's own reporting (its other
  * callbacks, its log channels, Sentry, Flare…) runs exactly as before, and
  * it only sees what the app reports: `dontReport` and `ShouldntReport`
@@ -54,6 +54,9 @@ final class ExceptionCollectorService
     /** @var WeakMap<Throwable, string> job class of exceptions thrown by a job */
     private WeakMap $jobNames;
 
+    /** @var WeakMap<object, true> handlers the reportable() callback is registered on */
+    private WeakMap $attachedHandlers;
+
     /** @var list<string> Artisan commands running in this process, innermost last */
     private array $commands = [];
 
@@ -73,6 +76,7 @@ final class ExceptionCollectorService
         private readonly ?Closure $clock = null,
     ) {
         $this->jobNames = new WeakMap;
+        $this->attachedHandlers = new WeakMap;
     }
 
     /**
@@ -88,13 +92,7 @@ final class ExceptionCollectorService
         );
         $application->instance(self::class, $collector);
 
-        $attach = static function (mixed $handler) use ($collector): void {
-            if ($handler instanceof Handler) {
-                $handler->reportable(static function (Throwable $exception) use ($collector): void {
-                    $collector->capture($exception);
-                });
-            }
-        };
+        $attach = static fn (mixed $handler) => $collector->attach($handler);
 
         if ($application->resolved(ExceptionHandler::class)) {
             $attach($application->make(ExceptionHandler::class));
@@ -111,6 +109,36 @@ final class ExceptionCollectorService
         $events->listen(Looping::class, fn (Looping $event) => $collector->flush());
 
         $application->terminating(fn () => $collector->flush());
+    }
+
+    /**
+     * Register the `reportable()` callback on a resolved exception handler,
+     * once per handler object.
+     *
+     * Laravel's own handler qualifies, and so does a decorator that forwards
+     * `reportable()` to the handler it wraps: in console processes
+     * nunomaduro/collision replaces the handler with one (#241). Any other
+     * handler is left alone and `isAttached()` stays false.
+     */
+    public function attach(mixed $handler): void
+    {
+        if (! is_object($handler) || isset($this->attachedHandlers[$handler]) || ! is_callable([$handler, 'reportable'])) {
+            return;
+        }
+
+        $this->attachedHandlers[$handler] = true;
+        $handler->reportable(function (Throwable $exception): void {
+            $this->capture($exception);
+        });
+    }
+
+    /**
+     * Whether a `reportable()` callback reached an exception handler.
+     * `excubia:check` warns when capture is on and this is false.
+     */
+    public function isAttached(): bool
+    {
+        return count($this->attachedHandlers) > 0;
     }
 
     /**

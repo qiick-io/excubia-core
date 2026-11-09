@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Exception capture works behind a decorating exception handler (#241): the `reportable()` callback is registered on Laravel's handler or on any handler that forwards `reportable()`, such as `nunomaduro/collision`'s console handler, so failed queued jobs and `report()` in Artisan commands and queue workers reach the buffer again. Registered once per handler. `php artisan excubia:check` warns when exception capture is on and no handler accepts the callback. No contract change.
+
 ## [1.0.0-beta.4] - 2026-11-08
 
 Fourth beta of 1.0 (D20): runtime data from the official Laravel packages, additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). The four new check ids are appended to the run order; every new runtime type is off by default, and all but `auth` record nothing unless their package is installed; schema and protocol versions stay `1`.
