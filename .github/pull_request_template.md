@@ -16,6 +16,7 @@ Closes #
 - [ ] Acceptance criteria in the issue are ticked
 - [ ] Docs updated if behaviour changed
 - [ ] Changes a public contract (see docs/VERSIONING.md); if ticked, the summary says what changes and the CHANGELOG lists it
+- [ ] Until 1.0.0: a fix only, no new check id, runtime type, config key or schema field (feature freeze, docs/ROADMAP.md)
 
 ## Test notes
 
