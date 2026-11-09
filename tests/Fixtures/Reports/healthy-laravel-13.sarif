@@ -303,6 +303,38 @@
                                 "text": "Production php.ini"
                             },
                             "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-octane-config",
+                            "name": "Octane configuration",
+                            "shortDescription": {
+                                "text": "Octane configuration"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-reverb",
+                            "name": "Reverb server",
+                            "shortDescription": {
+                                "text": "Reverb server"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-cashier",
+                            "name": "Cashier billing",
+                            "shortDescription": {
+                                "text": "Cashier billing"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
+                        },
+                        {
+                            "id": "laravel-api-tokens",
+                            "name": "API tokens",
+                            "shortDescription": {
+                                "text": "API tokens"
+                            },
+                            "helpUri": "https://github.com/qiick-io/excubia-core#health-checks"
                         }
                     ]
                 }

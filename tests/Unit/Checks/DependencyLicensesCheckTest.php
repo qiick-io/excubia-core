@@ -70,6 +70,7 @@ it('warns at medium for strong copyleft, also inside AND', function () {
             'lockedVersion' => '1.0.0',
             'licenses' => ['GPL-3.0-only'],
             'ecosystem' => 'composer',
+            'kind' => 'copyleft',
         ]);
 });
 
@@ -83,7 +84,8 @@ it('warns at low for a missing or unknown license', function () {
         ->and($result->findings[1]->severity)->toBe(SeverityEnum::Low)
         ->and($result->findings[1]->message)->toBe('Unknown license: Acme-1.0.')
         ->and($result->findings[1]->evidenceUrl)->toBe('https://www.npmjs.com/package/custom')
-        ->and($result->findings[1]->details['ecosystem'])->toBe('npm');
+        ->and($result->findings[1]->details['ecosystem'])->toBe('npm')
+        ->and(array_map(fn ($finding) => $finding->details['kind'], $result->findings))->toBe(['unknown', 'unknown']);
 });
 
 it('fails at high for a denied license and stays quiet for an allowed one', function () {
@@ -97,7 +99,8 @@ it('fails at high for a denied license and stays quiet for an allowed one', func
         ->and($result->findings)->toHaveCount(1)
         ->and($result->findings[0]->subject)->toBe('vendor/agpl')
         ->and($result->findings[0]->status)->toBe(FindingStatusEnum::Fail)
-        ->and($result->findings[0]->severity)->toBe(SeverityEnum::High);
+        ->and($result->findings[0]->severity)->toBe(SeverityEnum::High)
+        ->and($result->findings[0]->details['kind'])->toBe('denied');
 });
 
 it('leaves development dependencies out unless includeDev is on', function () {

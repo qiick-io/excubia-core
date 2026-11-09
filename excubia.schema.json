@@ -534,6 +534,38 @@
                             "description": "Milliseconds of the push-runtime run, from its start, after which no further check starts; the rest are sent as skipped. Default 15000."
                         }
                     }
+                },
+                "ai": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel AI SDK (laravel/ai) operations counted per operation (agent, image, embeddings, transcription, reranking, audio, classification), agent class, provider and model name, with their duration, failures, failovers and token usage. Records nothing unless laravel/ai is installed. Never prompts, attachments, messages, responses, reasoning, conversations, classified text or questions, or exception messages. Off by default (#198)."
+                },
+                "aiTools": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel AI SDK (laravel/ai) agent tool calls counted per agent class and tool class, with their duration and failures. Records nothing unless laravel/ai is installed. Never tool arguments or results. Off by default (#198)."
+                },
+                "octane": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Octane (laravel/octane) workers counted per server, Octane server and worker type: worker starts and stops, requests, tasks and ticks handled, worker errors, the memory in use after each request and its growth since the worker's first request, and the requests a worker handled when it stopped. Records nothing unless laravel/octane is installed. Never URLs, request or task data, worker ids or PIDs, or exception messages. Off by default (#213)."
+                },
+                "reverb": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Reverb (laravel/reverb) WebSocket servers counted per server and Reverb app id, from the reverb:start process: connections opened, rejected and pruned, open connections sampled once a minute, messages received and sent, errors, and channels created and removed by prefix (public, private, presence). Records nothing unless laravel/reverb is installed. Never message payloads, channel names, socket ids or origins. Off by default (#215)."
+                },
+                "billing": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Cashier (laravel/cashier for Stripe, laravel/cashier-paddle) webhooks counted per provider and event type: received, handled, failed (a 5xx before the handler returned), handling time, and the payment signals failed payment, payment action required and canceled subscription. Records nothing unless Cashier is installed. Never anything of the payload but its event type: no amounts, currencies, customer or subscription ids, emails or cards. Off by default (#217)."
+                },
+                "auth": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel authentication counted per guard: successful logins (Login), failed logins (Failed), lockouts (Lockout, counted under auth.defaults.guard) and, with laravel/sanctum installed, Sanctum token authentications (TokenAuthenticated, guard sanctum). Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default (#219)."
+                },
+                "scout": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Scout counted per model class, engine (scout.driver) and operation: queued index jobs (MakeSearchable, RemoveFromSearch; with scout.queue on) with their record count, failures and duration, and searches started (Model::search(), no duration). Records nothing unless laravel/scout is installed. Never search queries, record ids or record data. Off by default (#221)."
+                },
+                "pennant": {
+                    "$ref": "#/$defs/optInRuntimeType",
+                    "description": "Laravel Pennant feature checks counted per feature name: active and inactive checks (FeatureRetrieved), first resolutions (FeatureResolved) and checks of undefined features (UnknownFeatureResolved). Records nothing unless laravel/pennant is installed. Feature names are hashed unless they are short names or class names. Never the scope or the value. Off by default (#225)."
                 }
             }
         },

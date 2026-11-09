@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyWritten;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Events\RequestHandled;
@@ -12,15 +17,53 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Log\Logger;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Laravel\Ai\Ai;
+use Laravel\Ai\AiServiceProvider;
+use Laravel\Ai\Events\AgentPrompted;
+use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\ToolInvoked;
+use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
+use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\TextResponse;
+use Laravel\Ai\Tools\ToolNameResolver;
+use Laravel\Cashier\Events\WebhookHandled as StripeWebhookHandled;
+use Laravel\Cashier\Events\WebhookReceived as StripeWebhookReceived;
+use Laravel\Octane\Events\RequestReceived;
+use Laravel\Octane\Events\RequestTerminated;
+use Laravel\Octane\Events\TickReceived;
+use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Pennant\Events\FeatureRetrieved;
+use Laravel\Reverb\Application as ReverbApplication;
+use Laravel\Reverb\Contracts\Connection as ReverbConnection;
+use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
+use Laravel\Reverb\Events\MessageSent as ReverbMessageSent;
+use Laravel\Sanctum\Events\TokenAuthenticated;
+use Laravel\Scout\Builder as ScoutBuilder;
+use Laravel\Scout\Jobs\MakeSearchable;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger as Monolog;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Laravel\RuntimeCollectorService;
+use Qiick\Excubia\Tests\Support\FakeAiAgent;
+use Qiick\Excubia\Tests\Support\FakeAiTool;
+
+require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
+require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
+require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
+require_once dirname(__DIR__).'/Support/FakeApiTokenClasses.php';
+require_once dirname(__DIR__).'/Support/FakePennantEvents.php';
+require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
 
 /**
  * Per-request overhead of runtime monitoring. Not part of the default run
@@ -35,7 +78,14 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
  * and writes the cache three times, logs once and runs the same query five
  * times (an N+1 that `duplicateQuery` records), so the cache, log level and
  * query listeners run as in a typical request. The third test prices the
- * Monolog processor that learns the log channel (#174) per log entry.
+ * Monolog processor that learns the log channel (#174) per log entry, and the
+ * fourth the `ai` and `aiTool` listeners (#198) per Laravel AI SDK agent run,
+ * the fifth the `octane` listeners (#213) per Octane request and tick, the
+ * sixth the `reverb` listeners (#215) per Reverb message, the seventh the
+ * `billingWebhook` listeners (#217) per Cashier webhook, the eighth the
+ * `auth` listeners (#219) per authentication event, the ninth the `scout`
+ * listeners (#221) per Scout index job and search, and the tenth the
+ * `pennant` listener (#225) per feature check.
  */
 const BENCHMARK_REQUESTS = 500;
 
@@ -278,4 +328,372 @@ it('adds little per log entry to learn its channel, with log levels on', functio
 
     expect(bufferedOfType($this->app, 'logLevel')[0])->toMatchArray(['channel' => 'benchmark', 'count' => $entries])
         ->and($withProcessor - $plain)->toBeLessThan(0.01);
+})->group('benchmark');
+
+it('adds little per Laravel AI SDK agent run and tool call, with the AI types on', function () {
+    $this->app->register(AiServiceProvider::class);
+    $runs = 4 * BENCHMARK_REQUESTS;
+    $toolName = ToolNameResolver::resolve(new FakeAiTool);
+
+    // One agent run through the SDK's fake gateway: a tool call, then the answer.
+    $runMilliseconds = function () use ($runs, $toolName): float {
+        FakeAiAgent::fake(function (string $prompt, $attachments, $provider, string $model) use ($toolName): mixed {
+            static $step = 0;
+
+            return $step++ % 2 === 0
+                ? new ToolCall('call', $toolName, ['query' => 'order'])
+                : new TextResponse('done', new TextUsage(100, 20, 60), new Meta('openai', $model));
+        });
+        $agent = new FakeAiAgent;
+        $agent->prompt('warm up', model: 'gpt-test');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $runs; $i++) {
+            $agent->prompt('benchmark', model: 'gpt-test');
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $runs;
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $runMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'ai' => ['enabled' => true], 'aiTools' => ['enabled' => true]]);
+    $on = $runMilliseconds();
+
+    // The collector alone per run: start, done with its usage, one tool call.
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $prompt = new AgentPrompt(new FakeAiAgent, 'benchmark', [], Ai::textProvider('openai'), 'gpt-test');
+    $done = new AgentPrompted('invocation', $prompt, new AgentResponse('invocation', 'done', new TextUsage(100, 20, 60), new Meta('openai', 'gpt-test')));
+    $tool = new ToolInvoked('invocation', 'tool', new FakeAiAgent, new FakeAiTool, ['query' => 'order'], 'result', 0.2);
+    $start = new PromptingAgent('invocation', $prompt);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $runs; $i++) {
+        $collector->startAiOperation($start);
+        $collector->recordAiTool($tool);
+        $collector->recordAiOperation($done);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / $runs;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel AI SDK over %d agent runs with one tool call each (fake gateway; PHP %s, Laravel %s)\n  ai types off: %.4f ms/run\n  ai types on:  %.4f ms/run (delta %.4f ms)\n  collector:    %.4f ms/run (start + tool + done, no flush)\n",
+        $runs,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Octane request and tick, with the octane type on', function () {
+    $requests = 4 * BENCHMARK_REQUESTS;
+    $app = $this->app;
+    $request = Request::create('/benchmark');
+    $received = new RequestReceived($app, $app, $request);
+    $terminated = new RequestTerminated($app, $app, $request, new Response('ok'));
+    $tick = new TickReceived($app, $app);
+
+    // Octane's events through the dispatcher, as the worker fires them.
+    $dispatchMilliseconds = function () use ($app, $requests, $received, $terminated, $tick): float {
+        $events = $app->make('events');
+        $events->dispatch(new WorkerStarting($app));
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $requests; $i++) {
+            $events->dispatch($received);
+            $events->dispatch($terminated);
+            $events->dispatch($tick);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $requests;
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'octane' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    // The collector alone: one request (received + terminated) and one tick.
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $requests; $i++) {
+        $collector->receiveOctaneRequest($received);
+        $collector->recordOctaneRequest($terminated);
+        $collector->recordOctaneOperation($tick);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / $requests;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Octane over %d requests and ticks (faked events; PHP %s, Laravel %s)\n  octane off: %.4f ms/request\n  octane on:  %.4f ms/request (delta %.4f ms)\n  collector:  %.4f ms/request (received + terminated + tick, no flush)\n",
+        $requests,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Reverb message, with the reverb type on', function () {
+    $messages = 4 * BENCHMARK_REQUESTS;
+    $connection = new ReverbConnection(new ReverbApplication('123456'));
+    $broadcast = (string) json_encode(['event' => 'App\\Events\\OrderShipped', 'data' => json_encode(['order' => 1]), 'channel' => 'private-orders.1']);
+    $sent = new ReverbMessageSent($connection, $broadcast);
+    $received = new ReverbMessageReceived($connection, '{"event":"pusher:ping","data":{}}');
+
+    // Reverb's events through the dispatcher: one broadcast frame sent and one client message received.
+    $dispatchMilliseconds = function () use ($messages, $sent, $received): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $messages; $i++) {
+            $events->dispatch($sent);
+            $events->dispatch($received);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $messages);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'reverb' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $messages; $i++) {
+        $collector->recordReverbMessageSent($sent);
+        $collector->recordReverbMessageReceived($received);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $messages);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Reverb over %d messages (faked events; PHP %s, Laravel %s)\n  reverb off: %.4f ms/message\n  reverb on:  %.4f ms/message (delta %.4f ms)\n  collector:  %.4f ms/message (sent or received, no flush)\n",
+        2 * $messages,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Cashier webhook, with the billingWebhook type on', function () {
+    $webhooks = 4 * BENCHMARK_REQUESTS;
+    $payload = ['id' => 'evt_1', 'type' => 'invoice.payment_failed', 'data' => ['object' => ['id' => 'in_1', 'amount_due' => 1000, 'currency' => 'eur']]];
+    $received = new StripeWebhookReceived($payload);
+    $handled = new StripeWebhookHandled($payload);
+
+    // Cashier's two events through the dispatcher, as its webhook controller fires them.
+    $dispatchMilliseconds = function () use ($webhooks, $received, $handled): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $webhooks; $i++) {
+            $events->dispatch($received);
+            $events->dispatch($handled);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / $webhooks;
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'billing' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $webhooks; $i++) {
+        $collector->receiveBillingWebhook($received);
+        $collector->recordBillingWebhookHandled($handled);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / $webhooks;
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Cashier over %d webhooks (faked events; PHP %s, Laravel %s)\n  billing off: %.4f ms/webhook\n  billing on:  %.4f ms/webhook (delta %.4f ms)\n  collector:   %.4f ms/webhook (received and handled, no flush)\n",
+        $webhooks,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per authentication event, with the auth type on', function () {
+    $authentications = 4 * BENCHMARK_REQUESTS;
+    $user = new GenericUser(['id' => 1, 'email' => 'user@example.test']);
+    $login = new Login('web', $user, false);
+    $failed = new Failed('web', $user, ['email' => 'user@example.test', 'password' => 'secret']);
+    $token = new TokenAuthenticated((object) ['id' => 1]);
+
+    // A login, a failed login and a Sanctum token authentication through the dispatcher.
+    $dispatchMilliseconds = function () use ($authentications, $login, $failed, $token): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $authentications; $i++) {
+            $events->dispatch($login);
+            $events->dispatch($failed);
+            $events->dispatch($token);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (3 * $authentications);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'auth' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $authentications; $i++) {
+        $collector->recordAuthentication($login);
+        $collector->recordAuthentication($failed);
+        $collector->recordAuthentication($token);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (3 * $authentications);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel auth over %d events (Sanctum faked; PHP %s, Laravel %s)\n  auth off:  %.4f ms/event\n  auth on:   %.4f ms/event (delta %.4f ms)\n  collector: %.4f ms/event (no flush)\n",
+        3 * $authentications,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
+})->group('benchmark');
+
+it('adds little per Scout index job and search, with the scout type on', function () {
+    $operations = 2 * BENCHMARK_REQUESTS;
+    $model = new class extends Model {};
+    $models = new EloquentCollection([(clone $model)->forceFill(['id' => 1]), (clone $model)->forceFill(['id' => 2])]);
+    $payload = json_encode(['displayName' => MakeSearchable::class, 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call', 'data' => ['commandName' => MakeSearchable::class, 'command' => serialize(new MakeSearchable($models))]], JSON_THROW_ON_ERROR);
+    $job = new SyncJob($this->app, $payload, 'sync', 'default');
+
+    // One index job's JobProcessing and JobProcessed, and one search builder, through the dispatcher and the container.
+    $operationMilliseconds = function () use ($operations, $job, $model): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $operations; $i++) {
+            $events->dispatch(new JobProcessing('sync', $job));
+            $events->dispatch(new JobProcessed('sync', $job));
+            $this->app->make(ScoutBuilder::class, ['model' => $model, 'query' => 'query']);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $operations);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true, 'jobs' => ['enabled' => false]]);
+    $off = $operationMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'jobs' => ['enabled' => false], 'scout' => ['enabled' => true]]);
+    $on = $operationMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $builder = new ScoutBuilder($model, 'query');
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $operations; $i++) {
+        $collector->startScoutJob(new JobProcessing('sync', $job));
+        $collector->recordScoutJob(new JobProcessed('sync', $job));
+        $collector->recordScoutSearch($builder);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $operations);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Scout over %d operations (Scout faked; PHP %s, Laravel %s)\n  scout off: %.4f ms/operation\n  scout on:  %.4f ms/operation (delta %.4f ms)\n  collector: %.4f ms/operation (an index job flushes)\n",
+        2 * $operations,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.1);
+})->group('benchmark');
+
+it('adds little per Pennant feature check, with the pennant type on', function () {
+    $checks = 4 * BENCHMARK_REQUESTS;
+    $active = new FeatureRetrieved('new-checkout', 'user:1', true);
+    $inactive = new FeatureRetrieved('App\\Features\\PurchaseButton', 'user:1', false);
+
+    // Two feature checks through the dispatcher, as Pennant's decorator fires them.
+    $dispatchMilliseconds = function () use ($checks, $active, $inactive): float {
+        $events = $this->app->make('events');
+        $startedAt = hrtime(true);
+
+        for ($i = 0; $i < $checks; $i++) {
+            $events->dispatch($active);
+            $events->dispatch($inactive);
+        }
+
+        return (hrtime(true) - $startedAt) / 1e6 / (2 * $checks);
+    };
+
+    benchmarkProject($this->app, ['enabled' => true]);
+    $off = $dispatchMilliseconds();
+    benchmarkProject($this->app, ['enabled' => true, 'pennant' => ['enabled' => true]]);
+    $on = $dispatchMilliseconds();
+
+    $collector = $this->app->make(RuntimeCollectorService::class);
+    $startedAt = hrtime(true);
+
+    for ($i = 0; $i < $checks; $i++) {
+        $collector->recordFeature($active);
+        $collector->recordFeature($inactive);
+    }
+
+    $collectorOnly = (hrtime(true) - $startedAt) / 1e6 / (2 * $checks);
+    $collector->flush();
+
+    fwrite(STDERR, sprintf(
+        "\nLaravel Pennant over %d feature checks (Pennant faked; PHP %s, Laravel %s)\n  pennant off: %.4f ms/check\n  pennant on:  %.4f ms/check (delta %.4f ms)\n  collector:   %.4f ms/check (no flush)\n",
+        2 * $checks,
+        PHP_VERSION,
+        Application::VERSION,
+        $off,
+        $on,
+        $on - $off,
+        $collectorOnly,
+    ));
+
+    expect($collectorOnly)->toBeLessThan(0.05);
 })->group('benchmark');

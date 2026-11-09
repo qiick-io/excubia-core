@@ -61,7 +61,8 @@ it('documents the optional report fields for excubia-app and keeps them out of r
     $finding = $schema['$defs']['finding'];
 
     expect($schema['required'])->toBe(['schemaVersion', 'checks', 'upgradePlan'])
-        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile', 'schedule'])
+        ->and(array_keys($schema['properties']))->toBe(['schemaVersion', 'generatedAt', 'excubiaVersion', 'release', 'deployedAt', 'project', 'checks', 'upgradePlan', 'licenses', 'javascriptLockfile', 'schedule', 'environment'])
+        ->and($schema['properties']['environment']['pattern'])->toBe('^[A-Za-z0-9_-]{1,64}$')
         ->and($schema['properties']['schedule']['items']['$ref'])->toBe('#/$defs/scheduledTask')
         ->and($schema['$defs']['scheduledTask']['required'])->toBe(['taskId', 'task', 'expression', 'timezone', 'withoutOverlapping', 'onOneServer', 'runsInMaintenanceMode', 'environments'])
         ->and($schema['$defs']['scheduledTask']['properties']['taskId']['pattern'])->toBe('^[0-9a-f]{64}$')
@@ -112,6 +113,11 @@ it('documents the details keys per check id', function () {
         ->and($keys('diskSpaceDetails'))->toBe(['usedPercent'])
         ->and($keys('queueBacklogDetails'))->toBe(['queue', 'pendingCount', 'oldestAgeMinutes'])
         ->and($keys('platformRequirementsDetails'))->toBe(['requirement', 'requiredBy', 'checkedPhpVersion', 'isStandaloneCli'])
+        ->and($keys('laravelOctaneConfigDetails'))->toBe(['server', 'maxRequests'])
+        ->and($keys('laravelReverbDetails'))->toBe(['isReachable', 'latencyMs'])
+        ->and($keys('laravelCashierDetails'))->toBe(['provider', 'isWebhookSecretConfigured', 'isWebhookRouteRegistered', 'hasTestKeys'])
+        ->and($keys('laravelApiTokensSanctumDetails'))->toBe(['provider', 'expirationMinutes', 'hasStatefulWildcard', 'isStatefulEmpty', 'tokenCount', 'nonExpiringTokenCount', 'staleTokenCount', 'neverUsedTokenCount'])
+        ->and($keys('laravelApiTokensPassportDetails'))->toBe(['provider', 'hasKeys', 'isPrivateKeyTooOpen', 'accessTokenLifetimeMinutes', 'refreshTokenLifetimeMinutes', 'personalAccessTokenLifetimeMinutes', 'personalAccessClientCount'])
         ->and($ruledCheckIds)->toBe([
             'composer-advisories',
             'npm-advisories',
@@ -144,9 +150,14 @@ it('documents the details keys per check id', function () {
             'laravel-redis-memory',
             'php-opcache',
             'php-production-ini',
+            'laravel-octane-config',
+            'laravel-reverb',
+            'laravel-cashier',
+            'laravel-api-tokens',
         ])
-        ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($keys('dependencyLicensesDetails'))->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem', 'kind'])
         ->and($schema['$defs']['dependencyLicensesDetails']['required'])->toBe(['package', 'lockedVersion', 'licenses', 'ecosystem'])
+        ->and($schema['$defs']['dependencyLicensesDetails']['properties']['kind']['enum'])->toBe(['denied', 'copyleft', 'unknown'])
         ->and($keys('envExampleMissingKeyDetails'))->toBe(['key', 'configFiles'])
         ->and($keys('envExampleUnusedKeysDetails'))->toBe(['keys'])
         ->and($keys('outdatedDetails'))->toBe(['package', 'lockedVersion', 'latestPatch', 'latestMinor', 'latestMajor', 'isMajorBehind'])

@@ -67,7 +67,15 @@ Every key with its default value, except `$schema`, `ignore` and `app`, which ha
     "duplicateQueries": { "enabled": false, "sampleRate": 1, "threshold": 5 },
     "server": { "enabled": false, "sampleRate": 1 },
     "commands": { "enabled": false, "sampleRate": 1, "ignore": ["schedule:run", "schedule:work", "queue:work", "queue:listen", "horizon*", "tinker"] },
-    "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 }
+    "health": { "enabled": false, "sampleRate": 1, "checks": ["laravel-database", "laravel-cache", "laravel-storage", "laravel-disk-space", "laravel-queue-backlog", "laravel-queue-workers", "laravel-scheduler-heartbeat", "laravel-redis-memory", "laravel-maintenance-mode"], "checkBudgetMs": 3000, "totalBudgetMs": 15000 },
+    "ai": { "enabled": false, "sampleRate": 1 },
+    "aiTools": { "enabled": false, "sampleRate": 1 },
+    "octane": { "enabled": false, "sampleRate": 1 },
+    "reverb": { "enabled": false, "sampleRate": 1 },
+    "billing": { "enabled": false, "sampleRate": 1 },
+    "auth": { "enabled": false, "sampleRate": 1 },
+    "scout": { "enabled": false, "sampleRate": 1 },
+    "pennant": { "enabled": false, "sampleRate": 1 }
   },
   "exceptions": {
     "enabled": false,
@@ -304,6 +312,30 @@ See the [runtime monitoring guide](./runtime-monitoring.md). Off by default; onl
 | `runtime.health.checks` | list of check ids | all nine | Checks to sample, in order, without duplicates: any of `laravel-database`, `laravel-cache`, `laravel-storage`, `laravel-disk-space`, `laravel-queue-backlog`, `laravel-queue-workers`, `laravel-scheduler-heartbeat`, `laravel-redis-memory`, `laravel-maintenance-mode`. Any other id is a configuration error. |
 | `runtime.health.checkBudgetMs` | integer ≥ 1 | `3000` | Milliseconds reserved for one check: a check starts only while this much is left of `totalBudgetMs`. At most `totalBudgetMs`. |
 | `runtime.health.totalBudgetMs` | integer | `15000` | Milliseconds of the push-runtime run, from its start, after which no further check starts; the rest are sent as `skipped`. |
+| `runtime.ai` | object | | Laravel AI SDK (`laravel/ai`) operations per operation, agent class, provider and model, with their duration, failures, failovers and token usage. Records nothing unless `laravel/ai` is installed; never prompts, responses or exception messages. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-ai-sdk). |
+| `runtime.ai.enabled` | boolean | `false` | Collect AI operations. |
+| `runtime.ai.sampleRate` | number 0–1 | `1` | Share of AI attempts recorded. |
+| `runtime.aiTools` | object | | Laravel AI SDK agent tool calls per agent and tool class, with their duration and failures. Records nothing unless `laravel/ai` is installed; never tool arguments or results. Off by default. |
+| `runtime.aiTools.enabled` | boolean | `false` | Collect AI tool calls. |
+| `runtime.aiTools.sampleRate` | number 0–1 | `1` | Share of tool calls recorded. |
+| `runtime.octane` | object | | Laravel Octane (`laravel/octane`) workers per server, Octane server and worker type: starts, stops, requests, tasks, ticks, worker errors, memory after each request and its growth since the worker's first request, and requests handled at stop. Records nothing unless `laravel/octane` is installed; never URLs, request or task data, or PIDs. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-octane). |
+| `runtime.octane.enabled` | boolean | `false` | Collect Octane worker events. |
+| `runtime.octane.sampleRate` | number 0–1 | `1` | Share of worker events recorded. |
+| `runtime.reverb` | object | | Laravel Reverb (`laravel/reverb`) servers per server and Reverb app id: connections opened, rejected and pruned, open connections sampled once a minute, messages received and sent, errors, and channels created and removed by prefix. Records nothing unless `laravel/reverb` is installed; never message payloads, channel names, socket ids or origins. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-reverb). |
+| `runtime.reverb.enabled` | boolean | `false` | Collect Reverb events. |
+| `runtime.reverb.sampleRate` | number 0–1 | `1` | Share of Reverb events recorded (0 also stops the connection sample). |
+| `runtime.billing` | object | | Laravel Cashier (`laravel/cashier`, `laravel/cashier-paddle`) webhooks per provider and event type: received, handled, failed, handling time, failed payments, payments needing action and canceled subscriptions. Records nothing unless Cashier is installed; never anything of the payload but its event type. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-cashier). |
+| `runtime.billing.enabled` | boolean | `false` | Collect Cashier webhook events. |
+| `runtime.billing.sampleRate` | number 0–1 | `1` | Share of webhooks recorded. |
+| `runtime.auth` | object | | Authentication per guard: successful and failed logins, lockouts and, with `laravel/sanctum`, Sanctum token authentications. Never usernames, emails, user ids, credentials, tokens or IP addresses. Off by default. See [runtime monitoring](./runtime-monitoring.md#authentication). |
+| `runtime.auth.enabled` | boolean | `false` | Collect authentication events. |
+| `runtime.auth.sampleRate` | number 0–1 | `1` | Share of authentication events recorded. |
+| `runtime.scout` | object | | Laravel Scout (`laravel/scout`) per model class, engine and operation: queued index jobs (with `scout.queue` on) with their record count, failures and duration, and searches started, without a duration. Records nothing unless Scout is installed; never search queries, record ids or record data. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-scout). |
+| `runtime.scout.enabled` | boolean | `false` | Collect Scout index jobs and searches. |
+| `runtime.scout.sampleRate` | number 0–1 | `1` | Share of index jobs and searches recorded. |
+| `runtime.pennant` | object | | Laravel Pennant (`laravel/pennant`) feature checks per feature name: active, inactive, first resolutions and checks of undefined features. Records nothing unless Pennant is installed; feature names are hashed unless they are short names or class names; never the scope or the value. Off by default. See [runtime monitoring](./runtime-monitoring.md#laravel-pennant). |
+| `runtime.pennant.enabled` | boolean | `false` | Collect Pennant feature checks. |
+| `runtime.pennant.sampleRate` | number 0–1 | `1` | Share of feature events recorded. Checks can be frequent: a value below 1 keeps the buffer small. |
 
 ## Exception capture
 

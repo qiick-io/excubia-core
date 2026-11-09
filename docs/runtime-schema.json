@@ -4,7 +4,7 @@
     "x-excubia-version": 1,
     "$comment": "Contract version of this payload. It travels in an envelope with protocolVersion 1 and changes only with it. Stable from 1.0.0-beta (docs/CONTRACTS.md).",
     "title": "Excubia runtime batch",
-    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes, and totalRepeats for duplicateQuery) and keeps the larger maxMs (and maxMb, maxRepeats and the server gauges) for entries with the same type, bucket, sampleRate and dimensions, also across batches. The optional histogram (#147) adds up element by element ($defs.histogram). Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, the file, line or stack of a deprecation, Artisan command arguments or options, or absolute paths.",
+    "description": "The runtime payload of a push envelope with type runtime (docs/push-schema.json, $defs.runtimeEnvelope), sent by php artisan excubia:push-runtime to POST {appUrl}/api/runtime. Aggregates are additive: the app sums count, errorCount and totalMs (and, for the types added in 1.0.0-beta.2, totalMb, hits, misses, writes and deletes, totalRepeats for duplicateQuery, and failoverCount and the usage counts of ai, #198, which stay null only when every entry has null) and keeps the larger maxMs (and maxMb, maxRepeats and the server gauges) for entries with the same type, bucket, sampleRate and dimensions, also across batches. The optional histogram (#147) adds up element by element ($defs.histogram). Estimated real counts are count / sampleRate. Nothing else is sent: no request or response bodies, headers, cookies, users, IP addresses, query bindings, exception messages, whole cache keys or values, mail recipients, notifiables, log messages or context, the file, line or stack of a deprecation, Artisan command arguments or options, AI prompts, attachments, messages, responses, reasoning, tool arguments or results or conversations, Octane URLs, request or task data, worker ids or PIDs, Reverb message payloads, channel names, socket ids or origins, anything of a billing webhook payload but its event type (amounts, currencies, customer or subscription ids, emails, cards), the user, credentials, token or request of an authentication event, Scout search queries, record ids or record data, the scope or value of a Pennant feature, or absolute paths.",
     "type": "object",
     "additionalProperties": false,
     "required": ["bucketSeconds", "aggregates"],
@@ -14,6 +14,11 @@
             "maxLength": 100,
             "pattern": "^[A-Za-z0-9._+/@-]+$",
             "description": "Optional (#129): the release when the batch was sent, one value for every entry of the batch. Release identifier of the deployed code: the release key of excubia.json, EXCUBIA_RELEASE, then GITHUB_SHA, CI_COMMIT_SHA, VERCEL_GIT_COMMIT_SHA, FORGE_DEPLOY_COMMIT or LARAVEL_CLOUD_COMMIT (no git fallback). Omitted when unknown. It is an extra dimension the app can group by."
+        },
+        "environment": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Optional (#203): the Laravel environment of the sending app (app.env), for example production or staging, one value for every entry of the batch. A short name only, never a hostname: omitted when app.env does not match the pattern. Exception groups carry their own environment (docs/exception-schema.json)."
         },
         "bucketSeconds": {
             "const": 60,
@@ -39,10 +44,18 @@
                     { "$ref": "#/$defs/duplicateQuery" },
                     { "$ref": "#/$defs/server" },
                     { "$ref": "#/$defs/command" },
-                    { "$ref": "#/$defs/health" }
+                    { "$ref": "#/$defs/health" },
+                    { "$ref": "#/$defs/ai" },
+                    { "$ref": "#/$defs/aiTool" },
+                    { "$ref": "#/$defs/octane" },
+                    { "$ref": "#/$defs/reverb" },
+                    { "$ref": "#/$defs/billingWebhook" },
+                    { "$ref": "#/$defs/auth" },
+                    { "$ref": "#/$defs/scout" },
+                    { "$ref": "#/$defs/pennant" }
                 ]
             },
-            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation, #148 for duplicateQuery, #149 for server and #152 for command; additive), and health in 1.0.0-beta.3 (#188, additive); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server; status, severity, findingCount and fingerprints for health. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); histograms add up element by element; a health entry keeps the worst status (fail, then warn, then pass, then skipped), the most serious severity, the larger findingCount and the union of fingerprints. isContainer, status, severity, findingCount and fingerprints are metric fields, not dimensions."
+            "description": "Types after outgoingHttp were added in 1.0.0-beta.2 (#132, and #133 for deprecation, #148 for duplicateQuery, #149 for server and #152 for command; additive), health in 1.0.0-beta.3 (#188, additive), ai and aiTool (#198, additive, only with laravel/ai installed), octane (#213, additive, only with laravel/octane installed), reverb (#215, additive, only with laravel/reverb installed), billingWebhook (#217, additive, only with laravel/cashier or laravel/cashier-paddle installed), auth (#219, additive), scout (#221, additive, only with laravel/scout installed), and pennant (#225, additive, only with laravel/pennant installed); they are off by default in excubia.json. An app must accept a batch that holds a type it does not know: store or skip those entries and answer 2xx for the rest, never reject the whole batch, so a newer excubia-core can push to an older app. Metric fields per type: count and errorCount always; totalMs and maxMs for durations, with an optional latency histogram (#147); totalMb and maxMb for memory; hits, misses, writes and deletes for cache; totalRepeats and maxRepeats for duplicateQuery; the nullable gauges loadAverage1, loadAverage5, loadAverage15, cpuCores, cpuLimit (#173), memoryUsedMb, memoryTotalMb, diskUsedGb and diskTotalGb, and the boolean isContainer (#173), for server; status, severity, findingCount and fingerprints for health; failoverCount and the nullable usage counts inputTokens, outputTokens, cacheReadInputTokens, cacheWriteInputTokens, reasoningTokens, imageInputTokens, imageOutputTokens, audioSeconds and searchUnits for ai; workerStarts, workerStops, requests, tasks, ticks, totalRequestsAtStop and maxRequestsAtStop, and maxMb and maxGrowthMb, for octane; connectionsOpened, connectionsPruned, connectionsRejected, messagesReceived, messagesSent, the six channel counts and maxConnections for reverb; handledCount, paymentFailedCount, paymentActionRequiredCount and subscriptionCanceledCount, with totalMs, maxMs and histogram, for billingWebhook; loginCount, lockoutCount and tokenAuthenticationCount for auth; modelCount, with totalMs, maxMs and histogram for the index and remove operations only, for scout; activeCount, inactiveCount, resolvedCount and unknownCount for pennant. Counters and totals add up across entries with the same type, bucket, sampleRate and dimensions; maxima and gauges keep the larger value (a gauge is null only when every entry has null); isContainer is true when any entry has true (a missing value counts as false); usage counts add up and are null only when every entry has null; histograms add up element by element; a health entry keeps the worst status (fail, then warn, then pass, then skipped), the most serious severity, the larger findingCount and the union of fingerprints. isContainer, status, severity, findingCount and fingerprints are metric fields, not dimensions."
         }
     },
     "$defs": {
@@ -70,7 +83,7 @@
         "errorCount": {
             "type": "integer",
             "minimum": 0,
-            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types. For health, the samples whose status is fail."
+            "description": "Recorded events that failed: HTTP 5xx for requests and outgoing calls, failed jobs and tasks, Artisan commands with a non-zero exit code, failed mails and notifications, failed AI attempts and tool calls, Octane worker errors, Reverb errors sent to established connections, billing webhooks whose request ended with a 5xx before Cashier's handler returned, failed logins (auth), failed Scout index jobs. Always 0 for slow queries and for the memory, queue wait, cache, log level, deprecation, duplicate query and server types. For health, the samples whose status is fail."
         },
         "milliseconds": {
             "type": "number",
@@ -409,6 +422,196 @@
                     "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                     "description": "The fingerprints of the warn and fail findings, sorted, at most 20: the same sha256 values as the report's finding fingerprint (check id, subject and advisory id joined by NUL), so the app can link an alert to the report finding and tell one failing connection or queue from another without receiving its name."
                 }
+            }
+        },
+        "usageCount": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "description": "A usage count of the ai type (#198) as the provider reported it: null when it does not report it, never a guess. Entries with the same type, bucket, sampleRate and dimensions add up; the sum is null only when every entry has null (a null entry adds nothing)."
+        },
+        "usageAmount": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "description": "Like usageCount, for a decimal amount (3 decimals)."
+        },
+        "ai": {
+            "type": "object",
+            "description": "Laravel AI SDK (laravel/ai) operations (#198, additive), only when that package is installed. count is the provider attempts: completed operations plus failed attempts. An agent run is timed from PromptingAgent (StreamingAgent for a stream) to AgentPrompted (AgentStreamed, counted once with the usage of the whole stream) or AgentFailed; image, embeddings, transcription, reranking, audio and classification (#201: Classifying to Classified or ClassificationFailed) from their start event to their done or failed event, through the invocation id; a start that was not seen gives 0 ms. errorCount is the failed attempts: AgentFailed (once per run, when no provider is left), AgentFailedOver (an agent attempt that failed over to the next provider), and the failed event of the other operations, which Laravel fires once per attempt. failoverCount is the failed attempts the SDK reported as failed over (AgentFailedOver for an agent attempt that moved on to the next provider; ProviderFailedOver for the other operations, which laravel/ai fires for every failoverable error, the last provider's included); failoverCount <= errorCount <= count. A failed attempt has null usage. Usage fields are null when the provider does not report them; inputTokens and outputTokens are what the SDK reports (0 when it reports none). No cost: prices change, so the app computes cost from the tokens; inputTokens includes the cached input, and cacheReadInputTokens and cacheWriteInputTokens are billed at their own rates, so uncached input is inputTokens - cacheReadInputTokens - cacheWriteInputTokens. Never prompts, attachments, messages, response text, reasoning, tool arguments or results, conversation ids or users, classified text or data, classification questions or answers, or exception messages.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "operation", "provider", "model", "count", "errorCount", "failoverCount", "totalMs", "maxMs", "inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens", "reasoningTokens", "imageInputTokens", "imageOutputTokens", "audioSeconds", "searchUnits"],
+            "properties": {
+                "type": { "const": "ai" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "operation": { "enum": ["agent", "image", "embeddings", "transcription", "reranking", "audio", "classification"], "description": "agent for agent prompts and streams; image, embeddings, transcription, reranking, audio (text to speech) and classification (#201, additive; usage from its TextUsage) for the other SDK operations. An app must accept an operation it does not know." },
+                "agent": { "type": "string", "minLength": 1, "description": "The agent class (anonymous classes as Parent@anonymous). Present for operation agent only, and a dimension: entries without it never merge with entries that have it." },
+                "provider": { "type": "string", "minLength": 1, "description": "The provider name as configured in config/ai.php (such as openai or anthropic): the response meta of an agent, else the provider of the attempt; unknown when empty." },
+                "model": { "type": "string", "minLength": 1, "description": "The model name: the response meta of an agent (the model the provider answered with), else the model of the attempt; unknown when empty." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "failoverCount": { "$ref": "#/$defs/counter", "description": "Failed attempts reported as failed over (see the type description). Adds up." },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" },
+                "inputTokens": { "$ref": "#/$defs/usageCount", "description": "Input tokens, cached input included." },
+                "outputTokens": { "$ref": "#/$defs/usageCount", "description": "Output tokens." },
+                "cacheReadInputTokens": { "$ref": "#/$defs/usageCount", "description": "Input tokens read from the provider's prompt cache." },
+                "cacheWriteInputTokens": { "$ref": "#/$defs/usageCount", "description": "Input tokens written to the provider's prompt cache." },
+                "reasoningTokens": { "$ref": "#/$defs/usageCount", "description": "Reasoning (thinking) tokens." },
+                "imageInputTokens": { "$ref": "#/$defs/usageCount", "description": "Image input tokens of image generation." },
+                "imageOutputTokens": { "$ref": "#/$defs/usageCount", "description": "Image output tokens of image generation." },
+                "audioSeconds": { "$ref": "#/$defs/usageAmount", "description": "Seconds of audio transcribed." },
+                "searchUnits": { "$ref": "#/$defs/usageAmount", "description": "Search units of reranking." }
+            }
+        },
+        "aiTool": {
+            "type": "object",
+            "description": "Laravel AI SDK (laravel/ai) agent tool calls (#198, additive), only when that package is installed: ToolInvoked and ToolFailed, timed by the SDK (time spent in the tool's handler). errorCount counts ToolFailed. Never tool arguments or results.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "agent", "tool", "count", "errorCount", "totalMs", "maxMs"],
+            "properties": {
+                "type": { "const": "aiTool" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "agent": { "type": "string", "minLength": 1, "description": "The agent class that called the tool (anonymous classes as Parent@anonymous)." },
+                "tool": { "type": "string", "minLength": 1, "description": "The tool class (anonymous classes as Parent@anonymous). An agent used as a tool, an MCP tool or a provider tool is the SDK's wrapper class." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount" },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" }
+            }
+        },
+        "octane": {
+            "type": "object",
+            "description": "Laravel Octane (laravel/octane) workers (#213, additive), only when that package is installed. Octane keeps a worker alive between requests, so memory leaks and stale state build up per worker until it restarts after max_requests. One entry per server, Octane server and worker type and bucket; count is the recorded worker events (starts, requests, tasks, ticks, errors and stops) and every metric field is always present (0 when the entry has none of that event). From WorkerStarting (workerStarts), RequestTerminated (requests, with maxMb and maxGrowthMb), TaskReceived (tasks), TickReceived (ticks), WorkerErrorOccurred (errorCount: an exception that escaped a request, task or tick; a request it ended counts in requests) and WorkerStopping (workerStops, totalRequestsAtStop, maxRequestsAtStop). Counters add up across entries; maxMb, maxGrowthMb and maxRequestsAtStop keep the larger value. A steadily rising maxGrowthMb is the leak signal; compare totalRequestsAtStop / workerStops and maxRequestsAtStop with the configured max_requests (laravel-octane-config reports it). requests, tasks, ticks and the stop counts follow sampleRate like the other types (count / sampleRate); totalRequestsAtStop and maxRequestsAtStop are each stopped worker's full request count. Never URLs, routes, request, response or task data, worker ids or PIDs, or exception messages.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "server", "octaneServer", "workerType", "count", "errorCount", "workerStarts", "workerStops", "requests", "tasks", "ticks", "totalRequestsAtStop", "maxRequestsAtStop", "maxMb", "maxGrowthMb"],
+            "properties": {
+                "type": { "const": "octane" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "server": { "$ref": "#/$defs/server/properties/server" },
+                "octaneServer": { "enum": ["swoole", "roadrunner", "frankenphp", "unknown"], "description": "The Octane server: from the client Octane bound in the worker, else octane.server; unknown when neither names one of the three. An app must accept a value it does not know." },
+                "workerType": { "enum": ["http", "task"], "description": "task for a Swoole task worker, which runs the tasks and the ticks; http for every other worker (all RoadRunner and FrankenPHP workers). An app must accept a value it does not know." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount", "description": "Worker errors (WorkerErrorOccurred)." },
+                "workerStarts": { "$ref": "#/$defs/counter", "description": "Workers started (WorkerStarting)." },
+                "workerStops": { "$ref": "#/$defs/counter", "description": "Workers stopped (WorkerStopping): max_requests reached, a reload or a shutdown. A worker that crashed fires none." },
+                "requests": { "$ref": "#/$defs/counter", "description": "HTTP requests handled: terminated, or ended by a worker error." },
+                "tasks": { "$ref": "#/$defs/counter", "description": "Concurrent tasks handled (TaskReceived, Swoole only)." },
+                "ticks": { "$ref": "#/$defs/counter", "description": "Ticks handled (TickReceived, Swoole only, about one a second when ticks are on)." },
+                "totalRequestsAtStop": { "$ref": "#/$defs/counter", "description": "Sum, over the stops of the entry, of the requests each stopped worker received since it started. The average per worker is totalRequestsAtStop / workerStops." },
+                "maxRequestsAtStop": { "$ref": "#/$defs/counter", "description": "Most requests one stopped worker received since it started. The larger value wins across entries." },
+                "maxMb": { "type": "number", "minimum": 0, "description": "Most memory in use (memory_get_usage) after a request, in MiB with 3 decimals, read at RequestTerminated, after the kernel terminated. 0 when the entry has no request. The larger value wins across entries." },
+                "maxGrowthMb": { "type": "number", "minimum": 0, "description": "Largest growth, in MiB with 3 decimals, of the memory in use after a request since the worker's first request (0 when it shrank, and for the first request). 0 when the entry has no request. The larger value wins across entries." }
+            }
+        },
+        "reverb": {
+            "type": "object",
+            "description": "Laravel Reverb (laravel/reverb) WebSocket servers (#215, additive), only when that package is installed, recorded in the php artisan reverb:start process. One entry per server, Reverb app id and bucket; count is the recorded events (messages, connection and channel events, and the once-a-minute connection sample) and every metric field is always present (0 when the entry has none). From MessageSent (messagesSent; a pusher:connection_established frame is also connectionsOpened, a pusher:error frame connectionsRejected before the connection was established, else errorCount), MessageReceived (messagesReceived), ConnectionPruned (connectionsPruned), ChannelCreated and ChannelRemoved (the channel counts, by name prefix only), and a sample once a minute of the connections subscribed to at least one channel (maxConnections). Reverb has no event for a connection a client closed. Counters add up across entries; maxConnections keeps the larger value. The event counts follow sampleRate like the other types (count / sampleRate); maxConnections is a gauge, not sampled. Never message payloads, event or channel names, socket ids, origins, app keys or secrets.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "server", "appId", "count", "errorCount", "connectionsOpened", "connectionsPruned", "connectionsRejected", "maxConnections", "messagesReceived", "messagesSent", "publicChannelsCreated", "privateChannelsCreated", "presenceChannelsCreated", "publicChannelsRemoved", "privateChannelsRemoved", "presenceChannelsRemoved"],
+            "properties": {
+                "type": { "const": "reverb" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "server": { "$ref": "#/$defs/server/properties/server" },
+                "appId": { "type": "string", "minLength": 1, "maxLength": 32, "description": "The Reverb app id when it is 1 to 32 characters of A-Z a-z 0-9 _ -; else the first 12 hex characters of its sha256. unknown for a channel event Reverb fired outside an app scope." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount", "description": "pusher:error frames sent to an established connection: rate limit, unauthorized subscription, invalid message. Not the error a pruned connection gets." },
+                "connectionsOpened": { "$ref": "#/$defs/counter", "description": "Connections Reverb accepted (pusher:connection_established sent)." },
+                "connectionsPruned": { "$ref": "#/$defs/counter", "description": "Connections Reverb closed because they missed the pong in time (ConnectionPruned)." },
+                "connectionsRejected": { "$ref": "#/$defs/counter", "description": "pusher:error frames sent to a connection before it was established: over the app's connection quota, or origin not allowed." },
+                "maxConnections": { "$ref": "#/$defs/counter", "description": "Connections subscribed to at least one channel on this server, sampled once a minute (what Reverb's connections API counts). 0 in an entry without a sample. The larger value wins across entries." },
+                "messagesReceived": { "$ref": "#/$defs/counter", "description": "Messages clients sent that Reverb handled (MessageReceived), Pusher pings and subscriptions included." },
+                "messagesSent": { "$ref": "#/$defs/counter", "description": "Messages Reverb sent to clients (MessageSent): one per receiving connection for a broadcast, plus protocol frames." },
+                "publicChannelsCreated": { "$ref": "#/$defs/counter", "description": "Channels created whose name starts with neither private nor presence (cache- channels included)." },
+                "privateChannelsCreated": { "$ref": "#/$defs/counter", "description": "Channels created whose name starts with private (private-encrypted- and private-cache- included)." },
+                "presenceChannelsCreated": { "$ref": "#/$defs/counter", "description": "Channels created whose name starts with presence (presence-cache- included)." },
+                "publicChannelsRemoved": { "$ref": "#/$defs/counter", "description": "Public channels removed when their last subscriber left." },
+                "privateChannelsRemoved": { "$ref": "#/$defs/counter", "description": "Private channels removed when their last subscriber left." },
+                "presenceChannelsRemoved": { "$ref": "#/$defs/counter", "description": "Presence channels removed when their last subscriber left." }
+            }
+        },
+        "billingWebhook": {
+            "type": "object",
+            "description": "Laravel Cashier webhooks (#217, additive), only when laravel/cashier (Stripe) or laravel/cashier-paddle is installed: one entry per provider, event type and bucket. count is the webhooks Cashier received (WebhookReceived), handledCount those its handler finished (WebhookHandled), errorCount those whose request ended with a 5xx response first (the handler or an app listener threw; the provider retries them). count - handledCount - errorCount is the webhooks of an event type Cashier has no handler for, answered 200. totalMs and maxMs time WebhookReceived to WebhookHandled, or to the end of the request. The payment signal counts are 1 per webhook of these event types: paymentFailedCount for Stripe invoice.payment_failed and Paddle transaction.payment_failed (subscription_payment_failed on Paddle Classic); paymentActionRequiredCount for Stripe invoice.payment_action_required and Paddle subscription.past_due; subscriptionCanceledCount for Stripe customer.subscription.deleted and Paddle subscription.canceled (subscription_cancelled on Paddle Classic). Counters add up across entries. Never anything else of the payload: no amounts, currencies, customer or subscription ids, emails, cards or metadata.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "provider", "eventType", "count", "errorCount", "totalMs", "maxMs", "handledCount", "paymentFailedCount", "paymentActionRequiredCount", "subscriptionCanceledCount"],
+            "properties": {
+                "type": { "const": "billingWebhook" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "provider": { "type": "string", "minLength": 1, "description": "stripe (laravel/cashier) or paddle (laravel/cashier-paddle). An app must accept a value it does not know." },
+                "eventType": { "type": "string", "pattern": "^[a-z0-9_.]{1,64}$", "description": "The provider's event type (Stripe type, Paddle event_type, or alert_name on Paddle Classic), such as invoice.payment_failed, when it is 1 to 64 characters of a-z 0-9 _ and .; else unknown." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount", "description": "Webhooks whose request ended with a 5xx response before Cashier's handler returned." },
+                "totalMs": { "$ref": "#/$defs/milliseconds" },
+                "maxMs": { "$ref": "#/$defs/milliseconds" },
+                "histogram": { "$ref": "#/$defs/histogram" },
+                "handledCount": { "$ref": "#/$defs/counter", "description": "Webhooks Cashier's handler finished (WebhookHandled)." },
+                "paymentFailedCount": { "$ref": "#/$defs/counter", "description": "Webhooks that report a failed payment: Stripe invoice.payment_failed, Paddle transaction.payment_failed or subscription_payment_failed." },
+                "paymentActionRequiredCount": { "$ref": "#/$defs/counter", "description": "Webhooks that report a payment the customer must act on: Stripe invoice.payment_action_required (3D Secure), Paddle subscription.past_due." },
+                "subscriptionCanceledCount": { "$ref": "#/$defs/counter", "description": "Webhooks that report an ended subscription: Stripe customer.subscription.deleted, Paddle subscription.canceled or subscription_cancelled." }
+            }
+        },
+        "auth": {
+            "type": "object",
+            "description": "Laravel authentication per guard (#219, additive): one entry per guard and bucket. count is every event recorded (logins, failed logins, lockouts and token authentications), errorCount the failed logins (Illuminate\\Auth\\Events\\Failed), loginCount the successful ones (Login, also through the remember cookie), lockoutCount the throttled login attempts (Lockout, fired by Breeze, Fortify and laravel/ui; it carries no guard, so it counts under auth.defaults.guard), and tokenAuthenticationCount the requests a Laravel Sanctum personal access token authenticated (TokenAuthenticated, guard sanctum, only with laravel/sanctum installed). Passport fires no event when a token authenticates a request, so its token requests are not counted. Counters add up across entries. Never usernames, emails, user ids, credentials, tokens, token names or abilities, or IP addresses.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "guard", "count", "errorCount", "loginCount", "lockoutCount", "tokenAuthenticationCount"],
+            "properties": {
+                "type": { "const": "auth" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "guard": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$", "description": "The auth guard name (web, api, sanctum, …) when it is 1 to 64 characters of A-Z a-z 0-9 _ . -, else unknown. An app must accept a value it does not know." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount", "description": "Failed logins (Failed)." },
+                "loginCount": { "$ref": "#/$defs/counter", "description": "Successful logins (Login)." },
+                "lockoutCount": { "$ref": "#/$defs/counter", "description": "Lockouts (Lockout): login attempts the rate limiter refused." },
+                "tokenAuthenticationCount": { "$ref": "#/$defs/counter", "description": "Requests authenticated by a Sanctum personal access token (TokenAuthenticated)." }
+            }
+        },
+        "scout": {
+            "type": "object",
+            "description": "Laravel Scout (#221, additive), only when laravel/scout is installed: one entry per model class, engine, operation and bucket. Scout fires no event when it updates an index or runs a search, so operation index and remove are Scout's queued index jobs (MakeSearchable and RemoveFromSearch, their subclasses such as the Uniquely variants, or the classes set with Scout::makeSearchableUsing() and removeFromSearchUsing()), run when scout.queue is on: count is the jobs that ended, errorCount those that failed (JobFailed, after the last attempt; an attempt released for a retry is not counted), modelCount the records they carried, and totalMs, maxMs and histogram time JobProcessing to JobProcessed or JobFailed. With scout.queue off the index is updated inline and nothing is recorded. operation search counts the searches started (Model::search(), each Scout builder the container makes), with modelCount 0 and no duration: Scout gives no way to time a search without wrapping its builder or engines. Counters add up across entries. Never the search query, record ids or keys, or record data.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "model", "engine", "operation", "count", "errorCount", "modelCount"],
+            "properties": {
+                "type": { "const": "scout" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "model": { "type": "string", "minLength": 1, "description": "The searchable model class, or unknown when an index job carries no model (an empty collection) or its payload cannot be read." },
+                "engine": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$", "description": "scout.driver (algolia, meilisearch, typesense, database, collection, null, or an app's own driver name) when it is 1 to 64 characters of A-Z a-z 0-9 _ . -, else unknown. A model that overrides searchableUsing() is still counted under scout.driver. An app must accept a value it does not know." },
+                "operation": { "type": "string", "minLength": 1, "description": "index (MakeSearchable), remove (RemoveFromSearch) or search (Model::search()). An app must accept a value it does not know." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount", "description": "Index jobs that failed (JobFailed). Always 0 for search." },
+                "modelCount": { "$ref": "#/$defs/counter", "description": "Records the index jobs carried (the length of their serialized key list). Always 0 for search." },
+                "totalMs": { "$ref": "#/$defs/milliseconds", "description": "Index job time, JobProcessing to JobProcessed or JobFailed. Index and remove only." },
+                "maxMs": { "$ref": "#/$defs/milliseconds", "description": "Index and remove only." },
+                "histogram": { "$ref": "#/$defs/histogram" }
+            },
+            "if": { "properties": { "operation": { "const": "search" } } },
+            "then": { "not": { "anyOf": [{ "required": ["totalMs"] }, { "required": ["maxMs"] }, { "required": ["histogram"] }] } },
+            "else": { "required": ["totalMs", "maxMs"] }
+        },
+        "pennant": {
+            "type": "object",
+            "description": "Laravel Pennant feature flags (#225, additive), only when laravel/pennant is installed: one entry per feature name and bucket. activeCount and inactiveCount are the feature checks (FeatureRetrieved, fired for each Feature::active(), value() and the like, per scope), split by Pennant's rule (any value other than false is active); resolvedCount the first resolutions of a feature for a scope (FeatureResolved: the resolver ran and Pennant stored the value); unknownCount the checks of a feature that is not defined (UnknownFeatureResolved, resolved to false). count is the sum of the four. A feature checked for days whose inactiveCount (or activeCount) stays 0 always has the same value: a stale flag to remove. Counters add up across entries. Never the scope (user, team or other model), the value or anything else of the check.",
+            "additionalProperties": false,
+            "required": ["type", "bucket", "sampleRate", "feature", "count", "errorCount", "activeCount", "inactiveCount", "resolvedCount", "unknownCount"],
+            "properties": {
+                "type": { "const": "pennant" },
+                "bucket": { "$ref": "#/$defs/bucket" },
+                "sampleRate": { "$ref": "#/$defs/sampleRate" },
+                "feature": { "type": "string", "minLength": 1, "maxLength": 128, "description": "The feature name (new-checkout, or a class name such as App\\Features\\NewCheckout) when it is 1 to 128 characters of A-Z a-z 0-9 _ . : - and backslash; else the first 12 hex characters of its sha256." },
+                "count": { "$ref": "#/$defs/count" },
+                "errorCount": { "$ref": "#/$defs/errorCount", "description": "Always 0." },
+                "activeCount": { "$ref": "#/$defs/counter", "description": "Checks that found the feature active (value not false)." },
+                "inactiveCount": { "$ref": "#/$defs/counter", "description": "Checks that found the feature inactive (value false)." },
+                "resolvedCount": { "$ref": "#/$defs/counter", "description": "First resolutions for a scope (FeatureResolved)." },
+                "unknownCount": { "$ref": "#/$defs/counter", "description": "Checks of a feature that is not defined (UnknownFeatureResolved)." }
             }
         }
     }

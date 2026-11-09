@@ -2,71 +2,108 @@
 
 declare(strict_types=1);
 
-arch('uses strict types')
-    ->expect('Qiick\Excubia')
-    ->toUseStrictTypes();
+/**
+ * qiick naming and architecture guardrails, identical in every qiick repo.
+ *
+ * Generated from qiick-io/app-ui `standards/php/NamingArchitectureTest.php` by
+ * `scripts/sync-standards.mjs`; CI fails when this copy differs. Do not edit it here:
+ *
+ * - framework / package scaffolding a rule must skip goes in `naming-architecture.php`
+ *   next to this file (the repo's own list, with a reason per entry);
+ * - repo-specific rules go in another test file in `tests/Arch/`.
+ *
+ * The rules are the "Role suffixes" and "Architecture" sections of the qiick code
+ * standard. A namespace the repo does not have passes trivially.
+ */
 
-arch('does not call debug functions or env')
-    ->expect('Qiick\Excubia')
-    ->not->toUse(['dd', 'dump', 'var_dump', 'env', 'ray']);
+/**
+ * @var array{
+ *     namespace: string,
+ *     ignoring?: array<string, list<string>>,
+ *     suffixes?: array<string, string>,
+ * } $namingArchitecture
+ */
+$namingArchitecture = require __DIR__.'/naming-architecture.php';
+$rootNamespace = $namingArchitecture['namespace'];
+$ignoredBy = static fn (string $rule): array => $namingArchitecture['ignoring'][$rule] ?? [];
 
-arch('data objects are readonly and suffixed')
-    ->expect('Qiick\Excubia\Data')
+/** Sub-namespace => role suffix every class in it must end with. */
+$classSuffixes = [
+    'Actions' => 'Action',
+    'Builders' => 'Builder',
+    'Console\Commands' => 'Command',
+    'Data' => 'Data',
+    'Events' => 'Event',
+    'Exceptions' => 'Exception',
+    'Http\Controllers' => 'Controller',
+    'Http\Middleware' => 'Middleware',
+    'Http\Requests' => 'Request',
+    'Http\Resources' => 'Resource',
+    'Http\Responses' => 'Response',
+    'Jobs' => 'Job',
+    'Listeners' => 'Listener',
+    'Notifications' => 'Notification',
+    'Observers' => 'Observer',
+    'Policies' => 'Policy',
+    'Rules' => 'Rule',
+    'Services' => 'Service',
+    ...($namingArchitecture['suffixes'] ?? []),
+];
+
+arch('strict types')
+    ->expect($rootNamespace)
+    ->toUseStrictTypes()
+    ->ignoring($ignoredBy('strict types'));
+
+arch('no debugging helpers')
+    ->expect(['dd', 'dump', 'ray', 'var_dump'])
+    ->not->toBeUsed();
+
+arch('env() only in config')
+    ->expect('env')
+    ->not->toBeUsed()
+    ->ignoring(['Config', ...$ignoredBy('env')]);
+
+arch('controllers do not use the DB facade')
+    ->expect("{$rootNamespace}\\Http\\Controllers")
+    ->not->toUse('Illuminate\Support\Facades\DB');
+
+arch('models use bare domain nouns')
+    ->expect("{$rootNamespace}\\Models")
+    ->classes()
+    ->not->toHaveSuffix('Model');
+
+arch('data objects are readonly')
+    ->expect("{$rootNamespace}\\Data")
+    ->classes()
     ->toBeReadonly()
-    ->toHaveSuffix('Data');
+    ->ignoring($ignoredBy('Data'));
 
-arch('enums use the enum suffix')
-    ->expect('Qiick\Excubia\Enums')
-    ->toBeEnums()
-    ->toHaveSuffix('Enum');
+foreach ($classSuffixes as $subNamespace => $suffix) {
+    // Fortify's published actions keep their upstream names in every Laravel app.
+    $scaffolding = $subNamespace === 'Actions' ? ["{$rootNamespace}\\Actions\\Fortify"] : [];
 
-arch('contracts are interfaces')
-    ->expect('Qiick\Excubia\Contracts')
+    arch("{$subNamespace} end with {$suffix}")
+        ->expect("{$rootNamespace}\\{$subNamespace}")
+        ->classes()
+        ->toHaveSuffix($suffix)
+        ->ignoring([...$scaffolding, ...$ignoredBy($subNamespace)]);
+}
+
+arch('Enums end with Enum')
+    ->expect("{$rootNamespace}\\Enums")
+    ->enums()
+    ->toHaveSuffix('Enum')
+    ->ignoring($ignoredBy('Enums'));
+
+arch('Contracts are interfaces ending with Contract')
+    ->expect("{$rootNamespace}\\Contracts")
     ->toBeInterfaces()
-    ->toHaveSuffix('Contract');
+    ->toHaveSuffix('Contract')
+    ->ignoring($ignoredBy('Contracts'));
 
-arch('renderers use the renderer suffix')
-    ->expect('Qiick\Excubia\Renderers')
-    ->toHaveSuffix('Renderer');
-
-arch('parsers use the parser suffix')
-    ->expect('Qiick\Excubia\Parsers')
-    ->toHaveSuffix('Parser');
-
-arch('services use the service suffix')
-    ->expect('Qiick\Excubia\Services')
-    ->toHaveSuffix('Service');
-
-arch('registries use the registry suffix')
-    ->expect('Qiick\Excubia\Registries')
-    ->toHaveSuffix('Registry');
-
-arch('exceptions use the exception suffix')
-    ->expect('Qiick\Excubia\Exceptions')
-    ->toHaveSuffix('Exception');
-
-arch('configuration loaders use the loader suffix')
-    ->expect('Qiick\Excubia\Configuration')
-    ->toHaveSuffix('Loader');
-
-arch('console commands use the command suffix')
-    ->expect('Qiick\Excubia\Console')
-    ->toHaveSuffix('Command');
-
-arch('health checks use the check suffix')
-    ->expect('Qiick\Excubia\Checks')
-    ->toHaveSuffix('Check');
-
-arch('only src/Laravel uses illuminate, so the standalone CLI needs no Laravel runtime')
-    ->expect('Qiick\Excubia')
-    ->not->toUse('Illuminate')
-    ->ignoring('Qiick\Excubia\Laravel');
-
-arch('health checks only use contracts, data, enums, and services')
-    ->expect('Qiick\Excubia\Checks')
-    ->toOnlyUse([
-        'Qiick\Excubia\Contracts',
-        'Qiick\Excubia\Data',
-        'Qiick\Excubia\Enums',
-        'Qiick\Excubia\Services',
-    ]);
+arch('traits end with Trait')
+    ->expect($rootNamespace)
+    ->traits()
+    ->toHaveSuffix('Trait')
+    ->ignoring($ignoredBy('traits'));

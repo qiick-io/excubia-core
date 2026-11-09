@@ -1,16 +1,19 @@
 # /code-comments
 
-Rewrite documentation in professional English. Remove comments that are not English. Keep logic and user-facing strings unchanged.
+Rewrite the documentation of the selected code in professional English. Keep logic and user-facing strings unchanged.
 
-## PHP
+## TypeScript / React (JSDoc)
 
-- Prefer PHPDoc blocks over inline comments.
-- Document classes and public methods. Document protected or private methods only when they are non-trivial.
-- Include the intent, array shapes, side effects, invariants, and `@throws` when the method throws.
-- Do not restate a scalar type that the signature already has, unless PHPStan needs the extra shape.
-- Keep one blank line at most between the docblock and the symbol.
+- JSDoc on components, hooks and non-trivial helpers: responsibility, non-obvious params and returns, side effects.
+- Types belong in signatures; JSDoc adds intent and invariants that types cannot express.
+- No line-by-line noise (`// set loading to true`).
 
-## Shared
+## PHP / Laravel (PHPDoc)
 
-- Do not change runtime behavior.
-- `docs/SPEC.md` and `docs/ARCHITECTURE.md` stay the source of truth for product behavior.
+- PHPDoc blocks over inline comments.
+- Document classes (controllers, requests, actions, services, jobs, events, listeners, policies, enums, traits) and public methods; protected / private ones only when non-trivial.
+- Include: intent, PHPStan / Larastan array shapes and collection generics, side effects, domain invariants, `@throws` when relevant.
+- Do not restate scalar types already in the signature unless tooling needs it.
+- Aligned stars, at most one blank line between sections.
+
+Do not change runtime behaviour.

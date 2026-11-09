@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\Events\Failed;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Notifications\Events\NotificationSent;
@@ -18,6 +20,29 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use JsonSchema\Validator;
+use Laravel\Ai\AiServiceProvider;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Boolean;
+use Laravel\Ai\Classification\Choice;
+use Laravel\Ai\Exceptions\RateLimitedException;
+use Laravel\Ai\Files\Document;
+use Laravel\Ai\Image;
+use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\ClassificationResponse;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
+use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\TextResponse;
+use Laravel\Ai\Tools\ToolNameResolver;
+use Laravel\Cashier\Events\WebhookReceived as StripeWebhookReceived;
+use Laravel\Octane\Events\WorkerStarting;
+use Laravel\Pennant\Events\FeatureRetrieved;
+use Laravel\Reverb\Application as ReverbApplication;
+use Laravel\Reverb\Contracts\Connection as ReverbConnection;
+use Laravel\Reverb\Events\MessageReceived as ReverbMessageReceived;
+use Laravel\Scout\Builder as ScoutBuilder;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
@@ -25,12 +50,20 @@ use Qiick\Excubia\Contracts\ServerResourcesContract;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
+use Qiick\Excubia\Tests\Support\FakeAiAgent;
+use Qiick\Excubia\Tests\Support\FakeAiTool;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Qiick\Excubia\Tests\Support\FakeServerDisk;
 use Qiick\Excubia\Tests\Support\FakeServerResources;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
+
+require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
+require_once dirname(__DIR__).'/Support/FakeReverbEvents.php';
+require_once dirname(__DIR__).'/Support/FakePennantEvents.php';
+require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
+require_once dirname(__DIR__).'/Support/FakeCashierClasses.php';
 
 const RUNTIME_ENDPOINT = 'https://excubia.example.test/api/runtime';
 const RUNTIME_TOKEN = 'runtime-token-secret';
@@ -232,13 +265,33 @@ it('adds the release to the runtime batch, from excubia.json or the environment,
     $runtime = $client->postedPayloads[0]['runtime'];
 
     expect($runtime['release'] ?? null)->toBe($expected)
-        ->and(array_keys($runtime))->toBe($expected === null ? ['bucketSeconds', 'aggregates'] : ['bucketSeconds', 'release', 'aggregates'])
+        ->and(array_keys($runtime))->toBe($expected === null ? ['bucketSeconds', 'environment', 'aggregates'] : ['bucketSeconds', 'release', 'environment', 'aggregates'])
         ->and(runtimeSchemaErrors($runtime))->toBe([]);
 })->with([
     'environment' => [[], 'v2.3.4', 'v2.3.4'],
     'config wins' => [['release' => 'v9.0.0'], 'v2.3.4', 'v9.0.0'],
     'invalid' => [[], 'not valid!', null],
     'none' => [[], null, null],
+]);
+
+it('adds the Laravel environment to the runtime batch and omits one that is not a short name', function (string $environment, ?string $expected) {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    runtimePushProject($this->app, $client);
+    recordOneRequest($this);
+    $this->app['env'] = $environment;
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtime = $client->postedPayloads[0]['runtime'];
+
+    expect($runtime['environment'] ?? null)->toBe($expected)
+        ->and(runtimeSchemaErrors($runtime))->toBe([]);
+})->with([
+    'production' => ['production', 'production'],
+    'staging' => ['staging', 'staging'],
+    'hostname' => ['app.example.com', null],
+    'too long' => [str_repeat('a', 65), null],
+    'spaces' => ['my env', null],
 ]);
 
 it('does not read .git for runtime batches', function () {
@@ -262,8 +315,10 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
         $runtime[$type->configurationKey()]['enabled'] = true;
     }
 
+    $this->app->register(AiServiceProvider::class);
     runtimePushProject($this->app, $client, ['runtime' => $runtime, 'exceptions' => ['enabled' => true]]);
     config(['queue.default' => 'sync', 'mail.default' => 'array']);
+    FakeAiAgent::fake([new ToolCall('call-1', ToolNameResolver::resolve(new FakeAiTool), ['query' => 'order 1']), 'done']);
     Http::fake(['api.example.test/*' => Http::response(['ok' => true])]);
     recordOneRequest($this);
     DB::select('select 1');
@@ -282,6 +337,13 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
     trigger_error('Old::api() is deprecated', E_USER_DEPRECATED);
     event(new CommandStarting('migrate', new ArrayInput([]), new NullOutput));
     event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 1));
+    (new FakeAiAgent)->prompt('hello');
+    event(new WorkerStarting($this->app));
+    event(new ReverbMessageReceived(new ReverbConnection(new ReverbApplication('123456')), '{}'));
+    event(new StripeWebhookReceived(['type' => 'invoice.payment_failed']));
+    event(new Failed('web', null, ['email' => 'someone@example.test', 'password' => 'secret']));
+    event(new FeatureRetrieved('new-checkout', 'someone@example.test', true));
+    $this->app->make(ScoutBuilder::class, ['model' => new class extends Model {}, 'query' => 'someone@example.test']);
     $this->app->terminate();
 
     $this->artisan('excubia:push-runtime')->assertExitCode(0);
@@ -302,6 +364,97 @@ it('sends every aggregate type, the 1.0.0-beta.2 ones included, as a valid runti
             expect(array_sum($aggregate['histogram']))->toBe($aggregate['count']);
         }
     }
+});
+
+it('never lets an AI prompt, attachment, response, reasoning, tool argument or result, conversation or exception message reach the buffer or the push', function () {
+    $marker = 'excubia-ai-privacy-marker-91c2';
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    $this->app->register(AiServiceProvider::class);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'ai' => ['enabled' => true], 'aiTools' => ['enabled' => true]]]);
+    $toolName = ToolNameResolver::resolve(new FakeAiTool);
+    FakeAiAgent::fake([
+        new ToolCall('call-'.$marker, $toolName, ['query' => $marker]),
+        (new AgentResponse('invocation-'.$marker, 'answer '.$marker, new TextUsage(30, 12, null, null, 4), new Meta('openai', 'gpt-test')))->withReasoning('thinking about '.$marker),
+    ]);
+    $agent = new FakeAiAgent('Instructions with '.$marker);
+
+    $agent->prompt('Prompt with '.$marker, [Document::fromString('Attachment with '.$marker, 'text/plain')], model: 'gpt-test');
+    FakeAiAgent::fake([new ToolCall('call-2', $toolName, ['query' => $marker, 'fail' => true]), 'tool failed']);
+
+    expect(fn () => $agent->prompt('Tool failing with '.$marker, model: 'gpt-test'))->toThrow(RuntimeException::class);
+
+    FakeAiAgent::fake([new TextResponse('streamed '.$marker, new TextUsage(5, 5), new Meta('openai', 'gpt-test'))]);
+
+    foreach ($agent->stream('Stream with '.$marker, model: 'gpt-test') as $streamEvent) {
+        // Read the whole stream.
+    }
+
+    FakeAiAgent::fake(fn () => throw new RuntimeException('failed for '.$marker));
+
+    expect(fn () => $agent->prompt('Failing with '.$marker, model: 'gpt-test'))->toThrow(RuntimeException::class);
+
+    Image::fake(fn () => throw new RateLimitedException('image failed for '.$marker));
+
+    expect(fn () => Image::of('Image of '.$marker)->generate(['gemini' => 'image-a', 'openai' => 'image-b']))->toThrow(RateLimitedException::class);
+
+    $this->app->terminate();
+    $buffer = (string) file_get_contents($this->app->storagePath('excubia/runtime/buffer.ndjson'));
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtimePayload = collect($client->postedPayloads)->firstWhere('type', 'runtime')['runtime'];
+    $aggregates = collect($runtimePayload['aggregates']);
+
+    expect($buffer)->toContain('"type":"ai"')
+        ->and($buffer)->not->toContain($marker)
+        ->and(json_encode($client->postedPayloads, JSON_THROW_ON_ERROR))->not->toContain($marker)
+        ->and(runtimeSchemaErrors($runtimePayload))->toBe([])
+        ->and($aggregates->where('type', 'ai')->where('operation', 'agent')->sum('count'))->toBe(4)
+        ->and($aggregates->where('type', 'ai')->where('operation', 'agent')->sum('inputTokens'))->toBe(35)
+        ->and($aggregates->where('type', 'ai')->where('operation', 'image')->sum('failoverCount'))->toBe(2)
+        ->and($aggregates->where('type', 'aiTool')->sum('count'))->toBe(2)
+        ->and($aggregates->where('type', 'aiTool')->sum('errorCount'))->toBe(1);
+});
+
+it('never lets a classified text, its data, the questions, attachments, answers or exception message reach the buffer or the push', function () {
+    $marker = 'excubia-ai-classification-marker-5d0e';
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    $this->app->register(AiServiceProvider::class);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'ai' => ['enabled' => true]]]);
+    $questions = [
+        'topic-'.$marker => new Choice('Which topic is '.$marker.' about?', ['billing-'.$marker => 'Billing '.$marker, 'other' => 'Other']),
+        'urgent' => new Boolean(['Is it urgent?', 'Answer about '.$marker]),
+    ];
+    Classification::fake([
+        new ClassificationResponse([
+            'topic-'.$marker => new ChoiceAnswer('billing-'.$marker, ['billing-'.$marker => 0.8, 'other' => 0.2], 0.8),
+            'urgent' => new BooleanAnswer(0.7),
+        ], new TextUsage(80, 6), new Meta('openai', 'gpt-classify')),
+        fn () => throw new RuntimeException('classification failed for '.$marker),
+    ]);
+
+    Classification::of('Customer message about '.$marker, [Document::fromString('Attachment with '.$marker, 'text/plain')])
+        ->questions($questions)
+        ->classify('openai', 'gpt-classify');
+
+    expect(fn () => Classification::of(['ticket' => $marker, 'body' => 'Structured '.$marker])->questions($questions)->classify('openai', 'gpt-classify'))
+        ->toThrow(RuntimeException::class);
+
+    $this->app->terminate();
+    $buffer = (string) file_get_contents($this->app->storagePath('excubia/runtime/buffer.ndjson'));
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $runtimePayload = collect($client->postedPayloads)->firstWhere('type', 'runtime')['runtime'];
+    $classification = collect($runtimePayload['aggregates'])->where('type', 'ai')->where('operation', 'classification');
+
+    expect($buffer)->toContain('"operation":"classification"')
+        ->and($buffer)->not->toContain($marker)
+        ->and(json_encode($client->postedPayloads, JSON_THROW_ON_ERROR))->not->toContain($marker)
+        ->and(runtimeSchemaErrors($runtimePayload))->toBe([])
+        ->and($classification->sum('count'))->toBe(2)
+        ->and($classification->sum('errorCount'))->toBe(1)
+        ->and($classification->sum('inputTokens'))->toBe(80);
 });
 
 it('sends each batch with histograms that add up to count, and the schema rejects one with other buckets', function () {

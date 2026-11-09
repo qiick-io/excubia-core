@@ -162,23 +162,26 @@ final class DependencyLicensesCheck implements HealthCheckContract
     {
         $declared = $package->licenses === [] ? 'none declared' : implode(' OR ', $package->licenses);
 
-        [$severity, $status, $message, $fixHint] = match ($verdict) {
-            LicenseVerdictEnum::Permitted => [null, null, '', ''],
+        [$severity, $status, $kind, $message, $fixHint] = match ($verdict) {
+            LicenseVerdictEnum::Permitted => [null, null, '', '', ''],
             LicenseVerdictEnum::Denied => [
                 SeverityEnum::High,
                 FindingStatusEnum::Fail,
+                'denied',
                 'License denied by checks.dependency-licenses.denied: '.$declared.'.',
                 'Replace the package, or remove the license from checks.dependency-licenses.denied after a legal review.',
             ],
             LicenseVerdictEnum::StrongCopyleft => [
                 SeverityEnum::Medium,
                 FindingStatusEnum::Warn,
+                'copyleft',
                 'Strong copyleft license: '.$declared.'.',
                 'Check that the license fits how you distribute the app, then add it to checks.dependency-licenses.allowed or replace the package.',
             ],
             LicenseVerdictEnum::Unknown => [
                 SeverityEnum::Low,
                 FindingStatusEnum::Warn,
+                'unknown',
                 $package->licenses === [] ? 'No license declared.' : 'Unknown license: '.$declared.'.',
                 'Check the package license, then add it to checks.dependency-licenses.allowed.',
             ],
@@ -201,6 +204,7 @@ final class DependencyLicensesCheck implements HealthCheckContract
                 'lockedVersion' => $package->version,
                 'licenses' => $package->licenses,
                 'ecosystem' => $ecosystem,
+                'kind' => $kind,
             ],
         );
     }

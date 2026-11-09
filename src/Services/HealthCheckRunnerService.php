@@ -12,9 +12,11 @@ use Qiick\Excubia\Checks\ComposerOutdatedCheck;
 use Qiick\Excubia\Checks\ComposerStaleCheck;
 use Qiick\Excubia\Checks\DependencyLicensesCheck;
 use Qiick\Excubia\Checks\EnvExampleSyncCheck;
+use Qiick\Excubia\Checks\LaravelApiTokensCheck;
 use Qiick\Excubia\Checks\LaravelAppKeyCheck;
 use Qiick\Excubia\Checks\LaravelBackupsCheck;
 use Qiick\Excubia\Checks\LaravelCacheCheck;
+use Qiick\Excubia\Checks\LaravelCashierCheck;
 use Qiick\Excubia\Checks\LaravelCorsWildcardCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseCheck;
 use Qiick\Excubia\Checks\LaravelDatabaseConnectionsCheck;
@@ -27,12 +29,14 @@ use Qiick\Excubia\Checks\LaravelFailedJobsCheck;
 use Qiick\Excubia\Checks\LaravelLogLevelCheck;
 use Qiick\Excubia\Checks\LaravelMaintenanceModeCheck;
 use Qiick\Excubia\Checks\LaravelNextMajorBlockerCheck;
+use Qiick\Excubia\Checks\LaravelOctaneConfigCheck;
 use Qiick\Excubia\Checks\LaravelPendingMigrationsCheck;
 use Qiick\Excubia\Checks\LaravelProductionCachesCheck;
 use Qiick\Excubia\Checks\LaravelProductionDriversCheck;
 use Qiick\Excubia\Checks\LaravelQueueBacklogCheck;
 use Qiick\Excubia\Checks\LaravelQueueWorkersCheck;
 use Qiick\Excubia\Checks\LaravelRedisMemoryCheck;
+use Qiick\Excubia\Checks\LaravelReverbCheck;
 use Qiick\Excubia\Checks\LaravelSchedulerHeartbeatCheck;
 use Qiick\Excubia\Checks\LaravelSessionSecurityCheck;
 use Qiick\Excubia\Checks\LaravelStorageCheck;
@@ -150,7 +154,7 @@ final class HealthCheckRunnerService
             $checkResults[] = $isOffline ? $this->withOfflineSkips($checkResult) : $checkResult;
         }
 
-        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults), javascriptLockfile: $snapshot->javascriptLockfileName(), schedule: $snapshot->laravelPosture?->scheduledTasks);
+        $raw = new HealthReportData($checkResults, [], $this->today, self::excubiaVersion(), ProjectVersionsData::fromSnapshot($snapshot, $checkResults), javascriptLockfile: $snapshot->javascriptLockfileName(), schedule: $snapshot->laravelPosture?->scheduledTasks, environment: HealthReportData::environmentName($snapshot->laravelPosture?->environment));
         $report = $raw->withoutIgnoredFindings($configuration, $this->today);
 
         return [
@@ -162,6 +166,7 @@ final class HealthCheckRunnerService
                 $report->project,
                 javascriptLockfile: $report->javascriptLockfile,
                 schedule: $report->schedule,
+                environment: $report->environment,
             ),
             'expiredIgnoreWarnings' => $configuration->expiredIgnoreWarnings($raw->findings(), $this->today),
         ];
@@ -277,6 +282,10 @@ final class HealthCheckRunnerService
             new LaravelRedisMemoryCheck,
             new PhpOpcacheCheck,
             new PhpProductionIniCheck,
+            new LaravelOctaneConfigCheck,
+            new LaravelReverbCheck,
+            new LaravelCashierCheck,
+            new LaravelApiTokensCheck,
         ];
     }
 }

@@ -68,7 +68,8 @@ use Throwable;
  * the time budget, is sent as `skipped`; the push always goes on.
  *
  * Each batch carries the release resolved when it is sent (`release` key,
- * `EXCUBIA_RELEASE` or a platform variable; no git fallback here).
+ * `EXCUBIA_RELEASE` or a platform variable; no git fallback here), and
+ * each runtime batch the Laravel environment (`app.env`, #203).
  *
  * ponytail: the release is the one at send time, not at record time, so a
  * batch recorded in the minute before a deploy, or kept after a failure, is
@@ -112,6 +113,7 @@ final class ExcubiaPushRuntimeCommand extends Command
         $appToken = self::environmentValue('EXCUBIA_APP_TOKEN') ?? $configuration->appToken;
         $sentAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $release = (new ReleaseService)->resolve($configuration->release);
+        $environment = $this->laravel->environment();
         $hasFailed = false;
 
         try {
@@ -123,7 +125,7 @@ final class ExcubiaPushRuntimeCommand extends Command
                 $hasFailed = ! $this->sendBuffer(
                     $runtimeBuffer,
                     static fn (RuntimeBufferService $buffer, string $path): array => $buffer->read($path),
-                    static fn (array $entries, string $batchId) => $pushService->pushRuntime($entries, $batchId, $appUrl, $appToken, $sentAt, $release),
+                    static fn (array $entries, string $batchId) => $pushService->pushRuntime($entries, $batchId, $appUrl, $appToken, $sentAt, $release, $environment),
                     ['runtime batch', 'runtime batches', 'runtime data'],
                 );
             }

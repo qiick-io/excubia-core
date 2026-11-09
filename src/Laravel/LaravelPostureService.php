@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace Qiick\Excubia\Laravel;
 
 use Closure;
+use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Queue\Failed\FailedJobProviderInterface;
 use Illuminate\Queue\Failed\NullFailedJobProvider;
 use PDO;
+use Qiick\Excubia\Checks\LaravelApiTokensCheck;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
@@ -58,6 +61,24 @@ use Throwable;
  * connection the default cache store, the default queue connection or the
  * session use (or on `checks.laravel-redis-memory.connections`): used and
  * max memory and the eviction policy, nothing else of the reply.
+ *
+ * For `laravel-octane-config` (#213), when Laravel Octane is installed, it
+ * reads `octane.server` and `octane.max_requests`, nothing else.
+ *
+ * For `laravel-reverb` (#215), when Laravel Reverb is installed and is the
+ * default broadcast driver, it opens one TCP connection to the host and port
+ * the app broadcasts to, with a 2 s timeout, sends nothing and closes it.
+ * Only whether it connected and how long it took are kept.
+ *
+ * For `laravel-cashier` (#217), when Laravel Cashier (Stripe) or Cashier
+ * Paddle is installed, it reads whether the webhook secret is set, whether
+ * the keys start with a test prefix (or Paddle's sandbox flag), and whether
+ * a route reaches Cashier's webhook controller: booleans only.
+ *
+ * For `laravel-api-tokens` (#219), when Laravel Sanctum or Passport is
+ * installed, it reads their token settings and key files and counts
+ * tokens and personal access clients with read-only queries (3 s statement
+ * timeout on MySQL and PostgreSQL): counts and booleans only.
  *
  * For `php-opcache` and `php-production-ini` (#172) it reads the web-SAPI
  * snapshot the health endpoint stores (`PhpWebRuntimeSnapshotService`).
@@ -109,6 +130,62 @@ final class LaravelPostureService
      * is not a dependency of this package).
      */
     private const BACKUP_DESTINATION = 'Spatie\\Backup\\BackupDestination\\BackupDestination';
+
+    /**
+     * Laravel Octane's first event class, used only to tell whether Octane
+     * is installed (it is not a dependency of this package).
+     */
+    private const OCTANE_WORKER_STARTING = 'Laravel\\Octane\\Events\\WorkerStarting';
+
+    /**
+     * Laravel Reverb's message event, used only to tell whether Reverb is
+     * installed (it is not a dependency of this package).
+     */
+    private const REVERB_MESSAGE_SENT = 'Laravel\\Reverb\\Events\\MessageSent';
+
+    private const REVERB_CONNECT_TIMEOUT_SECONDS = 2.0;
+
+    /**
+     * Laravel Cashier (Stripe, `laravel/cashier`) and Cashier Paddle
+     * (`laravel/cashier-paddle`) (#217): the class that tells each one is
+     * installed (neither is a dependency) and its webhook controller.
+     */
+    private const CASHIER_PACKAGES = [
+        'stripe' => ['Laravel\\Cashier\\Cashier', 'Laravel\\Cashier\\Http\\Controllers\\WebhookController'],
+        'paddle' => ['Laravel\\Paddle\\Cashier', 'Laravel\\Paddle\\Http\\Controllers\\WebhookController'],
+    ];
+
+    /**
+     * Prefixes of Stripe's test keys (secret, restricted, publishable) and
+     * of Paddle Billing's sandbox API key and test client-side token.
+     */
+    private const STRIPE_TEST_KEY_PREFIXES = ['sk_test_', 'rk_test_', 'pk_test_'];
+
+    private const PADDLE_TEST_KEY_PREFIXES = ['pdl_sdbx_', 'test_'];
+
+    /**
+     * Laravel Sanctum and Laravel Passport (#219): the classes that tell each
+     * one is installed (neither is a dependency), and the tables they create.
+     */
+    private const SANCTUM = 'Laravel\\Sanctum\\Sanctum';
+
+    private const PASSPORT = 'Laravel\\Passport\\Passport';
+
+    private const SANCTUM_TOKEN_TABLE = 'personal_access_tokens';
+
+    private const PASSPORT_CLIENT_TABLE = 'oauth_clients';
+
+    /**
+     * The private key file modes league/oauth2-server (Passport's OAuth
+     * server) accepts without a notice; `passport:keys` writes 0600.
+     */
+    private const PASSPORT_KEY_MODES = [0400, 0440, 0600, 0640, 0660];
+
+    /**
+     * Statement timeout, in milliseconds, of the token queries (MySQL and
+     * PostgreSQL).
+     */
+    private const QUERY_TIMEOUT_MS = 3000;
 
     public function __construct(
         private readonly DiskSpaceContract $diskSpace = new DiskSpaceService,
@@ -197,7 +274,360 @@ final class LaravelPostureService
             databaseSize: $databaseStatistics['size'],
             redisMemory: $isProbed('laravel-redis-memory') ? $this->redisMemory($application, $config, $configuration->redisMemoryConnectionNames) : null,
             phpRuntime: $isProbed('php-opcache', 'php-production-ini') ? $this->phpRuntime($application, $now) : null,
+            octane: $isProbed('laravel-octane-config') ? $this->octane($config) : null,
+            reverb: $isProbed('laravel-reverb') ? $this->reverb($config) : null,
+            cashier: $isProbed('laravel-cashier') ? $this->cashier($application, $config) : null,
+            apiTokens: $isProbed('laravel-api-tokens') ? $this->apiTokens($application, $config, $now) : null,
         );
+    }
+
+    /**
+     * Octane's server and `max_requests` (#213), or null when Octane is not
+     * installed: its event classes are missing, or its `octane`
+     * configuration is (its service provider always merges it).
+     *
+     * @return array{server: string, maxRequests: int|null}|null
+     */
+    private function octane(Repository $config): ?array
+    {
+        $octane = $config->get('octane');
+
+        if (! class_exists(self::OCTANE_WORKER_STARTING) || ! is_array($octane)) {
+            return null;
+        }
+
+        $server = $octane['server'] ?? null;
+        $maxRequests = $octane['max_requests'] ?? null;
+
+        return [
+            'server' => in_array($server, RuntimeCollectorService::OCTANE_SERVERS, true) ? $server : 'unknown',
+            'maxRequests' => is_int($maxRequests) || (is_string($maxRequests) && preg_match('/^-?\d+$/', $maxRequests) === 1) ? (int) $maxRequests : null,
+        ];
+    }
+
+    /**
+     * Laravel Cashier's webhook and key posture (#217), one entry per
+     * installed package, or null when none is: its class is missing, or its
+     * `cashier` configuration is (its service provider always merges it).
+     * Stripe's secret is `cashier.webhook.secret` and its keys
+     * `cashier.secret` and `cashier.key`; Paddle's are
+     * `cashier.webhook_secret`, `cashier.api_key`, `cashier.client_side_token`
+     * and `cashier.sandbox`. Only booleans leave this method.
+     *
+     * @return list<array{provider: string, isWebhookSecretConfigured: bool, isWebhookRouteRegistered: bool, hasTestKeys: bool}>|null
+     */
+    private function cashier(Application $application, Repository $config): ?array
+    {
+        $cashier = $config->get('cashier');
+
+        if (! is_array($cashier)) {
+            return null;
+        }
+
+        $isFilled = static fn (mixed $value): bool => is_string($value) && trim($value) !== '';
+        $hasPrefix = static fn (mixed $value, array $prefixes): bool => is_string($value) && array_filter($prefixes, static fn (string $prefix): bool => str_starts_with($value, $prefix)) !== [];
+        $packages = [];
+
+        foreach (self::CASHIER_PACKAGES as $provider => [$cashierClass, $controllerClass]) {
+            if (! class_exists($cashierClass)) {
+                continue;
+            }
+
+            $webhook = is_array($cashier['webhook'] ?? null) ? $cashier['webhook'] : [];
+
+            $packages[] = [
+                'provider' => $provider,
+                'isWebhookSecretConfigured' => $isFilled($provider === 'stripe' ? ($webhook['secret'] ?? null) : ($cashier['webhook_secret'] ?? null)),
+                'isWebhookRouteRegistered' => $this->hasRouteTo($application, $controllerClass),
+                'hasTestKeys' => $provider === 'stripe'
+                    ? $hasPrefix($cashier['secret'] ?? null, self::STRIPE_TEST_KEY_PREFIXES) || $hasPrefix($cashier['key'] ?? null, self::STRIPE_TEST_KEY_PREFIXES)
+                    : filter_var($cashier['sandbox'] ?? false, FILTER_VALIDATE_BOOL) || $hasPrefix($cashier['api_key'] ?? null, self::PADDLE_TEST_KEY_PREFIXES) || $hasPrefix($cashier['client_side_token'] ?? null, self::PADDLE_TEST_KEY_PREFIXES),
+            ];
+        }
+
+        return $packages === [] ? null : $packages;
+    }
+
+    /**
+     * Whether a registered route uses this controller or a subclass of it
+     * (Cashier's docs tell apps to extend its webhook controller). False
+     * when the routes cannot be read.
+     */
+    private function hasRouteTo(Application $application, string $controllerClass): bool
+    {
+        try {
+            foreach ($application->make('router')->getRoutes()->getRoutes() as $route) {
+                $routeController = $route->getControllerClass();
+
+                if (is_string($routeController) && is_a($routeController, $controllerClass, true)) {
+                    return true;
+                }
+            }
+        } catch (Throwable) {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Laravel Sanctum and Passport token posture (#219), one entry per
+     * installed package, or null when neither is (neither is a dependency):
+     * its class is missing, or its `sanctum` / `passport` configuration is
+     * (both service providers always merge it).
+     *
+     * @return list<array<string, bool|int|string|null>>|null
+     */
+    private function apiTokens(Application $application, Repository $config, DateTimeImmutable $now): ?array
+    {
+        $packages = [];
+        $sanctum = $config->get('sanctum');
+
+        if (class_exists(self::SANCTUM) && is_array($sanctum)) {
+            $packages[] = $this->sanctum($application, $config, $sanctum, $now);
+        }
+
+        if (class_exists(self::PASSPORT) && is_array($config->get('passport'))) {
+            $packages[] = $this->passport($application, $config);
+        }
+
+        return $packages === [] ? null : $packages;
+    }
+
+    /**
+     * Sanctum's `expiration` (minutes; null or 0 means tokens never expire,
+     * as for Sanctum's guard) and `stateful` domains (a `*` pattern, or no
+     * domain at all), plus counts from `personal_access_tokens` on the
+     * default connection: the tokens still valid (no past `expires_at`,
+     * younger than `expiration`), those without `expires_at`, those not
+     * used for STALE_TOKEN_DAYS (`last_used_at`, or `created_at` for a
+     * token never used) and those never used. Timestamps are compared in
+     * the app's timezone, as Eloquent writes them. A missing or unreadable
+     * table leaves the counts null. Never a token, a name, an ability, a
+     * user id or a domain.
+     *
+     * ponytail: the table is always `personal_access_tokens` on the default
+     * connection; read the model of `Sanctum::$personalAccessTokenModel`
+     * if an app with a custom token table ever needs it.
+     *
+     * @param  array<mixed>  $sanctum
+     * @return array{provider: 'sanctum', expirationMinutes: int|null, hasStatefulWildcard: bool, isStatefulEmpty: bool, tokenCount: int|null, nonExpiringTokenCount: int|null, staleTokenCount: int|null, neverUsedTokenCount: int|null}
+     */
+    private function sanctum(Application $application, Repository $config, array $sanctum, DateTimeImmutable $now): array
+    {
+        $expiration = $sanctum['expiration'] ?? null;
+        $expirationMinutes = is_numeric($expiration) && (int) $expiration > 0 ? (int) $expiration : null;
+        $domains = array_values(array_filter(
+            array_map(static fn (mixed $domain): string => is_string($domain) ? trim($domain) : '', (array) ($sanctum['stateful'] ?? [])),
+            static fn (string $domain): bool => $domain !== '',
+        ));
+        $local = $now->setTimezone(new DateTimeZone(date_default_timezone_get()));
+        $timestamp = static fn (DateTimeImmutable $at): string => $at->format('Y-m-d H:i:s');
+        $default = $config->get('database.default');
+        $counts = is_string($default) ? $this->probeDatabase($application, $config, $default, function (ConnectionInterface $connection) use ($expirationMinutes, $local, $timestamp): ?array {
+            if (! $connection->getSchemaBuilder()->hasTable(self::SANCTUM_TOKEN_TABLE)) {
+                return null;
+            }
+
+            $query = $connection->table(self::SANCTUM_TOKEN_TABLE)
+                ->selectRaw(
+                    $this->queryTimeoutHint($connection).'count(*) as token_count, '
+                    .'coalesce(sum(case when expires_at is null then 1 else 0 end), 0) as non_expiring_count, '
+                    .'coalesce(sum(case when coalesce(last_used_at, created_at) < ? then 1 else 0 end), 0) as stale_count, '
+                    .'coalesce(sum(case when last_used_at is null then 1 else 0 end), 0) as never_used_count',
+                    [$timestamp($local->modify('-'.LaravelApiTokensCheck::STALE_TOKEN_DAYS.' days'))],
+                )
+                ->where(static fn ($where) => $where->whereNull('expires_at')->orWhere('expires_at', '>', $timestamp($local)));
+
+            if ($expirationMinutes !== null) {
+                $query->where('created_at', '>', $timestamp($local->modify('-'.$expirationMinutes.' minutes')));
+            }
+
+            $row = (array) $this->withQueryTimeout($connection, static fn (): mixed => $query->first());
+
+            return [
+                'tokenCount' => (int) ($row['token_count'] ?? 0),
+                'nonExpiringTokenCount' => (int) ($row['non_expiring_count'] ?? 0),
+                'staleTokenCount' => (int) ($row['stale_count'] ?? 0),
+                'neverUsedTokenCount' => (int) ($row['never_used_count'] ?? 0),
+            ];
+        }) : null;
+
+        return [
+            'provider' => 'sanctum',
+            'expirationMinutes' => $expirationMinutes,
+            'hasStatefulWildcard' => array_filter($domains, static fn (string $domain): bool => str_contains($domain, '*')) !== [],
+            'isStatefulEmpty' => $domains === [],
+            'tokenCount' => $counts['tokenCount'] ?? null,
+            'nonExpiringTokenCount' => $counts['nonExpiringTokenCount'] ?? null,
+            'staleTokenCount' => $counts['staleTokenCount'] ?? null,
+            'neverUsedTokenCount' => $counts['neverUsedTokenCount'] ?? null,
+        ];
+    }
+
+    /**
+     * Passport's keys, token lifetimes and personal access clients. A key
+     * comes from `passport.private_key` / `passport.public_key`, else from
+     * the file `Passport::keyPath()` names, as Passport's provider loads it;
+     * the private key file is too open when its mode is not one that
+     * league/oauth2-server accepts (0400, 0440, 0600, 0640, 0660; not
+     * checked on Windows). The lifetimes are `Passport::$tokensExpireIn`,
+     * `$refreshTokensExpireIn` and `$personalAccessTokensExpireIn`, one year
+     * each when unset. Active personal access clients are counted in
+     * `oauth_clients` on `passport.connection`: `grant_types` holding
+     * `personal_access` (Passport 13), or `personal_access_client`
+     * (Passport 12). Never a key, a path, a client name, id or secret.
+     *
+     * @return array{provider: 'passport', hasKeys: bool, isPrivateKeyTooOpen: bool|null, accessTokenLifetimeMinutes: int, refreshTokenLifetimeMinutes: int, personalAccessTokenLifetimeMinutes: int, personalAccessClientCount: int|null}
+     */
+    private function passport(Application $application, Repository $config): array
+    {
+        $passport = self::PASSPORT;
+        $keyFile = static function (string $type) use ($passport, $config): ?string {
+            $key = $config->get('passport.'.$type.'_key');
+
+            if (is_string($key) && trim($key) !== '') {
+                return null;
+            }
+
+            try {
+                $file = $passport::keyPath('oauth-'.$type.'.key');
+            } catch (Throwable) {
+                return '';
+            }
+
+            return is_string($file) && is_file($file) ? $file : '';
+        };
+        $privateKeyFile = $keyFile('private');
+        $publicKeyFile = $keyFile('public');
+        $connection = $config->get('passport.connection');
+        $connection = is_string($connection) && $connection !== '' ? $connection : $config->get('database.default');
+
+        return [
+            'provider' => 'passport',
+            'hasKeys' => $privateKeyFile !== '' && $publicKeyFile !== '',
+            'isPrivateKeyTooOpen' => is_string($privateKeyFile) && $privateKeyFile !== '' && PHP_OS_FAMILY !== 'Windows'
+                ? ! in_array(@fileperms($privateKeyFile) & 0777, self::PASSPORT_KEY_MODES, true)
+                : null,
+            'accessTokenLifetimeMinutes' => $this->passportLifetimeMinutes('tokensExpireIn'),
+            'refreshTokenLifetimeMinutes' => $this->passportLifetimeMinutes('refreshTokensExpireIn'),
+            'personalAccessTokenLifetimeMinutes' => $this->passportLifetimeMinutes('personalAccessTokensExpireIn'),
+            'personalAccessClientCount' => is_string($connection) ? $this->probeDatabase($application, $config, $connection, function (ConnectionInterface $connection): ?int {
+                $schema = $connection->getSchemaBuilder();
+
+                if (! $schema->hasTable(self::PASSPORT_CLIENT_TABLE)) {
+                    return null;
+                }
+
+                $query = $connection->table(self::PASSPORT_CLIENT_TABLE)
+                    ->selectRaw($this->queryTimeoutHint($connection).'count(*) as client_count')
+                    ->where('revoked', false);
+                $schema->hasColumn(self::PASSPORT_CLIENT_TABLE, 'grant_types')
+                    ? $query->where('grant_types', 'like', '%personal_access%')
+                    : $query->where('personal_access_client', true);
+                $row = (array) $this->withQueryTimeout($connection, static fn (): mixed => $query->first());
+
+                return (int) ($row['client_count'] ?? 0);
+            }) : null,
+        ];
+    }
+
+    /**
+     * One of Passport's lifetime properties in minutes (counted from the
+     * Unix epoch), or Passport's default of one year when it is unset.
+     */
+    private function passportLifetimeMinutes(string $property): int
+    {
+        $passport = self::PASSPORT;
+        $interval = property_exists($passport, $property) ? $passport::${$property} : null;
+        $interval = $interval instanceof DateInterval ? $interval : new DateInterval('P1Y');
+
+        return intdiv((new DateTimeImmutable('@0'))->add($interval)->getTimestamp(), 60);
+    }
+
+    /**
+     * MySQL's optimizer hint that stops the select after QUERY_TIMEOUT_MS,
+     * placed right after `select`; empty for the other drivers.
+     */
+    private function queryTimeoutHint(ConnectionInterface $connection): string
+    {
+        return $connection instanceof Connection && $connection->getDriverName() === 'mysql'
+            ? '/*+ MAX_EXECUTION_TIME('.self::QUERY_TIMEOUT_MS.') */ '
+            : '';
+    }
+
+    /**
+     * Runs `$select`, on PostgreSQL inside a transaction with a local
+     * `statement_timeout` of QUERY_TIMEOUT_MS that ends with it. MySQL uses
+     * queryTimeoutHint(); SQLite reads a local file.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $select
+     * @return TResult
+     */
+    private function withQueryTimeout(ConnectionInterface $connection, Closure $select): mixed
+    {
+        if (! $connection instanceof Connection || $connection->getDriverName() !== 'pgsql') {
+            return $select();
+        }
+
+        return $connection->transaction(static function () use ($connection, $select): mixed {
+            $connection->statement('set local statement_timeout = '.self::QUERY_TIMEOUT_MS);
+
+            return $select();
+        });
+    }
+
+    /**
+     * Whether the Reverb server answers (#215), or null when Reverb is not
+     * installed: its event classes are missing, or its `reverb`
+     * configuration is (its service provider always merges it). Only when the default broadcast connection uses the
+     * `reverb` driver: a TCP connect to its `options.host` and
+     * `options.port` (443, or 80 for the `http` scheme, when unset), the
+     * address the app broadcasts to. The connect error is dropped: it names
+     * the host.
+     *
+     * ponytail: a host name is resolved by the system resolver, which the
+     * 2 s timeout does not cover; a broken resolver can make the check wait
+     * longer.
+     *
+     * @return array{isBroadcastDriver: bool, isReachable: bool|null, latencyMs: float|null}|null
+     */
+    private function reverb(Repository $config): ?array
+    {
+        if (! class_exists(self::REVERB_MESSAGE_SENT) || ! is_array($config->get('reverb'))) {
+            return null;
+        }
+
+        $default = $config->get('broadcasting.default');
+        $connection = is_string($default) && $default !== '' ? $config->get('broadcasting.connections.'.$default) : null;
+
+        if (! is_array($connection) || ($connection['driver'] ?? null) !== 'reverb') {
+            return ['isBroadcastDriver' => false, 'isReachable' => null, 'latencyMs' => null];
+        }
+
+        $options = is_array($connection['options'] ?? null) ? $connection['options'] : [];
+        $host = $options['host'] ?? null;
+        $port = $options['port'] ?? null;
+        $port = is_int($port) || (is_string($port) && ctype_digit($port)) ? (int) $port : (($options['scheme'] ?? 'https') === 'http' ? 80 : 443);
+
+        if (! is_string($host) || $host === '' || $port < 1 || $port > 65535) {
+            return ['isBroadcastDriver' => true, 'isReachable' => null, 'latencyMs' => null];
+        }
+
+        $address = str_contains($host, ':') && ! str_starts_with($host, '[') ? '['.$host.']' : $host;
+        $startedAt = hrtime(true);
+        $socket = @stream_socket_client('tcp://'.$address.':'.$port, $errorCode, $errorMessage, self::REVERB_CONNECT_TIMEOUT_SECONDS);
+        $latencyMs = round((hrtime(true) - $startedAt) / 1e6, 1);
+
+        if ($socket === false) {
+            return ['isBroadcastDriver' => true, 'isReachable' => false, 'latencyMs' => null];
+        }
+
+        fclose($socket);
+
+        return ['isBroadcastDriver' => true, 'isReachable' => true, 'latencyMs' => $latencyMs];
     }
 
     /**
