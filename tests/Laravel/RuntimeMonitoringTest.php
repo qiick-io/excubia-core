@@ -87,6 +87,7 @@ use Laravel\Ai\Responses\TranscriptionResponse;
 use Laravel\Ai\Tools\ToolNameResolver;
 use Laravel\Ai\Transcription;
 use Monolog\Handler\TestHandler;
+use Qiick\Excubia\Contracts\RuntimeSamplerContract;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
@@ -95,6 +96,7 @@ use Qiick\Excubia\Laravel\RuntimeCollectorService;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Qiick\Excubia\Tests\Support\FakeAiAgent;
 use Qiick\Excubia\Tests\Support\FakeAiTool;
+use Qiick\Excubia\Tests\Support\FixedShareSampler;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -518,10 +520,10 @@ it('records nothing for a type with sample rate 0', function () {
     expect(bufferedRuntime($this->app))->toBe([]);
 });
 
-it('records about the configured share of events and keeps the rate on each aggregate', function () {
+it('records the configured share of events and keeps the rate on each aggregate', function () {
+    $this->app->instance(RuntimeSamplerContract::class, new FixedShareSampler);
     bootRuntimeProject($this->app, ['enabled' => true, 'scheduler' => ['sampleRate' => 0.5]]);
     $task = $this->app->make(Schedule::class)->command('inspire');
-    mt_srand(75);
 
     for ($i = 0; $i < 400; $i++) {
         event(new ScheduledTaskSkipped($task));
@@ -530,8 +532,7 @@ it('records about the configured share of events and keeps the rate on each aggr
     $aggregate = RuntimeBufferService::merge(bufferedRuntime($this->app))[0];
 
     expect($aggregate['sampleRate'])->toBe(0.5)
-        ->and($aggregate['count'])->toBeGreaterThan(140)
-        ->and($aggregate['count'])->toBeLessThan(260);
+        ->and($aggregate['count'])->toBe(200);
 });
 
 it('never lets an exception inside the collection reach the host app', function () {
@@ -1089,10 +1090,10 @@ it('records nothing for a 1.0.0-beta.2 type with sample rate 0 and keeps the rat
         $overrides[$key] = ['sampleRate' => 0];
     }
 
+    $this->app->instance(RuntimeSamplerContract::class, new FixedShareSampler);
     bootRuntimeProject($this->app, allRuntimeTypes($overrides));
     config(['queue.default' => 'sync', 'mail.default' => 'array']);
     Route::get('/sampled', fn () => 'ok');
-    mt_srand(132);
 
     $this->get('/sampled')->assertOk();
     RuntimeMonitoringTestJob::dispatch();
@@ -1110,8 +1111,7 @@ it('records nothing for a 1.0.0-beta.2 type with sample rate 0 and keeps the rat
 
     expect(array_values(array_intersect($types, ['requestMemory', 'jobMemory', 'queueWait', 'mail', 'notification', 'logLevel'])))->toBe([])
         ->and($cache['sampleRate'])->toBe(0.5)
-        ->and($cache['count'])->toBeGreaterThan(140)
-        ->and($cache['count'])->toBeLessThan(260);
+        ->and($cache['count'])->toBe(200);
 });
 
 it('never lets an exception inside the new listeners reach the host app', function () {
