@@ -153,7 +153,28 @@ final class ReportPushService
      */
     public static function newBatchId(): string
     {
-        $bytes = random_bytes(16);
+        return self::uuidVersion4(random_bytes(16));
+    }
+
+    /**
+     * The batch id of one half of a batch the app answered `413` to (#249):
+     * the first 16 bytes of sha256(`<parent>:<half>`) as a UUID version 4.
+     * The same parent and half always give the same id, so a half that is
+     * retried after a failure, or split again after a crash, keeps its id
+     * and the app still stores it once.
+     *
+     * @param  int<1, 2>  $half
+     */
+    public static function derivedBatchId(string $parentBatchId, int $half): string
+    {
+        return self::uuidVersion4(substr(hash('sha256', $parentBatchId.':'.$half, true), 0, 16));
+    }
+
+    /**
+     * 16 bytes as a lowercase UUID with the version 4 and RFC 4122 variant bits set.
+     */
+    private static function uuidVersion4(string $bytes): string
+    {
         $bytes[6] = chr((ord($bytes[6]) & 0x0F) | 0x40);
         $bytes[8] = chr((ord($bytes[8]) & 0x3F) | 0x80);
 

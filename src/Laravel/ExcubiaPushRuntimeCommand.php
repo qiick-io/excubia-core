@@ -77,11 +77,19 @@ use Throwable;
  * labelled with the new release; record it per buffered line if the app
  * ever needs that precision.
  *
- * ponytail: a batch the app keeps rejecting with a 4xx stays until the cap
- * drops it; drop it on a permanent 4xx if that ever blocks real data.
+ * A batch the app answers `413` (payload too large) to is split in two
+ * halves with derived batch ids and each half is sent at once, down to
+ * single entries (#249); an entry the app still refuses alone is dropped
+ * and counted on stderr. The buffer claims batches of at most
+ * RuntimeBufferService::MAX_BATCH_BYTES, so this is rare.
+ *
+ * ponytail: a batch the app keeps rejecting with another 4xx stays until
+ * the cap drops it; drop it on a permanent 4xx if that ever blocks real data.
  */
 final class ExcubiaPushRuntimeCommand extends Command
 {
+    private const PAYLOAD_TOO_LARGE = 413;
+
     protected $signature = 'excubia:push-runtime
         {--config= : Config file}';
 
@@ -127,7 +135,7 @@ final class ExcubiaPushRuntimeCommand extends Command
                     $runtimeBuffer,
                     static fn (RuntimeBufferService $buffer, string $path): array => $buffer->read($path),
                     static fn (array $entries, string $batchId) => $pushService->pushRuntime($entries, $batchId, $appUrl, $appToken, $sentAt, $release, $environment),
-                    ['runtime batch', 'runtime batches', 'runtime data'],
+                    ['runtime batch', 'runtime batches', 'runtime data', 'runtime aggregate'],
                 );
             }
 
@@ -136,7 +144,7 @@ final class ExcubiaPushRuntimeCommand extends Command
                     new RuntimeBufferService($this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'exceptions'), $configuration->exceptions->bufferMaxBytes),
                     static fn (RuntimeBufferService $buffer, string $path): array => ExceptionPayloadService::merge($buffer->readEntries($path)),
                     static fn (array $entries, string $batchId) => $pushService->pushExceptions($entries, $batchId, $appUrl, $appToken, $sentAt, $release),
-                    ['exception batch', 'exception batches', 'exception data'],
+                    ['exception batch', 'exception batches', 'exception data', 'exception group'],
                 ) || $hasFailed;
             }
         } catch (InvalidConfigurationException $exception) {
@@ -155,7 +163,7 @@ final class ExcubiaPushRuntimeCommand extends Command
      *
      * @param  Closure(RuntimeBufferService, string): list<array<string, mixed>>  $read
      * @param  Closure(list<array<string, mixed>>, string): void  $send
-     * @param  array{0: string, 1: string, 2: string}  $nouns  singular, plural, data
+     * @param  array{0: string, 1: string, 2: string, 3: string}  $nouns  singular, plural, data, entry
      * @return bool false when the app rejected, failed or could not be reached
      *
      * @throws InvalidConfigurationException
@@ -163,28 +171,78 @@ final class ExcubiaPushRuntimeCommand extends Command
     private function sendBuffer(RuntimeBufferService $buffer, Closure $read, Closure $send, array $nouns): bool
     {
         $sentCount = 0;
+        $droppedCount = 0;
 
         try {
             foreach ($buffer->claimBatches() as $batch) {
-                $entries = $read($buffer, $batch['path']);
-
-                if ($entries !== []) {
-                    $send($entries, $batch['batchId']);
-                    $sentCount++;
-                }
-
-                $buffer->delete($batch['path']);
+                $this->sendBatch($buffer, $batch, $read, $send, $sentCount, $droppedCount);
             }
         } catch (DataSourceUnavailableException $exception) {
+            $this->reportDropped($droppedCount, $nouns[3]);
             $this->error($exception->getMessage());
             $this->error('The '.$nouns[2].' is kept for the next run.');
 
             return false;
         }
 
+        $this->reportDropped($droppedCount, $nouns[3]);
         $this->line($sentCount === 0 ? 'No '.$nouns[2].' to send.' : 'Sent '.$sentCount.' '.($sentCount === 1 ? $nouns[0] : $nouns[1]).' to excubia-app.');
 
         return true;
+    }
+
+    /**
+     * Send one batch and delete it after a 2xx. On a `413` the batch is
+     * split in two and each half is sent the same way (#249); a batch of one
+     * line that is still too large is deleted and its entries are added to
+     * `$droppedCount`.
+     *
+     * @param  array{batchId: string, path: string}  $batch
+     * @param  Closure(RuntimeBufferService, string): list<array<string, mixed>>  $read
+     * @param  Closure(list<array<string, mixed>>, string): void  $send
+     *
+     * @throws DataSourceUnavailableException on any other failure; the batch is kept
+     * @throws InvalidConfigurationException
+     */
+    private function sendBatch(RuntimeBufferService $buffer, array $batch, Closure $read, Closure $send, int &$sentCount, int &$droppedCount): void
+    {
+        $entries = $read($buffer, $batch['path']);
+
+        if ($entries !== []) {
+            try {
+                $send($entries, $batch['batchId']);
+                $sentCount++;
+            } catch (DataSourceUnavailableException $exception) {
+                if ($exception->httpStatus !== self::PAYLOAD_TOO_LARGE) {
+                    throw $exception;
+                }
+
+                $halves = $buffer->split($batch['path']);
+
+                foreach ($halves as $half) {
+                    $this->sendBatch($buffer, $half, $read, $send, $sentCount, $droppedCount);
+                }
+
+                if ($halves !== []) {
+                    return;
+                }
+
+                $droppedCount += count($entries);
+            }
+        }
+
+        $buffer->delete($batch['path']);
+    }
+
+    /**
+     * Name on stderr how many entries were dropped because the app refused
+     * them even alone (HTTP 413). A count only, never the data.
+     */
+    private function reportDropped(int $droppedCount, string $entryNoun): void
+    {
+        if ($droppedCount > 0) {
+            CheckCommand::writeError($this->output, 'Dropped '.$droppedCount.' '.$entryNoun.($droppedCount === 1 ? '' : 's').' larger than excubia-app accepts (HTTP 413).');
+        }
     }
 
     /**

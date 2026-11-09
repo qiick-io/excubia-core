@@ -39,6 +39,15 @@ final class RuntimeBufferService
 
     private const LOCK_FILE = '.lock';
 
+    /**
+     * Largest claimed batch, in bytes of its entries as the push body
+     * encodes them (SymfonyHttpClientService::JSON_BODY_FLAGS), #249. Half of
+     * excubia-app's default body limit (`EXCUBIA_PUSH_MAX_KILOBYTES`, 1024
+     * KB), so the envelope never pushes a batch over it. A single
+     * entry larger than this is a batch of its own.
+     */
+    public const MAX_BATCH_BYTES = 512 * 1024;
+
     private const BATCH_PATTERN = '/^batch-(\d{20})-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.ndjson$/';
 
     /**
@@ -168,9 +177,17 @@ final class RuntimeBufferService
     }
 
     /**
-     * Move the current buffer into a new batch with a fresh batch id and
+     * Move the current buffer into new batches with fresh batch ids and
      * return every batch waiting to be sent, oldest first. Batches a
      * previous run could not send are returned again with their own id.
+     *
+     * A buffer over MAX_BATCH_BYTES is claimed into several batches of whole
+     * lines, in order (#249), so no batch reaches the app's body limit.
+     *
+     * ponytail: a buffer that needs several batches is written batch by
+     * batch and then removed; a crash in between sends those lines twice,
+     * with other ids (one minute counted double, never lost). A buffer that
+     * fits one batch is still claimed with one atomic rename.
      *
      * @return list<array{batchId: string, path: string}>
      *
@@ -182,11 +199,7 @@ final class RuntimeBufferService
             $bufferPath = $this->path(self::BUFFER_FILE);
 
             if (is_file($bufferPath) && filesize($bufferPath) > 0) {
-                $sequence = str_pad((string) (int) (microtime(true) * 1_000_000), 20, '0', STR_PAD_LEFT);
-
-                if (! rename($bufferPath, $this->path('batch-'.$sequence.'-'.ReportPushService::newBatchId().'.ndjson'))) {
-                    throw new InvalidConfigurationException('The runtime buffer could not be claimed.');
-                }
+                $this->claimBuffer($bufferPath);
             }
 
             $batches = [];
@@ -199,6 +212,58 @@ final class RuntimeBufferService
 
             return $batches;
         });
+    }
+
+    /**
+     * Split a batch the app answered `413` to (#249) into two batches of
+     * half its lines each, in order, and remove it. Each half keeps the
+     * parent's sequence (so it stays where the parent was in the send
+     * order) and gets a batch id derived from the parent's
+     * (ReportPushService::derivedBatchId()), so a retry, or a second split
+     * after a crash before the parent was removed, writes the same halves
+     * with the same ids.
+     *
+     * @return list<array{batchId: string, path: string}> the two halves, or [] when the batch holds at most one line (or is gone) and cannot be split
+     *
+     * @throws InvalidConfigurationException when a half cannot be written
+     */
+    public function split(string $batchPath): array
+    {
+        return $this->locked(function () use ($batchPath): array {
+            $lines = self::lines($batchPath);
+
+            if (count($lines) < 2 || preg_match(self::BATCH_PATTERN, basename($batchPath), $matches) !== 1) {
+                return [];
+            }
+
+            $halves = [];
+
+            foreach (array_chunk($lines, max(1, intdiv(count($lines) + 1, 2))) as $index => $half) {
+                $batchId = ReportPushService::derivedBatchId($matches[2], $index === 0 ? 1 : 2);
+                $halves[] = ['batchId' => $batchId, 'path' => $this->writeBatch($matches[1], $batchId, $half)];
+            }
+
+            unlink($batchPath);
+
+            return $halves;
+        });
+    }
+
+    /**
+     * Size of one buffered line in the push body: the entry encoded with
+     * SymfonyHttpClientService::JSON_BODY_FLAGS plus the comma that joins
+     * it to the next. A line that is not JSON counts as written (the reader
+     * skips it anyway).
+     */
+    public static function encodedBytes(string $line): int
+    {
+        $entry = json_decode($line);
+
+        if ($entry === null) {
+            return strlen($line) + 1;
+        }
+
+        return strlen((string) json_encode($entry, SymfonyHttpClientService::JSON_BODY_FLAGS)) + 1;
     }
 
     /**
@@ -580,6 +645,89 @@ final class RuntimeBufferService
         }
 
         return strlen($contents) - strlen($kept);
+    }
+
+    /**
+     * Claim the buffer: one rename when it fits one batch, else one batch
+     * per MAX_BATCH_BYTES of encoded lines with consecutive sequences.
+     * Called under the lock.
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function claimBuffer(string $bufferPath): void
+    {
+        $sequence = (int) (microtime(true) * 1_000_000);
+        $chunks = [];
+        $chunkBytes = 0;
+
+        foreach (self::lines($bufferPath) as $line) {
+            $lineBytes = self::encodedBytes($line);
+
+            if ($chunks === [] || ($chunkBytes + $lineBytes > self::MAX_BATCH_BYTES && $chunkBytes > 0)) {
+                $chunks[] = [];
+                $chunkBytes = 0;
+            }
+
+            $chunks[array_key_last($chunks)][] = $line;
+            $chunkBytes += $lineBytes;
+        }
+
+        if (count($chunks) <= 1) {
+            if (! rename($bufferPath, $this->path(self::batchName(self::sequence($sequence), ReportPushService::newBatchId())))) {
+                throw new InvalidConfigurationException('The runtime buffer could not be claimed.');
+            }
+
+            return;
+        }
+
+        foreach ($chunks as $index => $chunk) {
+            $this->writeBatch(self::sequence($sequence + $index), ReportPushService::newBatchId(), $chunk);
+        }
+
+        unlink($bufferPath);
+    }
+
+    /**
+     * Write one batch file through a temporary file and a rename, so a
+     * reader never sees half of it. Called under the lock.
+     *
+     * @param  list<string>  $lines
+     * @return string the batch path
+     *
+     * @throws InvalidConfigurationException
+     */
+    private function writeBatch(string $sequence, string $batchId, array $lines): string
+    {
+        $path = $this->path(self::batchName($sequence, $batchId));
+        $temporaryPath = $path.'.tmp';
+
+        if (file_put_contents($temporaryPath, implode("\n", $lines)."\n") === false || ! rename($temporaryPath, $path)) {
+            throw new InvalidConfigurationException('A runtime batch could not be written.');
+        }
+
+        return $path;
+    }
+
+    /**
+     * The non-empty lines of a file, or [] when it is gone.
+     *
+     * @return list<string>
+     */
+    private static function lines(string $path): array
+    {
+        $contents = is_file($path) ? file_get_contents($path) : false;
+
+        return $contents === false ? [] : array_values(array_filter(explode("\n", $contents), static fn (string $line): bool => $line !== ''));
+    }
+
+    private static function sequence(int $microseconds): string
+    {
+        return str_pad((string) $microseconds, 20, '0', STR_PAD_LEFT);
+    }
+
+    private static function batchName(string $sequence, string $batchId): string
+    {
+        return 'batch-'.$sequence.'-'.$batchId.'.ndjson';
     }
 
     /**

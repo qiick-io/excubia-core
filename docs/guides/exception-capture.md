@@ -34,7 +34,7 @@ Optional keys:
 
 - `maskPatterns`: extra PCRE patterns, with delimiters, for data specific to your app. Matches become `[masked]`, before the built-in masking. An invalid pattern is a configuration error.
 - `ignore`: exception classes, subclasses included, that are never captured. Exceptions your app does not report (`dontReport`, `ShouldntReport`) are never captured either.
-- `bufferMaxBytes`: cap of the local buffer, default 1 MiB.
+- `bufferMaxBytes`: cap of the local buffer, default 1 MiB. The buffer is sent in batches of at most 512 KB, split again on a `413` answer, like runtime batches ([runtime monitoring](./runtime-monitoring.md#how-it-works)).
 
 Reference: [configuration](./configuration.md#exception-capture).
 
