@@ -15,6 +15,9 @@ use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\Looping;
+use Illuminate\Queue\Jobs\SyncJob;
+use Illuminate\Queue\Worker;
+use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use JsonSchema\Validator;
@@ -44,6 +47,60 @@ final class ExceptionCaptureTestJob implements ShouldQueue
 }
 
 final class ExceptionCaptureIgnoredException extends RuntimeException {}
+
+/**
+ * Wraps the app's handler and forwards report() and reportable(), as
+ * nunomaduro/collision does in console processes (#241).
+ */
+final class ExceptionCaptureDecoratingHandler implements ExceptionHandler
+{
+    public function __construct(private readonly ExceptionHandler $handler) {}
+
+    public function report(Throwable $e): void
+    {
+        $this->handler->report($e);
+    }
+
+    public function shouldReport(Throwable $e): bool
+    {
+        return $this->handler->shouldReport($e);
+    }
+
+    public function render($request, Throwable $e)
+    {
+        return $this->handler->render($request, $e);
+    }
+
+    public function renderForConsole($output, Throwable $e): void
+    {
+        $this->handler->renderForConsole($output, $e);
+    }
+
+    public function reportable(callable $reportUsing): mixed
+    {
+        return $this->handler->reportable($reportUsing);
+    }
+}
+
+/**
+ * A handler that accepts no reportable() callback.
+ */
+final class ExceptionCaptureClosedHandler implements ExceptionHandler
+{
+    public function report(Throwable $e): void {}
+
+    public function shouldReport(Throwable $e): bool
+    {
+        return true;
+    }
+
+    public function render($request, Throwable $e)
+    {
+        throw $e;
+    }
+
+    public function renderForConsole($output, Throwable $e): void {}
+}
 
 /**
  * Point the app at a temporary project and storage with this excubia.json,
@@ -83,6 +140,10 @@ function rawExceptionBuffer(Application $app): string
 function reportCallbackCount(Application $app): int
 {
     $handler = $app->make(ExceptionHandler::class);
+
+    if ($handler instanceof ExceptionCaptureDecoratingHandler) {
+        $handler = (new ReflectionProperty($handler, 'handler'))->getValue($handler);
+    }
 
     return count((new ReflectionProperty($handler, 'reportCallbacks'))->getValue($handler));
 }
@@ -235,6 +296,64 @@ it('captures the job class as context', function () {
     expect($group['context'])->toBe(['kind' => 'job', 'name' => ExceptionCaptureTestJob::class])
         ->and($group['message'])->toBe('Job failed for customer [number]');
 });
+
+it('captures a failed queued job through a decorating handler, with the job as context, registered once', function () {
+    $this->app->extend(ExceptionHandler::class, fn (ExceptionHandler $handler): ExceptionHandler => new ExceptionCaptureDecoratingHandler($handler));
+    $callbacks = reportCallbackCount($this->app);
+    bootExceptionProject($this->app);
+    $handler = $this->app->make(ExceptionHandler::class);
+    $this->app->make(ExceptionCollectorService::class)->attach($handler);
+
+    expect($handler)->toBeInstanceOf(ExceptionCaptureDecoratingHandler::class)
+        ->and(reportCallbackCount($this->app))->toBe($callbacks + 1)
+        ->and($this->app->make(ExceptionCollectorService::class)->isAttached())->toBeTrue();
+
+    // A queue worker reports a failed job through the handler it was given.
+    $worker = new Worker($this->app->make('queue'), $this->app->make('events'), $handler, fn (): bool => false);
+    $payload = json_encode([
+        'uuid' => 'job-uuid',
+        'displayName' => ExceptionCaptureTestJob::class,
+        'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
+        'maxTries' => 1,
+        'maxExceptions' => null,
+        'failOnTimeout' => false,
+        'backoff' => null,
+        'timeout' => null,
+        'retryUntil' => null,
+        'data' => ['commandName' => ExceptionCaptureTestJob::class, 'command' => serialize(new ExceptionCaptureTestJob)],
+    ], JSON_THROW_ON_ERROR);
+    (new ReflectionMethod($worker, 'runJob'))->invoke($worker, new SyncJob($this->app, $payload, 'sync', 'default'), 'sync', new WorkerOptions(maxTries: 1));
+    event(new Looping('sync', 'default'));
+
+    $groups = bufferedExceptions($this->app);
+
+    expect($groups)->toHaveCount(1)
+        ->and($groups[0]['context'])->toBe(['kind' => 'job', 'name' => ExceptionCaptureTestJob::class])
+        ->and($groups[0]['count'])->toBe(1);
+});
+
+it('warns in excubia:check when exception capture is on but no handler accepts the callback', function (bool $isClosedHandler) {
+    if ($isClosedHandler) {
+        $this->app->instance(ExceptionHandler::class, new ExceptionCaptureClosedHandler);
+    }
+
+    bootExceptionProject($this->app);
+    $warning = 'Exception capture is enabled (exceptions.enabled), but the exception handler does not accept a reportable() callback';
+
+    $command = $this->artisan('excubia:check', ['--only' => 'php-eol', '--offline' => true, '--fail-on' => 'none', '--no-banner' => true]);
+
+    if ($isClosedHandler) {
+        $command->expectsOutputToContain($warning);
+    } else {
+        $command->doesntExpectOutputToContain($warning);
+    }
+
+    $command->run();
+    expect($this->app->make(ExceptionCollectorService::class)->isAttached())->toBe(! $isClosedHandler);
+})->with([
+    'closed handler' => [true],
+    'laravel handler' => [false],
+]);
 
 it('captures the Artisan command name as context, also for an uncaught exception reported after the command ended', function () {
     bootExceptionProject($this->app);
