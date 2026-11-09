@@ -46,6 +46,7 @@ use Laravel\Scout\Builder as ScoutBuilder;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
+use Qiick\Excubia\Contracts\RuntimeSamplerContract;
 use Qiick\Excubia\Contracts\ServerResourcesContract;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
@@ -55,6 +56,7 @@ use Qiick\Excubia\Tests\Support\FakeAiTool;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Qiick\Excubia\Tests\Support\FakeServerDisk;
 use Qiick\Excubia\Tests\Support\FakeServerResources;
+use Qiick\Excubia\Tests\Support\FixedShareSampler;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -582,6 +584,24 @@ it('takes no server sample when the type is off or not sampled, and still pushes
     'sample rate 0' => [['enabled' => true, 'sampleRate' => 0], false],
     'reader fails' => [['enabled' => true], true],
 ]);
+
+it('takes a server sample at a fractional rate through the bound sampler', function () {
+    $client = new FakeHttpClient([RUNTIME_ENDPOINT => ['stored' => true]]);
+    $this->app->instance(RuntimeSamplerContract::class, new FixedShareSampler);
+    runtimePushProject($this->app, $client, ['runtime' => ['enabled' => true, 'server' => ['enabled' => true, 'sampleRate' => 0.5]]]);
+    $this->app->instance(ServerResourcesContract::class, new FakeServerResources);
+
+    for ($run = 0; $run < 4; $run++) {
+        recordOneRequest($this);
+        $this->artisan('excubia:push-runtime')->assertExitCode(0);
+    }
+
+    $serverSampleCounts = collect($client->postedPayloads)
+        ->map(fn (array $payload) => collect($payload['runtime']['aggregates'])->where('type', 'server')->count())
+        ->all();
+
+    expect($serverSampleCounts)->toBe([0, 1, 0, 1]);
+});
 
 it('registers excubia:push-runtime', function () {
     expect(array_keys(Artisan::all()))->toContain('excubia:push-runtime');
