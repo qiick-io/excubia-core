@@ -12,6 +12,7 @@ use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
 use Qiick\Excubia\Console\CheckCommand;
 use Qiick\Excubia\Contracts\DiskSpaceContract;
 use Qiick\Excubia\Contracts\HttpClientContract;
+use Qiick\Excubia\Contracts\RuntimeSamplerContract;
 use Qiick\Excubia\Contracts\ServerResourcesContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
@@ -264,7 +265,7 @@ final class ExcubiaPushRuntimeCommand extends Command
     {
         $sampleRate = $runtime->sampleRate(RuntimeTypeEnum::Server);
 
-        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Server) || ! self::isSampled($sampleRate)) {
+        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Server) || ! $this->isSampled($sampleRate)) {
             return;
         }
 
@@ -292,7 +293,7 @@ final class ExcubiaPushRuntimeCommand extends Command
         $minute = gmdate('Y-m-d\TH:i', $now->getTimestamp());
         $minutePath = $this->laravel->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'health-minute');
 
-        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Health) || (is_file($minutePath) && file_get_contents($minutePath) === $minute) || ! self::isSampled($sampleRate)) {
+        if (! $runtime->isTypeEnabled(RuntimeTypeEnum::Health) || (is_file($minutePath) && file_get_contents($minutePath) === $minute) || ! $this->isSampled($sampleRate)) {
             return;
         }
 
@@ -333,11 +334,16 @@ final class ExcubiaPushRuntimeCommand extends Command
     }
 
     /**
-     * True for a run that takes the sample: always at rate 1.
+     * True for a run that takes the sample: always at rate 1, never at 0,
+     * else the container's `RuntimeSamplerContract` draws.
      */
-    private static function isSampled(float $sampleRate): bool
+    private function isSampled(float $sampleRate): bool
     {
-        return $sampleRate >= 1.0 || mt_rand() / mt_getrandmax() < $sampleRate;
+        if ($sampleRate >= 1.0) {
+            return true;
+        }
+
+        return $sampleRate > 0.0 && $this->laravel->make(RuntimeSamplerContract::class)->isSampled($sampleRate);
     }
 
     private static function clockMs(): float

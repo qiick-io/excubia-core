@@ -7,8 +7,10 @@ namespace Qiick\Excubia\Laravel;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 use Qiick\Excubia\Configuration\ExcubiaConfigurationLoader;
+use Qiick\Excubia\Contracts\RuntimeSamplerContract;
 use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
+use Qiick\Excubia\Services\RuntimeSamplerService;
 
 /**
  * Registers `php artisan excubia:check`, `excubia:push`, `excubia:heartbeat` and
@@ -33,6 +35,15 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  */
 final class ExcubiaServiceProvider extends ServiceProvider
 {
+    /**
+     * The runtime sampler is a container binding so tests can swap in a
+     * deterministic one (#230); an app's own binding wins.
+     */
+    public function register(): void
+    {
+        $this->app->singletonIf(RuntimeSamplerContract::class, RuntimeSamplerService::class);
+    }
+
     public function boot(): void
     {
         $this->commands([
