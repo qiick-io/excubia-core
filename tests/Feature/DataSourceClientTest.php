@@ -13,6 +13,7 @@ use Qiick\Excubia\Services\SymfonyHttpClientService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpClient\RetryableHttpClient;
 
 function recorded(string $name): array
 {
@@ -194,6 +195,49 @@ it('does not follow redirects when posting, so a 307 cannot resend the payload e
 
     expect($maxRedirects['POST'])->toBe(0)
         ->and($maxRedirects['GET'])->not->toBe(0);
+});
+
+it('returns a 429 with a Retry-After longer than MAX_RETRY_AFTER_SECONDS at once, without retrying', function (string $retryAfter) {
+    $mock = new MockHttpClient([
+        new MockResponse('{"message":"Too Many Attempts."}', ['http_code' => 429, 'response_headers' => ['Retry-After' => $retryAfter]]),
+        new MockResponse('{"stored":true}', ['http_code' => 201]),
+    ]);
+    $client = new SymfonyHttpClientService(new RetryableHttpClient($mock, SymfonyHttpClientService::retryStrategy(), 2));
+    $startedAt = microtime(true);
+
+    try {
+        $client->postJson('https://excubia.example.test/api/runtime', ['protocolVersion' => 1]);
+        $status = null;
+    } catch (DataSourceUnavailableException $exception) {
+        $status = $exception->httpStatus;
+    }
+
+    expect($status)->toBe(429)
+        ->and($mock->getRequestsCount())->toBe(1)
+        ->and(microtime(true) - $startedAt)->toBeLessThan(1.0);
+})->with([
+    'delay seconds' => ['60'],
+    'HTTP date' => [gmdate('D, d M Y H:i:s', time() + 120).' GMT'],
+]);
+
+it('still retries a 429 whose Retry-After fits in the request', function () {
+    $mock = new MockHttpClient([
+        new MockResponse('{}', ['http_code' => 429, 'response_headers' => ['Retry-After' => '0']]),
+        new MockResponse('{"stored":true}', ['http_code' => 201]),
+    ]);
+    $client = new SymfonyHttpClientService(new RetryableHttpClient($mock, SymfonyHttpClientService::retryStrategy(), 2));
+
+    expect($client->postJson('https://excubia.example.test/api/runtime', ['protocolVersion' => 1]))->toBe(['stored' => true])
+        ->and($mock->getRequestsCount())->toBe(2);
+});
+
+it('reads Retry-After as delay seconds or an HTTP date', function () {
+    expect(SymfonyHttpClientService::retryAfterSeconds('60'))->toBe(60)
+        ->and(SymfonyHttpClientService::retryAfterSeconds('1.5'))->toBe(2)
+        ->and(SymfonyHttpClientService::retryAfterSeconds('-3'))->toBe(0)
+        ->and(SymfonyHttpClientService::retryAfterSeconds(gmdate('D, d M Y H:i:s', time() + 120).' GMT'))->toBeGreaterThan(SymfonyHttpClientService::MAX_RETRY_AFTER_SECONDS)
+        ->and(SymfonyHttpClientService::retryAfterSeconds(gmdate('D, d M Y H:i:s', time() - 120).' GMT'))->toBe(0)
+        ->and(SymfonyHttpClientService::retryAfterSeconds('soon'))->toBe(0);
 });
 
 it('removes URL credentials from URLs shown in messages', function () {

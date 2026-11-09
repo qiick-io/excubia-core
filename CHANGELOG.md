@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A push answered with HTTP 429 and a `Retry-After` longer than 5 seconds is reported as rate limited, not unreachable (#256): the HTTP client no longer retries a response (such as a 429) whose `Retry-After` cannot fit in the 15 s request limit, so `excubia:push`, `excubia:push-runtime` and the data-source requests return at once with `excubia-app did not accept … (HTTP 429)` instead of waiting into a timeout. The data is kept for the next run as before. Shorter `Retry-After` values are still honoured. No contract change.
+
 ## [1.0.0-beta.4] - 2026-11-08
 
 Fourth beta of 1.0 (D20): runtime data from the official Laravel packages, additive to the contracts frozen in 1.0.0-beta.1 ([`docs/CONTRACTS.md`](./docs/CONTRACTS.md)). The four new check ids are appended to the run order; every new runtime type is off by default, and all but `auth` record nothing unless their package is installed; schema and protocol versions stay `1`.

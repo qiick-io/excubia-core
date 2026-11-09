@@ -52,6 +52,7 @@ use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Services\ReportPushService;
+use Qiick\Excubia\Services\SymfonyHttpClientService;
 use Qiick\Excubia\Tests\Support\FakeAiAgent;
 use Qiick\Excubia\Tests\Support\FakeAiTool;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
@@ -61,6 +62,9 @@ use Qiick\Excubia\Tests\Support\FakeSizeLimitedApp;
 use Qiick\Excubia\Tests\Support\FixedShareSampler;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Component\Mailer\Exception\TransportException;
 
 require_once dirname(__DIR__).'/Support/FakeOctaneEvents.php';
@@ -177,6 +181,26 @@ it('keeps the batch on 5xx or an unreachable app and resends it with the same ba
     'unreachable' => [new DataSourceUnavailableException('http', 'The data source did not respond.'), 'could not be reached'],
     'token rejected' => [new DataSourceUnavailableException('http', 'The data source returned HTTP 401.', httpStatus: 401), 'rejected the project token'],
 ]);
+
+it('reports a 429 with a long Retry-After as HTTP 429 at once and keeps the batch', function () {
+    runtimePushProject($this->app, new FakeHttpClient([]));
+    $mock = new MockHttpClient([
+        new MockResponse('{"message":"Too Many Attempts."}', ['http_code' => 429, 'response_headers' => ['Retry-After' => '60']]),
+    ]);
+    $this->app->instance(HttpClientContract::class, new SymfonyHttpClientService(new RetryableHttpClient($mock, SymfonyHttpClientService::retryStrategy(), 2)));
+    recordOneRequest($this);
+    $startedAt = microtime(true);
+
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain('did not accept the runtime batch (HTTP 429)')
+        ->expectsOutputToContain('The runtime data is kept for the next run.')
+        ->doesntExpectOutputToContain('could not be reached')
+        ->assertExitCode(3);
+
+    expect(runtimeBatchFiles($this->app))->toHaveCount(1)
+        ->and($mock->getRequestsCount())->toBe(1)
+        ->and(microtime(true) - $startedAt)->toBeLessThan(2.0);
+});
 
 it('sends older kept batches first, each with its own batchId', function () {
     $failing = new FakeHttpClient([], [RUNTIME_ENDPOINT => new DataSourceUnavailableException('http', 'down')]);
