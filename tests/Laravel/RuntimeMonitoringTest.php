@@ -747,7 +747,7 @@ function waitingJob(Application $app, array $payload, int $attempts = 1): SyncJo
 
 it('records the queue wait from the push time without the delay, first attempts only', function () {
     bootRuntimeProject($this->app, ['enabled' => true, 'queueWait' => ['enabled' => true]]);
-    $now = microtime(true);
+    $now = ($this->app->make(RuntimeCollectorService::CLOCK_BINDING))();
 
     event(new JobProcessing('redis', waitingJob($this->app, [RuntimeCollectorService::QUEUED_AT_PAYLOAD_KEY => $now - 2.5, 'delay' => 1])));
     event(new JobProcessing('redis', waitingJob($this->app, ['pushedAt' => (string) ($now - 0.5)])));
@@ -766,6 +766,8 @@ it('records the queue wait from the push time without the delay, first attempts 
 });
 
 it('stamps pushed jobs so the worker can measure their wait', function () {
+    // The push stamp is real time, so the collector reads the real clock too.
+    $this->app->forgetInstance(RuntimeCollectorService::CLOCK_BINDING);
     bootRuntimeProject($this->app, ['enabled' => true, 'queueWait' => ['enabled' => true]]);
     config(['queue.default' => 'sync']);
 
