@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\InvalidConfigurationException;
+use Qiick\Excubia\Services\ReportPushService;
 use Qiick\Excubia\Services\RuntimeBufferService;
 
 /**
@@ -350,4 +351,90 @@ it('fails with a configuration error when the directory cannot be created', func
 
     expect(fn () => (new RuntimeBufferService($file.'/runtime', 65536))->append([bufferedAggregate('home')]))
         ->toThrow(InvalidConfigurationException::class, 'could not be created');
+});
+
+it('claims a buffer over MAX_BATCH_BYTES into ordered batches measured with the push body encoding', function () {
+    $directory = temporaryProject([]);
+    $buffer = new RuntimeBufferService($directory, 4 * 1024 * 1024);
+    $routes = [];
+
+    // About 330 KB as written, about 830 KB once `/` and `é` are escaped.
+    for ($i = 0; $i < 600; $i++) {
+        $routes[] = 'route/'.$i.'/'.str_repeat('é', 200);
+    }
+
+    $buffer->append(array_map(fn (string $route): array => bufferedAggregate($route), $routes));
+    $rawBytes = bufferBytes($directory);
+    $batches = $buffer->claimBatches();
+    $claimed = [];
+
+    foreach ($batches as $batch) {
+        $lines = array_filter(explode("\n", (string) file_get_contents($batch['path'])));
+
+        expect(array_sum(array_map(RuntimeBufferService::encodedBytes(...), $lines)))->toBeLessThanOrEqual(RuntimeBufferService::MAX_BATCH_BYTES);
+
+        $claimed = [...$claimed, ...array_column($buffer->read($batch['path']), 'route')];
+    }
+
+    expect($rawBytes)->toBeLessThan(RuntimeBufferService::MAX_BATCH_BYTES)
+        ->and($batches)->toHaveCount(2)
+        ->and($batches[0]['batchId'])->not->toBe($batches[1]['batchId'])
+        ->and($claimed)->toBe($routes)
+        ->and(is_file($directory.'/'.RuntimeBufferService::BUFFER_FILE))->toBeFalse()
+        ->and($buffer->claimBatches())->toBe($batches);
+});
+
+it('gives a single entry over MAX_BATCH_BYTES a batch of its own', function () {
+    $buffer = new RuntimeBufferService(temporaryProject([]), 4 * 1024 * 1024);
+    $buffer->append([bufferedAggregate('before'), bufferedAggregate(str_repeat('x', RuntimeBufferService::MAX_BATCH_BYTES)), bufferedAggregate('after')]);
+
+    $routes = array_map(fn (array $batch): array => array_map(fn (array $aggregate): int => strlen($aggregate['route']), $buffer->read($batch['path'])), $buffer->claimBatches());
+
+    expect($routes)->toBe([[6], [RuntimeBufferService::MAX_BATCH_BYTES], [5]]);
+});
+
+it('splits a batch into two ordered halves with ids derived from its own, the same after a second split', function () {
+    $directory = temporaryProject([]);
+    $buffer = new RuntimeBufferService($directory, 65536);
+    $buffer->append(array_map(fn (int $i): array => bufferedAggregate('route-'.$i), range(1, 5)));
+    [$batch] = $buffer->claimBatches();
+    $contents = (string) file_get_contents($batch['path']);
+
+    $halves = $buffer->split($batch['path']);
+
+    expect($halves)->toHaveCount(2)
+        ->and(array_column($halves, 'batchId'))->toBe([ReportPushService::derivedBatchId($batch['batchId'], 1), ReportPushService::derivedBatchId($batch['batchId'], 2)])
+        ->and($halves[0]['batchId'])->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/')
+        ->and(array_column($buffer->read($halves[0]['path']), 'route'))->toBe(['route-1', 'route-2', 'route-3'])
+        ->and(array_column($buffer->read($halves[1]['path']), 'route'))->toBe(['route-4', 'route-5'])
+        ->and(is_file($batch['path']))->toBeFalse()
+        ->and(glob($directory.'/*.tmp'))->toBe([]);
+
+    // A crash before the parent was removed: splitting it again rewrites the same halves.
+    file_put_contents($batch['path'], $contents);
+
+    expect($buffer->split($batch['path']))->toBe($halves)
+        ->and($buffer->claimBatches())->toHaveCount(2);
+});
+
+it('does not split a batch of one line or a batch that is gone', function () {
+    $buffer = new RuntimeBufferService(temporaryProject([]), 65536);
+    $buffer->append([bufferedAggregate('alone', 3)]);
+    [$batch] = $buffer->claimBatches();
+
+    expect($buffer->split($batch['path']))->toBe([])
+        ->and(is_file($batch['path']))->toBeTrue();
+
+    $buffer->delete($batch['path']);
+
+    expect($buffer->split($batch['path']))->toBe([]);
+});
+
+it('derives a stable version 4 batch id per parent and half', function () {
+    $parent = ReportPushService::newBatchId();
+
+    expect(ReportPushService::derivedBatchId($parent, 1))->toBe(ReportPushService::derivedBatchId($parent, 1))
+        ->and(ReportPushService::derivedBatchId($parent, 1))->not->toBe(ReportPushService::derivedBatchId($parent, 2))
+        ->and(ReportPushService::derivedBatchId($parent, 2))->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/')
+        ->and(ReportPushService::derivedBatchId(ReportPushService::newBatchId(), 1))->not->toBe(ReportPushService::derivedBatchId($parent, 1));
 });

@@ -137,6 +137,21 @@ it('decodes a symfony mock response', function () {
     expect($client->getJson('https://endoflife.date/api/php.json'))->toBe(['cycle' => '8.3']);
 });
 
+it('encodes a json body with JSON_BODY_FLAGS, the flags RuntimeBufferService measures batches with', function () {
+    $bodies = [];
+    $client = new SymfonyHttpClientService(new MockHttpClient(function (string $method, string $url, array $options) use (&$bodies): MockResponse {
+        $bodies[] = $options['body'];
+
+        return new MockResponse('{"stored":true}', ['http_code' => 200]);
+    }));
+    $payload = ['route' => 'users/{user}', 'message' => 'Café <b>&</b> "quoted" \'single\'', 'totalMs' => 1.0, 'nested' => ['path' => '/a/b']];
+
+    $client->postJson('https://excubia.example.test/api/runtime', $payload);
+
+    expect($bodies)->toBe([json_encode($payload, SymfonyHttpClientService::JSON_BODY_FLAGS)])
+        ->and(strlen($bodies[0]))->toBeGreaterThan(strlen((string) json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
+});
+
 it('allows plain http to loopback hosts only', function () {
     expect(SymfonyHttpClientService::isSecureUrl('https://excubia.example.test'))->toBeTrue()
         ->and(SymfonyHttpClientService::isSecureUrl('http://localhost:8000'))->toBeTrue()

@@ -164,6 +164,14 @@ final class RuntimeCollectorService
      */
     public const QUEUED_AT_PAYLOAD_KEY = 'excubiaQueuedAt';
 
+    /**
+     * Container key of an optional `Closure(): float` clock that `register()`
+     * hands to the collector instead of `microtime(true)`. Only the test
+     * suite binds it, so that events recorded in one test land in one UTC
+     * minute bucket (#248). Nothing reads it when it is not bound.
+     */
+    public const CLOCK_BINDING = 'excubia.runtime.clock';
+
     public const MASKED_KEY_PREFIX = '[masked]';
 
     public const MAX_DEPRECATION_MESSAGE_LENGTH = 300;
@@ -545,11 +553,13 @@ final class RuntimeCollectorService
      */
     public static function register(Application $application, RuntimeConfigurationData $configuration): void
     {
+        $clock = $application->bound(self::CLOCK_BINDING) ? $application->make(self::CLOCK_BINDING) : null;
         $collector = new self(
             $configuration,
             new RuntimeBufferService($application->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'), $configuration->bufferMaxBytes),
             $application->basePath(),
-            sampler: $application->make(RuntimeSamplerContract::class),
+            $clock instanceof Closure ? $clock : null,
+            $application->make(RuntimeSamplerContract::class),
         );
         $application->instance(self::class, $collector);
 

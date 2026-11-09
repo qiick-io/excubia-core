@@ -25,6 +25,7 @@ use Qiick\Excubia\Laravel\ExceptionPayloadService;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
+use Qiick\Excubia\Tests\Support\FakeSizeLimitedApp;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 
@@ -348,6 +349,33 @@ it('sends exception batches to /api/exceptions with runtime monitoring off and d
     $this->artisan('excubia:push-runtime')
         ->expectsOutputToContain('No exception data to send.')
         ->assertExitCode(0);
+});
+
+it('splits an exception batch the app answers 413 to, so every group is stored once', function () {
+    bootExceptionProject($this->app);
+
+    foreach ([RuntimeException::class, LogicException::class, InvalidArgumentException::class, DomainException::class, RangeException::class, OverflowException::class] as $class) {
+        report(new $class('too large together'));
+    }
+
+    $this->app->terminate();
+    $fingerprints = array_column(bufferedExceptions($this->app), 'fingerprint');
+    $lines = array_filter(explode("\n", rawExceptionBuffer($this->app)));
+    $limit = max(array_map(RuntimeBufferService::encodedBytes(...), $lines)) + 1024;
+    $app = new FakeSizeLimitedApp($limit);
+    $this->app->instance(HttpClientContract::class, $app);
+
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain('exception batches to excubia-app.')
+        ->assertExitCode(0);
+
+    $stored = array_merge(...array_map(fn (array $payload): array => array_column($payload['exceptions']['groups'], 'fingerprint'), array_values($app->stored)));
+
+    expect(array_sum(array_map(RuntimeBufferService::encodedBytes(...), $lines)))->toBeGreaterThan($limit)
+        ->and($fingerprints)->toHaveCount(6)
+        ->and($app->attempts[0]['status'])->toBe(413)
+        ->and($stored)->toEqualCanonicalizing($fingerprints)
+        ->and(glob($this->app->storagePath('excubia/exceptions/batch-*.ndjson')))->toBe([]);
 });
 
 it('adds the release to the exception batch without changing the group fingerprint', function () {

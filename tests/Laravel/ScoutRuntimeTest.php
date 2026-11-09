@@ -18,6 +18,7 @@ use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
 use Qiick\Excubia\Services\RuntimeBufferService;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
+use Qiick\Excubia\Tests\Support\LaravelTestCase;
 
 require_once dirname(__DIR__).'/Support/FakeScoutClasses.php';
 
@@ -154,6 +155,7 @@ it('counts index and remove jobs per model and engine with their record count, d
     $validator->validate($document, (object) ['$ref' => 'file://'.dirname(__DIR__, 2).'/docs/runtime-schema.json']);
 
     expect($entries->keys()->sort()->values()->all())->toBe(['ScoutPost index', 'ScoutPost remove', 'unknown index'])
+        ->and($entries->pluck('bucket')->unique()->values()->all())->toBe([gmdate('Y-m-d\TH:i:s\Z', LaravelTestCase::FROZEN_MINUTE)])
         ->and($entries['ScoutPost index'])->toMatchArray(['engine' => 'meilisearch', 'count' => 3, 'errorCount' => 1, 'modelCount' => 6])
         ->and(array_sum($entries['ScoutPost index']['histogram']))->toBe(3)
         ->and($entries['ScoutPost remove'])->toMatchArray(['count' => 1, 'errorCount' => 0, 'modelCount' => 1])
