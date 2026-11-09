@@ -22,6 +22,16 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final class SymfonyHttpClientService implements HttpClientContract
 {
+    /**
+     * The flags Symfony HttpClient encodes a `json` body with (its
+     * `HttpClientTrait::jsonEncode()` default). It escapes `/`, `<`, `>`,
+     * `&`, quotes and non-ASCII characters, so a body can be larger than the
+     * same data written with `JSON_UNESCAPED_*`. RuntimeBufferService
+     * measures batches with these flags (#249); a test pins them to the
+     * real request body.
+     */
+    public const JSON_BODY_FLAGS = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_PRESERVE_ZERO_FRACTION;
+
     private readonly HttpClientInterface $httpClient;
 
     public function __construct(?HttpClientInterface $httpClient = null)

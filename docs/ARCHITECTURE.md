@@ -176,7 +176,7 @@ flowchart LR
 - Everything lives in `src/Laravel/` except the buffer and the transport, which are framework-free `*Service` classes, so `bin/excubia` never loads `illuminate/*`.
 - `runtime.enabled: false` (the default) means the provider registers no listener, no terminating callback and no schedule.
 - Every listener and the flush catch `Throwable`: a broken buffer directory never reaches the host app. Nothing is sent from a request.
-- Buffer writes, claims and trims hold one `flock` on `storage/excubia/runtime/.lock`. Over `runtime.bufferMaxBytes`, whole lines are dropped from the oldest file first. A claimed batch keeps its `batchId` in its file name until the app answers 2xx.
+- Buffer writes, claims and trims hold one `flock` on `storage/excubia/runtime/.lock`. Over `runtime.bufferMaxBytes`, whole lines are dropped from the oldest file first. A claimed batch keeps its `batchId` in its file name until the app answers 2xx. A claim writes batches of at most `RuntimeBufferService::MAX_BATCH_BYTES` (512 KB, measured with the push body's JSON flags); on a `413` the push command splits a batch into two halves with ids derived from the parent (`ReportPushService::derivedBatchId()`), down to single lines, and drops a line the app refuses alone (#249).
 
 ### Exception capture (opt-in, #77)
 

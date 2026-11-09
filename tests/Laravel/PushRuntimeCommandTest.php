@@ -50,11 +50,13 @@ use Qiick\Excubia\Contracts\ServerResourcesContract;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Qiick\Excubia\Laravel\ExcubiaServiceProvider;
+use Qiick\Excubia\Services\ReportPushService;
 use Qiick\Excubia\Tests\Support\FakeAiAgent;
 use Qiick\Excubia\Tests\Support\FakeAiTool;
 use Qiick\Excubia\Tests\Support\FakeHttpClient;
 use Qiick\Excubia\Tests\Support\FakeServerDisk;
 use Qiick\Excubia\Tests\Support\FakeServerResources;
+use Qiick\Excubia\Tests\Support\FakeSizeLimitedApp;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -190,6 +192,128 @@ it('sends older kept batches first, each with its own batchId', function () {
 
     expect($working->postedPayloads[0]['batchId'])->toBe($failing->postedPayloads[0]['batchId'])
         ->and($working->postedPayloads[1]['batchId'])->not->toBe($failing->postedPayloads[0]['batchId']);
+});
+
+/**
+ * Write `$count` distinct request aggregates straight into the runtime
+ * buffer, so a test controls the batch size.
+ *
+ * @return list<string> the routes, in order
+ */
+function bufferDistinctRequests(Application $app, int $count, string $prefix = 'route/'): array
+{
+    $routes = [];
+    $lines = '';
+
+    for ($i = 0; $i < $count; $i++) {
+        $routes[] = $prefix.$i;
+        $lines .= json_encode(['type' => 'request', 'bucket' => '2026-11-09T10:00:00Z', 'sampleRate' => 1.0, 'route' => $prefix.$i, 'method' => 'GET', 'statusClass' => '2xx', 'count' => 1, 'errorCount' => 0, 'totalMs' => 5.0, 'maxMs' => 5.0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+    }
+
+    $directory = $app->storagePath('excubia/runtime');
+
+    if (! is_dir($directory)) {
+        mkdir($directory, 0777, true);
+    }
+
+    file_put_contents($directory.'/buffer.ndjson', $lines, FILE_APPEND);
+
+    return $routes;
+}
+
+/**
+ * Every route the app stored, once per stored batch.
+ *
+ * @return list<string>
+ */
+function storedRoutes(FakeSizeLimitedApp $app): array
+{
+    $routes = [];
+
+    foreach ($app->stored as $payload) {
+        $routes = [...$routes, ...array_column($payload['runtime']['aggregates'], 'route')];
+    }
+
+    sort($routes);
+
+    return $routes;
+}
+
+it('splits a batch the app answers 413 to into halves with derived batch ids until each fits', function () {
+    $app = new FakeSizeLimitedApp(2500);
+    runtimePushProject($this->app, new FakeHttpClient([]));
+    $this->app->instance(HttpClientContract::class, $app);
+    $routes = bufferDistinctRequests($this->app, 40);
+    sort($routes);
+
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain('runtime batches to excubia-app.')
+        ->doesntExpectOutputToContain('Dropped')
+        ->assertExitCode(0);
+
+    $parent = $app->attempts[0]['batchId'];
+    $accepted = array_values(array_filter($app->attempts, fn (array $attempt): bool => $attempt['status'] === 200));
+
+    expect($app->attempts[0]['status'])->toBe(413)
+        ->and($app->attempts[1]['batchId'])->toBe(ReportPushService::derivedBatchId($parent, 1))
+        ->and(count($accepted))->toBeGreaterThan(2)
+        ->and(max(array_column($accepted, 'bytes')))->toBeLessThanOrEqual(2500)
+        ->and(storedRoutes($app))->toBe($routes)
+        ->and($app->attempts)->each->toHaveKey('batchId')
+        ->and(array_column($accepted, 'batchId'))->each->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/')
+        ->and(runtimeBatchFiles($this->app))->toBe([]);
+
+    foreach ($app->stored as $payload) {
+        expect(runtimeSchemaErrors($payload['runtime']))->toBe([]);
+    }
+});
+
+it('keeps the halves after a 5xx and resends them with the same derived ids, so the app stores every aggregate once', function () {
+    $app = new FakeSizeLimitedApp(2500, unavailableCount: 1);
+    runtimePushProject($this->app, new FakeHttpClient([]));
+    $this->app->instance(HttpClientContract::class, $app);
+    $routes = bufferDistinctRequests($this->app, 40);
+    sort($routes);
+
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain('did not accept the runtime batch (HTTP 503)')
+        ->expectsOutputToContain('The runtime data is kept for the next run.')
+        ->assertExitCode(3);
+
+    $failed = array_values(array_filter($app->attempts, fn (array $attempt): bool => $attempt['status'] === 503))[0]['batchId'];
+    $kept = runtimeBatchFiles($this->app);
+    $firstRunCount = count($app->attempts);
+
+    expect($kept)->not->toBe([])
+        ->and(implode(' ', $kept))->toContain($failed)
+        ->and(implode(' ', $kept))->not->toContain($app->attempts[0]['batchId']);
+
+    $this->artisan('excubia:push-runtime')->assertExitCode(0);
+
+    $retried = array_slice($app->attempts, $firstRunCount);
+
+    expect(array_column($retried, 'batchId'))->toContain($failed)
+        ->and(array_diff(array_map(fn (string $name): string => substr($name, 27, 36), $kept), array_column($retried, 'batchId')))->toBe([])
+        ->and(array_column($retried, 'status'))->not->toContain(503)
+        ->and(storedRoutes($app))->toBe($routes)
+        ->and(runtimeBatchFiles($this->app))->toBe([]);
+});
+
+it('drops and counts an entry the app refuses even alone, and sends the rest', function () {
+    $app = new FakeSizeLimitedApp(1500);
+    runtimePushProject($this->app, new FakeHttpClient([]));
+    $this->app->instance(HttpClientContract::class, $app);
+    $routes = bufferDistinctRequests($this->app, 3);
+    bufferDistinctRequests($this->app, 1, str_repeat('x', 2000));
+
+    $this->artisan('excubia:push-runtime')
+        ->expectsOutputToContain('Dropped 1 runtime aggregate larger than excubia-app accepts (HTTP 413).')
+        ->expectsOutputToContain('runtime batches to excubia-app.')
+        ->assertExitCode(0);
+
+    expect(storedRoutes($app))->toBe($routes)
+        ->and(json_encode($app->stored, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('x', 100))
+        ->and(runtimeBatchFiles($this->app))->toBe([]);
 });
 
 it('reports that there is nothing to send', function () {
