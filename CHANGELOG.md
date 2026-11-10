@@ -7,10 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-11-10
+
+First release candidate of 1.0. The feature freeze has held since 1.0.0-beta.4 (#233), so this release has fixes only. The contracts in [`docs/CONTRACTS.md`](./docs/CONTRACTS.md) are unchanged since 1.0.0-beta.4: no new check id, runtime type, config key or schema field. Schema and protocol versions stay `1`.
+
 ### Fixed
 
+- A runtime or exception push that excubia-app refuses with HTTP 413 is split, not stuck (#249). `excubia:push-runtime` claims batches of at most 512 KB, measured as the push body encodes them, and never splits a line. A batch answered with `413` is split into two halves, each with an id derived from the parent batch id (UUID v4), and the split repeats down to single lines. A single entry the app still refuses is dropped and counted on stderr. Halves kept after another failure are resent with the same ids, so the app stores each entry once. No contract change.
 - Exception capture works behind a decorating exception handler (#241): the `reportable()` callback is registered on Laravel's handler or on any handler that forwards `reportable()`, such as `nunomaduro/collision`'s console handler, so failed queued jobs and `report()` in Artisan commands and queue workers reach the buffer again. Registered once per handler. `php artisan excubia:check` warns when exception capture is on and no handler accepts the callback. No contract change.
 - A push answered with HTTP 429 and a `Retry-After` longer than 5 seconds is reported as rate limited, not unreachable (#256): the HTTP client no longer retries a response (such as a 429) whose `Retry-After` cannot fit in the 15 s request limit, so `excubia:push`, `excubia:push-runtime` and the data-source requests return at once with `excubia-app did not accept … (HTTP 429)` instead of waiting into a timeout. The data is kept for the next run as before. Shorter `Retry-After` values are still honoured. No contract change.
+
+### Changed
+
+- The Composer dist archive ships only what an install uses (#235): a `.gitattributes` with `export-ignore` leaves out the tests, CI and agent files, the Markdown docs and guides, the GitHub Action files and the dev tool configs. `src/`, `bin/excubia`, the CLI banner, `excubia.schema.json`, the `docs/*.json` schemas, `README.md`, `CHANGELOG.md` and `LICENSE` stay. The GitHub Action runs from a checkout of the tag, so it is unaffected.
+
+### Documentation
+
+- `docs/CONTRACTS.md` spells out forward compatibility for consumers of the push protocol (#250): an app must accept an entry of an unknown runtime type whatever its shape (it may nest values and lack every field but `type`) and skip it; a push answer may carry keys core does not know, and clients ignore them; `docs/runtime-schema.json` describes what this core sends, so a validator checks known types only. No schema or contract change.
+- The feature freeze for 1.0 is written down in `docs/ROADMAP.md`, `CONTRIBUTING.md` and the pull request template (#233): fixes only from 1.0.0-beta.4 to 1.0.0.
+
+### Tests and maintenance
+
+- Deterministic runtime sampling and a frozen collector minute in the Laravel tests (#230, #248), the qiick standards pack resynced, neutral source comments, and the draft 1.1 design (`docs/design/1.1-traces-logs-users.md`, not part of 1.0). No behaviour change.
 
 ## [1.0.0-beta.4] - 2026-11-08
 
@@ -163,7 +181,8 @@ First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [
 
 - Initial `qiick/excubia-core` release: standalone `vendor/bin/excubia check` CLI, optional Artisan alias `excubia:check`, nine health checks, `table` / `json` / `markdown` formats, `excubia.json` config, and local response cache.
 
-[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.4...HEAD
+[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.4...v1.0.0-rc.1
 [1.0.0-beta.4]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.1...v1.0.0-beta.2
