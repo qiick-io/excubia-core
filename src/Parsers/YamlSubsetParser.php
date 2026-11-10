@@ -21,8 +21,8 @@ use Qiick\Excubia\Exceptions\InvalidConfigurationException;
  *
  * ponytail: anchors, aliases, tags, complex keys and mappings inside
  * sequence items are not supported; both tools generate none of them.
- * Upgrade path: `symfony/yaml`, which needs Luca's approval as a new
- * dependency. Unsupported syntax is a configuration error naming the file
+ * Upgrade path: `symfony/yaml`, which needs the maintainer's approval as a
+ * new dependency. Unsupported syntax is a configuration error naming the file
  * and line, never a silent partial read.
  */
 final class YamlSubsetParser
