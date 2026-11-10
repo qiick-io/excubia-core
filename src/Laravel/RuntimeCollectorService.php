@@ -90,9 +90,11 @@ use Laravel\Scout\Jobs\RemoveFromSearch;
 use Laravel\Scout\Scout;
 use Monolog\Logger as MonologLogger;
 use Monolog\LogRecord;
+use Qiick\Excubia\Contracts\RuntimeSamplerContract;
 use Qiick\Excubia\Data\RuntimeConfigurationData;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Services\RuntimeBufferService;
+use Qiick\Excubia\Services\RuntimeSamplerService;
 use Qiick\Excubia\Services\ServerMetricsService;
 use React\EventLoop\Loop;
 use Throwable;
@@ -161,6 +163,14 @@ final class RuntimeCollectorService
      * with microseconds, when the job was pushed.
      */
     public const QUEUED_AT_PAYLOAD_KEY = 'excubiaQueuedAt';
+
+    /**
+     * Container key of an optional `Closure(): float` clock that `register()`
+     * hands to the collector instead of `microtime(true)`. Only the test
+     * suite binds it, so that events recorded in one test land in one UTC
+     * minute bucket (#248). Nothing reads it when it is not bound.
+     */
+    public const CLOCK_BINDING = 'excubia.runtime.clock';
 
     public const MASKED_KEY_PREFIX = '[masked]';
 
@@ -519,12 +529,14 @@ final class RuntimeCollectorService
 
     /**
      * @param  (Closure(): float)|null  $clock  current Unix time with microseconds; tests pass a fixed one
+     * @param  RuntimeSamplerContract  $sampler  the draw for fractional sample rates; tests pass a deterministic one
      */
     public function __construct(
         private readonly RuntimeConfigurationData $configuration,
         private readonly RuntimeBufferService $buffer,
         private readonly string $basePath,
         private readonly ?Closure $clock = null,
+        private readonly RuntimeSamplerContract $sampler = new RuntimeSamplerService,
     ) {
         $this->jobStartedAt = new WeakMap;
         $this->recordedTasks = new WeakMap;
@@ -536,14 +548,18 @@ final class RuntimeCollectorService
 
     /**
      * Register the collector, its listeners and the terminating flush. Only
-     * the enabled types get a listener.
+     * the enabled types get a listener. The sampler is the container's
+     * `RuntimeSamplerContract` binding (`RuntimeSamplerService` by default).
      */
     public static function register(Application $application, RuntimeConfigurationData $configuration): void
     {
+        $clock = $application->bound(self::CLOCK_BINDING) ? $application->make(self::CLOCK_BINDING) : null;
         $collector = new self(
             $configuration,
             new RuntimeBufferService($application->storagePath('excubia'.DIRECTORY_SEPARATOR.'runtime'), $configuration->bufferMaxBytes),
             $application->basePath(),
+            $clock instanceof Closure ? $clock : null,
+            $application->make(RuntimeSamplerContract::class),
         );
         $application->instance(self::class, $collector);
 
@@ -2569,7 +2585,7 @@ final class RuntimeCollectorService
             return true;
         }
 
-        return $sampleRate > 0.0 && mt_rand() / mt_getrandmax() < $sampleRate;
+        return $sampleRate > 0.0 && $this->sampler->isSampled($sampleRate);
     }
 
     private function relative(string $value): string

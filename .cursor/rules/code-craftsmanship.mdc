@@ -19,6 +19,57 @@ Stop at the first rung that holds: YAGNI, standard library, platform, installed 
 - Never lazy about trust-boundary validation, data-loss prevention, security, accessibility, or anything explicitly requested.
 - Non-trivial logic leaves one runnable check behind (a test).
 
+## Current sources, not memory
+
+Before writing framework or library code, or copying a component from an upstream registry (shadcn, AI Elements), read the current official page for the installed version. Training data and old copies go stale: until 2026-11-09 the registry's AI Elements were a superseded release, and nobody had compared them with the current pages. A file copied from upstream names its source page in its header comment, and the registry README records the source and date of every upstream item.
+
+## Names: full words
+
+- No single letters (`x`, `e`, `q`) and no abbreviations (`cfg`, `res`, `req`, `val`, `arr`, `tmp`, `idx`, `usr`, `ctx`, `def`, `cb`). Full words even at 30+ characters (`$collectionFieldDefinition`, `handleFormSubmissionError`).
+- `i`, `j`, `k` only as indices of tight numeric loops; prefer `foreach ($collectionItems as $collectionItem)`, `for...of`, `.map()`.
+- **Booleans** (variables, columns, custom props, boolean-returning methods) start with `is`, `has`, `can` or `should` (`$isEmailVerified`, `canManageCollection()`, `shouldBroadcastImmediately`). Exempt: names fixed by a framework or library contract (see [Contracts](#contracts-never-break-them)).
+- **Collections** use specific plurals (`$publishedArticles`) or explicit maps (`$usersIndexedById`), never `$data`, `$list`, `$arr`.
+- Every class of our own ends with its role suffix (`*Controller`, `*Action`, `*Service`, `*Data`, `*Enum`, `*Job`, …); only Eloquent models use bare nouns. The full table is in the details.
+- **Never rename framework or package scaffolding:** files native to Laravel or published by a package keep their upstream names: Fortify actions (`app/Actions/Fortify/*`), starter-kit files (`HandleInertiaRequests`, `HandleAppearance`, `app/Concerns/*`), default service providers, vendor-published files (Spatie, Horizon, Telescope, Pennant, Passport), and frontend primitives (`shadcn/ui` files in `components/ui/`). They are listed in the repo's `tests/Arch/naming-architecture.php`, never renamed.
+
+## Architecture: five layers
+
+1. **Thin controllers.** At most the 5 resource methods or one `__invoke`, about 10 to 15 lines each, doing three things: receive a typed `*Request`, call an `*Action` / `*Service` with a `*Data` DTO, return a `*Resource`, JSON or an Inertia page. No business logic, no `DB` facade.
+2. **Domain layer.** Writes in `app/Actions/*Action.php`, orchestration and reads in `app/Services/*Service.php`, typed `readonly` DTOs in `app/Data/*Data.php` instead of `array<string, mixed>` between controllers, actions, services and jobs.
+3. **Clean models.** Relationships, `casts()`, accessors / mutators, scopes (or an `app/Builders/*Builder.php`), table constants. Never HTTP calls, disk or S3 work, or multi-step orchestration in a model.
+4. **Authorization in Policies**, called through `Gate::authorize()` or a FormRequest `authorize()`, not scattered checks.
+5. **One domain for every surface.** The Inertia UI, the REST / GraphQL API, MCP / AI tools and the CLI call the same `*Action` and `*Service` classes; domain logic is never duplicated per surface.
+
+The Pest architecture test (`tests/Arch/NamingArchitectureTest.php`) enforces the suffixes, readonly DTOs, `declare(strict_types=1)`, no debugging helpers, no `env()` outside `config/`, no `DB` facade in controllers, and at most five public methods per controller (existing debt ratcheted in `naming-architecture.php`).
+
+## Formatting
+
+- Curly braces on every `if`, `else`, `for`, `foreach`, `while`, `do`. No single-line braceless control statements.
+- A blank line before and after control-flow blocks (`if`, `return`, `for`, `foreach`, `while`, `switch`, `try`, `throw`); ESLint `@stylistic/padding-line-between-statements` and Pint enforce it where configured.
+- `declare(strict_types=1);` in every PHP file you write or touch.
+- No `dd`, `dump`, `ray`, `var_dump`, `console.log` left behind. No `env()` outside `config/`.
+- Strict DRY: extract shared validation rules, scopes, DTO shapes and UI primitives instead of copying blocks.
+
+## Documentation (English PHPDoc / JSDoc)
+
+This replaces the "comment only exceptionally complex logic" default of Laravel Boost and similar guidelines.
+
+- **Class, component and hook docblock** (mandatory): the unit's responsibility and why it exists.
+- **Method and function docblock** for what the signature cannot say:
+    1. Array shapes and generics for PHPStan / Larastan (`@param array{title: string, slug: string} $validatedPayload`, `@return Collection<int, CollectionItem>`).
+    2. Side effects: queued jobs, dispatched events, filesystem / S3 writes, external HTTP calls.
+    3. Business invariants, why a guard exists, `@throws` conditions.
+- No noise that restates the code (`// set loading to true`).
+
+## Contracts: never break them
+
+1. **Migrations are forward-only.** Never edit, rename or delete a migration in `database/migrations/` once it is merged into a released version: existing self-hosted installs would no longer upgrade. A schema or stored-data change is a new migration with a safe backfill. The reusable `migrations-frozen.yml` fails CI when a migration on `main`, on the latest tag or in `database/migrations/.frozen` changes. A repo that has not released yet may state a pre-release exception in its own section.
+2. **Framework method contracts keep their names** (no `is` / `has` prefix forced on them): `FormRequest::authorize()`, Policy methods (`viewAny`, `view`, `create`, `update`, `delete`, `restore`, `forceDelete`), `Rule::passes()` / `ValidationRule::validate()`, `broadcastWhen()`, `shouldQueue()`.
+3. **Native and library props keep their names:** `disabled`, `required`, `checked`, `open`, `defaultOpen`, `readOnly`, `asChild`, `modal`, `preserveScroll`, `preserveState`, `replace` (DOM, React, Radix / shadcn, Inertia). The prefix rule applies only to our own props and state.
+4. **Wire formats stay stable** when a PHP class is renamed: REST JSON keys, GraphQL type and field names, webhook payloads, `broadcastAs()` names, Inertia page paths, named routes, morph maps (`Relation::enforceMorphMap`), queued job class names. Enum backing values stay identical.
+5. **Convention-driven directories** (`app/GraphQL/`, `app/Ai/`, MCP tools) keep the names their resolver expects unless the resolver mapping changes in the same PR.
+6. **Mechanical renames and behaviour changes never share a PR.** Land the `git mv` + import updates first with green tests, then extract or change logic in a separate PR.
+
 ## Casing
 
 PHP / Laravel (Pint `laravel` preset, PSR-4, PER-CS):
@@ -34,13 +85,6 @@ React / TypeScript / Inertia:
 - Components, `type`, `interface` and `enum` names: `PascalCase` (`CollectionItemDrawer`, `CollectionItemProps`).
 - Functions, hooks, variables, props: `camelCase` (`useAccessibilityPreferences`, `handleSubmission`).
 - **Files and directories on disk: `kebab-case`** (`collection-item-form.tsx`, `use-accessibility-preferences.tsx`), so macOS (case-insensitive) and Linux / Docker (case-sensitive) never disagree. No barrel `index.ts` files that only re-export. CI checks the file names.
-
-## Names: full words
-
-- No single letters (`x`, `e`, `q`) and no abbreviations (`cfg`, `res`, `req`, `val`, `arr`, `tmp`, `idx`, `usr`, `ctx`, `def`, `cb`). Full words even at 30+ characters (`$collectionFieldDefinition`, `handleFormSubmissionError`).
-- `i`, `j`, `k` only as indices of tight numeric loops; prefer `foreach ($collectionItems as $collectionItem)`, `for...of`, `.map()`.
-- **Booleans** (variables, columns, custom props, boolean-returning methods) start with `is`, `has`, `can` or `should` (`$isEmailVerified`, `canManageCollection()`, `shouldBroadcastImmediately`). Exempt: names fixed by a framework or library contract (see [Contracts](#contracts-never-break-them)).
-- **Collections** use specific plurals (`$publishedArticles`) or explicit maps (`$usersIndexedById`), never `$data`, `$list`, `$arr`.
 
 ## Role suffixes
 
@@ -74,62 +118,85 @@ Only Eloquent models use bare domain nouns (`User`, `CollectionItem`). Every oth
 
 Do not invent other role nouns (`...Normalizer`, `...Publisher`, `...Recorder`, `...Writer`) or split domain classes arbitrarily between `app/Services/` and `app/Support/`: a write is an `Action`, an orchestrator or read pipeline is a `Service`. Packages apply the same table to their own namespace (`Qiick\Excubia\...`); a package may add roles of its own (`Parser`, `Renderer`, `Check`), listed in its architecture test config.
 
-**Never rename framework or package scaffolding.** Files native to Laravel or published by a package keep their upstream names: Fortify actions (`app/Actions/Fortify/*`), starter-kit files (`HandleInertiaRequests`, `HandleAppearance`, `app/Concerns/*`), default service providers, vendor-published files (Spatie, Horizon, Telescope, Pennant, Passport), and frontend primitives (`shadcn/ui` files in `components/ui/`). They are listed in the repo's `tests/Arch/naming-architecture.php`, never renamed.
+## Backend conventions
 
-## Architecture: five layers
+How the five layers look in a qiick app. Each topic has a page with the externa-core (or excubia-app) files to copy; read it before touching that area.
 
-1. **Thin controllers.** At most the 5 resource methods or one `__invoke`, about 10 to 15 lines each, doing three things: receive a typed `*Request`, call an `*Action` / `*Service` with a `*Data` DTO, return a `*Resource`, JSON or an Inertia page. No business logic, no `DB` facade.
-2. **Domain layer.** Writes in `app/Actions/*Action.php`, orchestration and reads in `app/Services/*Service.php`, typed `readonly` DTOs in `app/Data/*Data.php` instead of `array<string, mixed>` between controllers, actions, services and jobs.
-3. **Clean models.** Relationships, `casts()`, accessors / mutators, scopes (or an `app/Builders/*Builder.php`), table constants. Never HTTP calls, disk or S3 work, or multi-step orchestration in a model.
-4. **Authorization in Policies**, called through `Gate::authorize()` or a FormRequest `authorize()`, not scattered checks.
-5. **One domain for every surface.** The Inertia UI, the REST / GraphQL API, MCP / AI tools and the CLI call the same `*Action` and `*Service` classes; domain logic is never duplicated per surface.
+| Topic                                                  | Page                                                                          |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Auth pages, 2FA, passkeys, SSO through Signaculum      | https://github.com/qiick-io/app-ui/blob/develop/docs/auth.md                  |
+| Roles, permissions, policies, `<app>:sync-permissions` | https://github.com/qiick-io/app-ui/blob/develop/docs/roles-and-permissions.md |
+| Error pages 403 / 404 / 500 / 503                      | https://github.com/qiick-io/app-ui/blob/develop/docs/error-pages.md           |
+| REST API, OpenAPI, API keys and scopes                 | https://github.com/qiick-io/app-ui/blob/develop/docs/api.md                   |
+| Realtime: Reverb, channels, presence                   | https://github.com/qiick-io/app-ui/blob/develop/docs/realtime.md              |
+| Security headers                                       | https://github.com/qiick-io/app-ui/blob/develop/docs/security-headers.md      |
+| Logging and activity (audit) log                       | https://github.com/qiick-io/app-ui/blob/develop/docs/logging-and-audit.md     |
+| AI backend: providers, tools, approvals                | https://github.com/qiick-io/app-ui/blob/develop/docs/ai-backend.md            |
 
-The Pest architecture test (`tests/Arch/NamingArchitectureTest.php`) enforces the suffixes, readonly DTOs, `declare(strict_types=1)`, no debugging helpers, no `env()` outside `config/`, and no `DB` facade in controllers.
+### Requests and controllers
 
-## Formatting
+- Every write takes a `FormRequest` in `app/Http/Requests/<Area>/`: `Store<Model>Request`, `Update<Model>Request`, `Bulk<Model>ActionRequest`; shared rules live in `app/Http/Requests/Concerns/*Trait.php` (`ValidatesListPerPageTrait`, `ValidatesSearchQueryTrait`). `authorize()` checks the permission (or the policy); `rules()` validates the whole payload at the trust boundary.
+- A controller method receives the request, builds a `*Data` DTO from `validated()`, calls one `*Action` (write) or `*Service` (read), and returns an Inertia page, a redirect with a flash message, or a `*Resource`. Index pages paginate on the server (`?page`, `?per_page`, `?sort`, `?search`).
+- Wayfinder generates the frontend route helpers (`@/routes/...`, `@/actions/App/Http/Controllers/...`): never hard-code a URL in TypeScript.
 
-- Curly braces on every `if`, `else`, `for`, `foreach`, `while`, `do`. No single-line braceless control statements.
-- A blank line before and after control-flow blocks (`if`, `return`, `for`, `foreach`, `while`, `switch`, `try`, `throw`); ESLint `@stylistic/padding-line-between-statements` and Pint enforce it where configured.
-- `declare(strict_types=1);` in every PHP file you write or touch.
-- No `dd`, `dump`, `ray`, `var_dump`, `console.log` left behind. No `env()` outside `config/`.
-- Strict DRY: extract shared validation rules, scopes, DTO shapes and UI primitives instead of copying blocks.
+### Permissions and policies
 
-## Documentation (English PHPDoc / JSDoc)
+- Permissions are a string-backed `app/Enums/PermissionEnum.php` (`CanShowUsers = 'can-show-users'`, `can-<verb>-<resource>`), roles a `RoleEnum` (`super-admin`, `admin`, …), stored with `spatie/laravel-permission`.
+- `php artisan <app>:sync-permissions` creates the missing permissions from the enum, grants new ones to `admin`, clears the permission cache and writes `resources/js/enums/permission-enum.ts`. `<app>:install` and `<app>:upgrade` run it; never seed permissions by hand.
+- Route groups are gated with the `permission:<value>` middleware; record-level decisions (ownership, state) live in `app/Policies/*Policy.php`, called through `Gate::authorize()` or `authorize()`. `Gate::before` grants `super-admin` everything.
+- The UI receives `auth.permissions` as a shared Inertia prop and hides what the user cannot do (`useCan()`); the server check is the one that counts.
 
-This replaces the "comment only exceptionally complex logic" default of Laravel Boost and similar guidelines.
+### API
 
-- **Class, component and hook docblock** (mandatory): the unit's responsibility and why it exists.
-- **Method and function docblock** for what the signature cannot say:
-    1. Array shapes and generics for PHPStan / Larastan (`@param array{title: string, slug: string} $validatedPayload`, `@return Collection<int, CollectionItem>`).
-    2. Side effects: queued jobs, dispatched events, filesystem / S3 writes, external HTTP calls.
-    3. Business invariants, why a guard exists, `@throws` conditions.
-- No noise that restates the code (`// set loading to true`).
+Only when the spec asks for one: REST under `/api/v1`, `*Resource` responses, a hand-written OpenAPI file served at `/api/v1/openapi.json`, hashed API keys with scopes, named rate limiters. Details: https://github.com/qiick-io/app-ui/blob/develop/docs/api.md
 
-## Contracts: never break them
+### Security
 
-1. **Migrations are forward-only.** Never edit, rename or delete a migration in `database/migrations/` once it is merged into a released version: existing self-hosted installs would no longer upgrade. A schema or stored-data change is a new migration with a safe backfill. A repo that has not released yet may state a pre-release exception in its own section.
-2. **Framework method contracts keep their names** (no `is` / `has` prefix forced on them): `FormRequest::authorize()`, Policy methods (`viewAny`, `view`, `create`, `update`, `delete`, `restore`, `forceDelete`), `Rule::passes()` / `ValidationRule::validate()`, `broadcastWhen()`, `shouldQueue()`.
-3. **Native and library props keep their names:** `disabled`, `required`, `checked`, `open`, `defaultOpen`, `readOnly`, `asChild`, `modal`, `preserveScroll`, `preserveState`, `replace` (DOM, React, Radix / shadcn, Inertia). The prefix rule applies only to our own props and state.
-4. **Wire formats stay stable** when a PHP class is renamed: REST JSON keys, GraphQL type and field names, webhook payloads, `broadcastAs()` names, Inertia page paths, named routes, morph maps (`Relation::enforceMorphMap`), queued job class names. Enum backing values stay identical.
-5. **Convention-driven directories** (`app/GraphQL/`, `app/Ai/`, MCP tools) keep the names their resolver expects unless the resolver mapping changes in the same PR.
-6. **Mechanical renames and behaviour changes never share a PR.** Land the `git mv` + import updates first with green tests, then extract or change logic in a separate PR.
+- `SetSecurityHeadersMiddleware` on the `web` group (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`), configured in `config/security.php`; HSTS belongs on the reverse proxy.
+- Rate limiters for login, 2FA, passkeys and sensitive actions; `DB::prohibitDestructiveCommands(app()->isProduction())`; secrets stored encrypted (`encrypted` cast), never logged.
+- Outbound URLs that users configure (OIDC issuers, webhooks) are SSRF-validated before the request.
+
+### Logging and audit
+
+- Every domain model a user can change uses `app/Traits/LogsApplicationActivityTrait.php` (`spatie/laravel-activitylog`: all attributes, only dirty, never empty), excluding secrets (`password`, `two_factor_*`, `remember_token`, key hashes).
+- Log names: `default`, `auth`, `settings`, `ai`, plus one per domain area; `ip` and `user_agent` are added to every entry. The activity log is a page behind `can-show-activity-logs`.
+- Application logs go to the stock `config/logging.php` channels (`stack` → `single` / `daily`, `stderr` in Docker). No personal data or secrets in log messages.
+
+### Realtime
+
+Broadcasting is optional: `BROADCAST_CONNECTION=null` must leave the app fully usable. Events are `app/Events/*Event.php` with `ShouldBroadcastNow` and a stable `broadcastAs()`; channels are `App.Models.User.{id}` (private), `online` (presence) and `<resource>.{id}` (presence when people collaborate), each authorised in `routes/channels.php` with `is_active` checked. Details: https://github.com/qiick-io/app-ui/blob/develop/docs/realtime.md
+
+### AI
+
+AI is off for writes by default: read-only tools only, write and destructive tools behind an env kill switch, an allowlist and a per-call approval; every tool call is logged; tests fake the agent. Details: https://github.com/qiick-io/app-ui/blob/develop/docs/ai-backend.md
+
+### Operations
+
+- `GET /health/live` (process up, no I/O) and `GET /health/ready` (database, cache and queue reachable, `503` otherwise), outside auth, from `routes/health.php`.
+- Every Artisan command of the app is in the `<app>:` namespace (`<app>:install`, `<app>:upgrade`, `<app>:sync-permissions`, `<app>:create-user`).
 
 ## Automated checks
 
-Machines enforce these in CI; keep them green, and never silence one to get green.
+Machines enforce these in CI; keep them green, and never silence one to get green. Fix the new finding; a baseline only shrinks.
 
 - **Dead code.** `knip` (unused files, exports, dependencies) runs in CI with the repo's committed `knip.json`. TypeScript has `noUnusedLocals` and `noUnusedParameters` on. Delete what is unused; prefix a parameter a signature forces on you with `_`. A knip `ignore*` entry needs a comment-worthy reason in the PR.
 - **Strict models.** Each app's `AppServiceProvider::boot()` calls `Model::shouldBeStrict(! app()->isProduction())`: lazy loading, silently discarded attributes and missing attributes throw outside production. Fix the query (eager load, `$fillable`, select the column), never turn it off.
 - **Larastan ratchet.** Each repo runs Larastan one level above where it started. Its `phpstan-baseline.neon` may only shrink: `scripts/qiick-ratchet.mjs phpstan` fails CI when the baseline holds more errors than on the base branch (only the PR that raises `level:` may baseline that level's errors). Never add to the baseline; fix the new error.
+- **Theme tokens only.** In apps with the qiick UI, `scripts/check-ui-tokens.mjs` (synced by the pack, part of `npm run lint`) fails on arbitrary font sizes (`text-[11px]`) and on raw palette / `#hex` classes beyond `scripts/ui-token-baseline.txt`; the baseline only shrinks. The reusable `ui-quality.yml` runs it with the WCAG 2.2 AA contrast check of the installed theme and the app's axe smoke browser test (light, dark, high contrast).
+- **Ratcheted code rules.** In Vite+ apps the synced `.oxlintrc.standards.json` runs them in Oxlint (`npm run lint:standards`, `--rule eslint/<rule>`); in repos still on ESLint, `qiickRatchetedRules()` from `qiick-standards.eslint.js` does. They turn prose rules into checks: only `lucide-react` icons and shadcn primitives (`no-restricted-imports` on other icon and component libraries), toasts only through `@/lib/toast` (not `sonner`), the clipboard only through `@/lib/clipboard` (`no-restricted-properties` on `navigator.clipboard`), booleans prefixed `is` / `has` / `can` / `should` (`@typescript-eslint/naming-convention`, type-aware; destructured contract names exempt), no single-letter names (`id-length`; `i`, `j`, `k`, `t`, `_` allowed). They run only in `npm run lint:standards` (`QIICK_RATCHET=1`), ratcheted per file and rule against `qiick-lint-baseline.json`: existing debt is listed, new findings fail, paid debt must be removed (`--update`).
+- **Thin controllers.** The architecture test fails on a controller with more than five public methods of its own; controllers that already have more are listed with their count in `tests/Arch/naming-architecture.php` (`controllerPublicMethods`), and the test fails when a count grows or when it shrinks without the entry being lowered.
 - **No hard-coded UI strings.** `i18next/no-literal-string` (JSX text only, not attributes such as `className` or `data-*`) flags visible text that bypasses translations: use `t('…')` with keys in every locale file. Existing debt is in `i18n-literal-baseline.json`; `scripts/qiick-ratchet.mjs lint` fails when a file's count grows, and when a count shrinks without the baseline being lowered (`--update`).
 
 ## Git, commits and pull requests
 
 - **English everywhere in the repo:** code, comments, docs, commit messages, issues, pull requests.
-- **Conventional Commits:** `type(scope): summary` in the imperative, lower case, no trailing period. Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `ci`, `build`, `security`. `!` or a `BREAKING CHANGE:` footer for breaking changes. commitlint checks PR titles in CI.
+- **Conventional Commits:** `type(scope): summary` in the imperative, lower case, no trailing period. Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `ci`, `build`, `security`. `!` or a `BREAKING CHANGE:` footer for breaking changes. commitlint checks PR titles in CI through the reusable `qiick-io/app-ui/.github/workflows/pr-title.yml` (check `pr-title / commitlint`), which every repo calls on `pull_request` with the `edited` type.
 - **One issue, one branch, one pull request.** Branch from `develop` as `<type>/<issue>-<kebab-slug>` (`feat/42-project-registration`). Never commit directly to `develop` or `main`.
 - Pull requests target `develop` and are **squash-merged**, so the PR title becomes the commit: make it a valid Conventional Commit. The body says what changed, why, and `Closes #<issue>`.
+- **Every issue and pull request gets its metadata when it is created:** assignee (the maintainer), labels from the repo's set, the milestone of the release it belongs to, and the repo's GitHub project when it has one.
+- **Branch protection** (every public repo): `develop` and `main` change only through a pull request with green required checks; admins are not exempt. When a PR is behind its base, update the branch (`gh pr update-branch`) and wait for the checks again. `main` takes **merge commits** only (a ruleset): release PRs, and the merge of `main` back into `develop` after a tag, which is a pull request too.
 - Never force-push a shared branch, never `--no-verify`, never `--admin` or any branch-protection bypass.
 - No attribution or `Co-authored-by` trailers for tools or agents.
 - Never commit `.env`, secrets, tokens, personal phone numbers or email addresses; only `.env.example`.
+- Nothing personal in tracked files: no absolute local paths (`/Users/…`), no one's own editor or agent configuration (keep it in `.gitignore`), and "the maintainer" instead of people's names in code, comments and docs. Describe what code does rather than which product it imitates; naming a product is fine where it is an integration (an importer, a compatible endpoint).
 - Ask the maintainer before: a new dependency, anything outside the issue's scope, repo settings (branch protection, required checks, secrets), paid services or accounts.

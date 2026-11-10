@@ -7,6 +7,7 @@ namespace Qiick\Excubia\Services;
 use Qiick\Excubia\Contracts\HttpClientContract;
 use Qiick\Excubia\Exceptions\DataSourceUnavailableException;
 use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\HttpClient\Response\AsyncContext;
 use Symfony\Component\HttpClient\Retry\GenericRetryStrategy;
 use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
@@ -16,21 +17,80 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * Symfony HTTP client used outside tests.
  *
  * Idle timeout is 5 seconds and the whole request may take 15 seconds.
- * Two retries use backoff (200 ms, then 400 ms). Symfony already reads
- * HTTPS_PROXY. ponytail: retry count is fixed; raise it here if a source
+ * Two retries use backoff (200 ms, then 400 ms), or the `Retry-After` the
+ * server sends; a response asking to wait longer than
+ * MAX_RETRY_AFTER_SECONDS is not retried (`retryStrategy()`). Symfony
+ * already reads HTTPS_PROXY. ponytail: retry count is fixed; raise it here if a source
  * needs more than two attempts.
  */
 final class SymfonyHttpClientService implements HttpClientContract
 {
+    /**
+     * The flags Symfony HttpClient encodes a `json` body with (its
+     * `HttpClientTrait::jsonEncode()` default). It escapes `/`, `<`, `>`,
+     * `&`, quotes and non-ASCII characters, so a body can be larger than the
+     * same data written with `JSON_UNESCAPED_*`. RuntimeBufferService
+     * measures batches with these flags (#249); a test pins them to the
+     * real request body.
+     */
+    public const JSON_BODY_FLAGS = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_PRESERVE_ZERO_FRACTION;
+
+    /**
+     * The longest `Retry-After` honoured inside one request. Two retries of
+     * this wait still fit in `max_duration` (15 s); a longer one would end
+     * in a timeout that hides the status (#256).
+     */
+    public const MAX_RETRY_AFTER_SECONDS = 5;
+
     private readonly HttpClientInterface $httpClient;
 
     public function __construct(?HttpClientInterface $httpClient = null)
     {
         $this->httpClient = $httpClient ?? new RetryableHttpClient(
             HttpClient::create(self::defaultOptions()),
-            new GenericRetryStrategy(delayMs: 200, multiplier: 2.0, maxDelayMs: 1000, jitter: 0.0),
+            self::retryStrategy(),
             2,
         );
+    }
+
+    /**
+     * Symfony's generic strategy (200 ms backoff, doubled, at most 1 s),
+     * except that a response with a `Retry-After` above
+     * MAX_RETRY_AFTER_SECONDS is returned as is: the caller sees its status
+     * (`excubia-app did not accept … (HTTP 429)`) at once instead of a
+     * timeout after a wait that cannot fit in `max_duration`.
+     */
+    public static function retryStrategy(): GenericRetryStrategy
+    {
+        return new class(delayMs: 200, multiplier: 2.0, maxDelayMs: 1000, jitter: 0.0) extends GenericRetryStrategy
+        {
+            public function shouldRetry(AsyncContext $context, ?string $responseContent, ?TransportExceptionInterface $exception): ?bool
+            {
+                $retryAfterValues = $context->getHeaders()['retry-after'] ?? [];
+                $retryAfter = is_array($retryAfterValues) ? ($retryAfterValues[0] ?? null) : null;
+
+                if ($exception === null && is_string($retryAfter) && SymfonyHttpClientService::retryAfterSeconds($retryAfter) > SymfonyHttpClientService::MAX_RETRY_AFTER_SECONDS) {
+                    return false;
+                }
+
+                return parent::shouldRetry($context, $responseContent, $exception);
+            }
+        };
+    }
+
+    /**
+     * Seconds to wait from a `Retry-After` header: delay seconds or an
+     * HTTP date. 0 when the value is neither.
+     */
+    public static function retryAfterSeconds(string $retryAfter): int
+    {
+        if (is_numeric($retryAfter)) {
+            return max(0, (int) ceil((float) $retryAfter));
+        }
+
+        $time = strtotime($retryAfter);
+
+        return $time === false ? 0 : max(0, $time - time());
     }
 
     /**
