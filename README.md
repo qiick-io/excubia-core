@@ -8,6 +8,7 @@
 
 # Excubia
 
+[![Docs](https://img.shields.io/badge/docs-docs.qiick.io%2Fexcubia-1375a7)](https://docs.qiick.io/excubia)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/qiick-io/excubia-core/ci.yml?branch=main&label=CI)](https://github.com/qiick-io/excubia-core/actions/workflows/ci.yml)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.2-777BB4?logo=php&logoColor=white)](./composer.json)
@@ -20,6 +21,7 @@ Optional, and off by default: push the report to your own self-hosted [`excubia-
 
 | | |
 | --- | --- |
+| **Docs** | [docs.qiick.io/excubia](https://docs.qiick.io/excubia) |
 | **Guides** | [Configuration](./docs/guides/configuration.md) · [CI](./docs/guides/ci.md) · [excubia-app push](./docs/guides/excubia-app.md) · [Runtime monitoring](./docs/guides/runtime-monitoring.md) · [Exception capture](./docs/guides/exception-capture.md) · [Health endpoint](./docs/guides/health-endpoint.md) · [Privacy](./docs/guides/privacy.md) · [Upgrading to 1.0](./docs/guides/upgrading.md) |
 | **Spec** | [`docs/SPEC.md`](./docs/SPEC.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) |
 | **Changes** | [CHANGELOG.md](./CHANGELOG.md) · [GitHub Releases](https://github.com/qiick-io/excubia-core/releases) |

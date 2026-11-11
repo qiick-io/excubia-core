@@ -20,10 +20,11 @@
             "homepage": "https://qiick.io"
         }
     ],
-    "homepage": "https://github.com/qiick-io/excubia-core",
+    "homepage": "https://qiick.io/en/excubia",
     "support": {
         "issues": "https://github.com/qiick-io/excubia-core/issues",
-        "source": "https://github.com/qiick-io/excubia-core"
+        "source": "https://github.com/qiick-io/excubia-core",
+        "docs": "https://docs.qiick.io/excubia"
     },
     "require": {
         "php": "^8.2",
