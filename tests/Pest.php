@@ -93,4 +93,20 @@ function bufferedOfType(Application $app, string $type): Collection
     return collect(RuntimeBufferService::merge(bufferedRuntime($app)))->where('type', $type)->values();
 }
 
+/**
+ * Run an AI call whose tool fails, and return 1 when the run failed with the
+ * tool's exception, 0 when it went on. laravel/ai 1.3 rethrows the tool's
+ * exception; 1.4 returns the failure to the model, so both are supported.
+ */
+function runFailureCount(Closure $run): int
+{
+    try {
+        $run();
+    } catch (RuntimeException) {
+        return 1;
+    }
+
+    return 0;
+}
+
 pest()->extend(LaravelTestCase::class)->in('Laravel');
