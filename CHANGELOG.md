@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Reports from inside the monitored app carry the PHP version that runs it, not the `composer.json` lower bound (#273). Under `php artisan excubia:check`, `excubia:push` and excubia-app's in-process system report, `project.php.version` and the `php-eol` cycle and support dates follow the running PHP (`PHP_MAJOR_VERSION.PHP_MINOR_VERSION.PHP_RELEASE_VERSION`), so an app on PHP 8.5 with `"php": "^8.4"` is no longer reported as 8.4.0. The standalone CLI, which may analyse another directory, keeps `config.platform.php`, then the lower bound of `require.php`, then `platform.php` in `composer.lock`. No contract change.
+
 ## [1.0.0-rc.1] - 2026-11-10
 
 First release candidate of 1.0. The feature freeze has held since 1.0.0-beta.4 (#233), so this release has fixes only. The contracts in [`docs/CONTRACTS.md`](./docs/CONTRACTS.md) are unchanged since 1.0.0-beta.4: no new check id, runtime type, config key or schema field. Schema and protocol versions stay `1`.

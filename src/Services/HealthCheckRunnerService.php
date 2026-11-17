@@ -81,7 +81,9 @@ final class HealthCheckRunnerService
 
     /**
      * `$laravelPosture` is passed by the Artisan commands only; without it
-     * the `laravel-*` posture checks are skipped ("requires Artisan").
+     * the `laravel-*` posture checks are skipped ("requires Artisan"). With
+     * it, `$projectRoot` is the running app's base path, so the snapshot
+     * reports the running PHP version (#273).
      *
      * @param  list<string>|null  $onlyCheckIds
      * @param  list<string>|null  $skippedCheckIds
@@ -100,7 +102,7 @@ final class HealthCheckRunnerService
         ?LaravelPostureData $laravelPosture = null,
     ): array {
         return $this->runForSnapshot(
-            $this->projectSnapshot->snapshot($projectRoot, $configuration)->withLaravelPosture($laravelPosture),
+            $this->projectSnapshot->snapshot($projectRoot, $configuration, $laravelPosture !== null)->withLaravelPosture($laravelPosture),
             $configuration,
             $onlyCheckIds,
             $skippedCheckIds,
