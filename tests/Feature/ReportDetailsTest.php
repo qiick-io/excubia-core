@@ -12,8 +12,11 @@ use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
 use Qiick\Excubia\Data\ProjectVersionsData;
+use Qiick\Excubia\Data\UpgradeStepData;
+use Qiick\Excubia\Data\UpgradeStepPackageData;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\UpgradeStepKindEnum;
 use Qiick\Excubia\Renderers\JsonReportRenderer;
 use Qiick\Excubia\Renderers\SarifRenderer;
 use Qiick\Excubia\Services\HealthCheckRunnerService;
@@ -180,6 +183,39 @@ it('reports a Node declaration as written and drops free text', function () {
 
 it('counts the private packages in the details of their skipped row', function () {
     expect(FindingData::privatePackagesSkipped('composer-stale', ['acme/a', 'acme/b'], 'Packagist')[0]->details)->toBe(['count' => 2]);
+});
+
+it('validates the structured upgrade plan steps against the schema', function () {
+    $steps = array_map(
+        static fn (UpgradeStepKindEnum $kind): UpgradeStepData => new UpgradeStepData(
+            1,
+            'Step.',
+            $kind,
+            $kind === UpgradeStepKindEnum::NextMajorBlocked ? 13 : null,
+            [new UpgradeStepPackageData('vendor/package', $kind === UpgradeStepKindEnum::NpmPatch ? 'npm' : 'composer', '1.0.0', $kind === UpgradeStepKindEnum::NpmPatch ? '1.0.3' : null)],
+        ),
+        UpgradeStepKindEnum::cases(),
+    );
+    $report = (new JsonReportRenderer)->toArray(new HealthReportData([], $steps));
+    $invalid = static function (array $report, string $field, mixed $value): array {
+        $report['upgradePlan'][0][$field] = $value;
+
+        return reportSchemaErrors($report);
+    };
+
+    expect(reportSchemaErrors($report))->toBe([])
+        ->and($report['upgradePlan'][3])->toBe([
+            'stepNumber' => 1,
+            'message' => 'Step.',
+            'kind' => 'next-major-blocked',
+            'targetMajor' => 13,
+            'packages' => [['name' => 'vendor/package', 'ecosystem' => 'composer', 'installed' => '1.0.0', 'target' => null]],
+        ])
+        ->and(reportSchemaErrors(['schemaVersion' => 1, 'checks' => [], 'upgradePlan' => [['stepNumber' => 1, 'message' => 'Older core.']]]))->toBe([])
+        ->and($invalid($report, 'kind', 'composer-minor'))->not->toBe([])
+        ->and($invalid($report, 'targetMajor', '13'))->not->toBe([])
+        ->and($invalid($report, 'packages', [['name' => 'vendor/package', 'ecosystem' => 'pip', 'installed' => null, 'target' => null]]))->not->toBe([])
+        ->and($invalid($report, 'packages', [['name' => 'vendor/package', 'ecosystem' => 'npm', 'installed' => null]]))->not->toBe([]);
 });
 
 it('accepts every documented details shape and rejects one that does not fit its check', function () {
