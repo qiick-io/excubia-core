@@ -49,10 +49,7 @@ function outdatedHealthProject(Application $app): string
         'composer.lock' => (string) file_get_contents($fixture.'/composer.lock'),
     ]);
     $seed = new CommandTester(new CheckCommand(new FakeHttpClient([
-        'https://endoflife.date/api/php.json' => [
-            ['cycle' => '8.1', 'eol' => '2025-12-31', 'support' => '2023-11-25', 'lts' => false],
-            ['cycle' => '8.4', 'eol' => '2028-12-31', 'support' => '2026-12-31', 'lts' => false],
-        ],
+        'https://endoflife.date/api/php.json' => phpCyclesWithRunningPhpEnded(),
     ])));
     $seed->execute(['path' => $project, '--only' => 'php-eol', '--fail-on' => 'none', '--no-banner' => true]);
 
