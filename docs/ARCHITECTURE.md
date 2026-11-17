@@ -95,7 +95,8 @@ qiick-io/excubia-core
 │   │   ├── CheckResultData.php
 │   │   ├── FindingData.php
 │   │   ├── HealthReportData.php
-│   │   ├── UpgradeStepData.php
+│   │   ├── UpgradeStepData.php              # kind, targetMajor, packages, message (#276)
+│   │   ├── UpgradeStepPackageData.php       # name, ecosystem, installed, target
 │   │   ├── ExcubiaConfigurationData.php
 │   │   ├── RuntimeConfigurationData.php     # runtime key: switches, sample rates, threshold, buffer cap
 │   │   └── ExceptionConfigurationData.php   # exceptions key: switch, mask patterns, ignored classes, buffer cap
@@ -103,6 +104,7 @@ qiick-io/excubia-core
 │   │   ├── SeverityEnum.php                 # critical..info, comparable
 │   │   ├── FindingStatusEnum.php            # pass|warn|fail|skipped
 │   │   ├── SkipReasonEnum.php               # data-source-failure|offline|not-applicable
+│   │   ├── UpgradeStepKindEnum.php          # upgrade plan step kinds (docs/report-schema.json)
 │   │   ├── ReportFormatEnum.php
 │   │   ├── RuntimeTypeEnum.php              # request|slowQuery|job|scheduledTask|outgoingHttp
 │   │   └── ExitCodeEnum.php                 # 0,1,2,3

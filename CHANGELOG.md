@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Structured upgrade plan steps in the JSON report (#276): each `upgradePlan` entry keeps `stepNumber` and `message` and adds `kind` (`composer-advisory`, `npm-advisory`, `php-eol`, `next-major-blocked`, `laravel-eol`, `composer-abandoned`, `composer-stale`, `composer-patch`, `npm-patch`, `license-review`), `targetMajor` (the Laravel major of a `next-major-blocked` or `laravel-eol` step, else null) and `packages` (`{name, ecosystem, installed, target}` in message order; `target` is the latest patch on the patch steps). The message is now built from the same values, and its text is unchanged; table, Markdown and SARIF output do not change. This is an additive report change (optional schema fields, `schemaVersion` stays 1), so it needs a new pre-release, `v1.0.0-rc.2`, before 1.0.0 (#88).
+
 ### Fixed
 
 - Reports from inside the monitored app carry the PHP version that runs it, not the `composer.json` lower bound (#273). Under `php artisan excubia:check`, `excubia:push` and excubia-app's in-process system report, `project.php.version` and the `php-eol` cycle and support dates follow the running PHP (`PHP_MAJOR_VERSION.PHP_MINOR_VERSION.PHP_RELEASE_VERSION`), so an app on PHP 8.5 with `"php": "^8.4"` is no longer reported as 8.4.0. The standalone CLI, which may analyse another directory, keeps `config.platform.php`, then the lower bound of `require.php`, then `platform.php` in `composer.lock`. No contract change.
