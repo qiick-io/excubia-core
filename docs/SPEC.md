@@ -47,7 +47,7 @@ Severity levels: `critical` > `high` > `medium` > `low` > `info`. Each finding h
 
 | ID | Name | Inspects | Data source | Fail | Warn | Pass | Fix hint |
 |---|---|---|---|---|---|---|---|
-| `php-eol` | PHP end of life | Resolved PHP version: `config.platform.php` > `require.php` lower bound in `composer.json` > `platform` in `composer.lock` | endoflife.date `php` | Security support ended (**critical**) | Active support ended, security support ends within 180 days (**medium**) | Supported | "Upgrade PHP to X.Y (supported until DATE)." |
+| `php-eol` | PHP end of life | Resolved PHP version: the running PHP under `php artisan excubia:check` / `excubia:push` and excubia-app's in-process report (#273); from the standalone CLI `config.platform.php` > `require.php` lower bound in `composer.json` > `platform` in `composer.lock` | endoflife.date `php` | Security support ended (**critical**) | Active support ended, security support ends within 180 days (**medium**) | Supported | "Upgrade PHP to X.Y (supported until DATE)." |
 | `laravel-eol` | Laravel end of life | Locked `laravel/framework` version | endoflife.date `laravel` | Security fixes ended (**critical**) | Bug fixes ended or security ends within 180 days (**medium**) | Supported | "Upgrade to Laravel N; security fixes for your version end DATE." |
 | `node-eol` | Node end of life | `.nvmrc`, `.node-version`, `package.json` `engines.node` | endoflife.date `nodejs` | EOL (**high**) | Maintenance ends within 180 days (**low**) | Supported / `skipped` if not declared | "Move to Node LTS N." (Brand copy mentions PHP/Node versions; D7) |
 | `composer-advisories` | Known vulnerabilities (Composer) | Every locked package + version (incl. dev, flag `--no-dev` to exclude) | Packagist security advisories API (GitHub Advisory DB + FriendsOfPHP) | Any advisory affecting the locked version; severity mapped from advisory (critical/high/medium/low) | — | No advisories | "Update vendor/package to ≥ fixed version (advisory ID)." |
@@ -149,6 +149,17 @@ Exit codes:
 - Precedence: `2` > `1` > `3`, so CI still sees real findings first. `--strict` can only turn strict mode on: the file key cannot be switched off from the CLI, and `--strict` wins over `"strict": false`.
 - The JSON report marks every `skipped` finding with `skipReason`: `data-source-failure`, `offline`, or `not-applicable` (optional field, `schemaVersion` stays 1).
 - Structured values for excubia-app (#92, approved for 1.0.0-beta 2026-11-03, optional fields, `schemaVersion` stays 1): top-level `generatedAt` (UTC `Y-m-d\TH:i:s\Z`), `excubiaVersion` (as `--version`) and `project` (`php`, `laravel`, `node`, each `{version, cycle, securitySupportEndsOn, activeSupportEndsOn}` or null; no name, path or hostname; the cycle and dates come from the responses the EOL checks already fetched, also when they pass, and are null when the check was skipped or did not run, #123); per finding `fingerprint` (sha256 of `checkId`, `subject`, `advisoryId` joined by NUL, the SARIF partial fingerprint), `advisoryId` when present and `details` with check-specific keys documented per check id in `docs/report-schema.json` (versions, package names, advisory ids, dates, counts and ages only). Table, Markdown and SARIF output do not change.
+- Structured upgrade plan steps (#276, approved 2026-11-17, optional fields, `schemaVersion` stays 1, needs the pre-release `v1.0.0-rc.2` per #88): each `upgradePlan` entry keeps `stepNumber` and `message` and adds `kind`, `targetMajor` (int or null) and `packages`, a list of `{name, ecosystem: composer|npm, installed: string|null, target: string|null}` in the order the message names them. The message is built from the same values, so excubia-app can draw the plan without parsing sentences or rebuilding it from findings. `kind` values, in plan order:
+  - `composer-advisory` / `npm-advisory`: one vulnerable package; `installed` the locked version, `target` null (an advisory range can list a fixed version per branch).
+  - `php-eol`: PHP at or near end of life; one package `php` (ecosystem `composer`, the platform package) at the PHP version the report analysed.
+  - `next-major-blocked`: every package with no release that supports the next Laravel major; `targetMajor` is that major (null when the locked Laravel version is unknown).
+  - `laravel-eol`: Laravel at or near end of life; one package `laravel/framework` at the locked version, `targetMajor` the next major.
+  - `composer-abandoned`: one abandoned package.
+  - `composer-stale`: every stale or archived package that is not abandoned.
+  - `composer-patch` / `npm-patch`: every direct dependency behind on a patch that has no advisory; `target` the latest patch.
+  - `license-review`: the packages with a denied license, then those with a strong copyleft one, each with its own ecosystem.
+
+  `targetMajor` is null and `target` is null wherever the list above does not set them. New kinds are appended; consumers accept a value they do not know. Table, Markdown and SARIF output do not change.
 
 Table output: grouped by severity, coloured (no colour when not a TTY or `NO_COLOR`), summary line `3 critical · 2 high · 5 medium · 1 low` and the upgrade plan at the end. JSON output schema is versioned (`"schemaVersion": 1`) and documented in `docs/report-schema.json`.
 

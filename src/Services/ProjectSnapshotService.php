@@ -27,7 +27,13 @@ use UnexpectedValueException;
  * Reads a project directory into a snapshot. This is the only class that
  * touches manifest files.
  *
- * PHP version order is `config.platform.php`, then the lower bound of
+ * When the snapshot describes the app the core runs in (the Artisan
+ * aliases and excubia-app's in-process report, which attach the booted
+ * app's posture), the PHP version is the running PHP (#273): a constraint
+ * such as `^8.4` says nothing about the 8.5 a server actually runs. For a
+ * project analysed from outside (the standalone CLI, possibly pointed at
+ * another directory) the running PHP says nothing about that project, so
+ * the order is `config.platform.php`, then the lower bound of
  * `require.php`, then `platform.php` in the lockfile. Composer dev packages
  * are omitted when the configuration says so. npm packages are kept either
  * way, because `--no-dev` is specified for Composer only.
@@ -59,13 +65,17 @@ final class ProjectSnapshotService
         private readonly VersionParser $versionParser = new VersionParser,
         private readonly EnvironmentExampleParser $environmentExampleParser = new EnvironmentExampleParser,
         private readonly ConfigEnvironmentCallParser $configEnvironmentCallParser = new ConfigEnvironmentCallParser,
+        private readonly ?string $runningPhpVersion = null,
     ) {}
 
     /**
+     * `$isRunningApplication` is true when `$projectRoot` is the base path of
+     * the app this PHP process runs, so the running PHP is the project's PHP.
+     *
      * @throws LockfileNotFoundException
      * @throws InvalidConfigurationException
      */
-    public function snapshot(string $projectRoot, ExcubiaConfigurationData $configuration): ProjectSnapshotData
+    public function snapshot(string $projectRoot, ExcubiaConfigurationData $configuration, bool $isRunningApplication = false): ProjectSnapshotData
     {
         if (! is_dir($projectRoot)) {
             throw new InvalidConfigurationException('Project path ['.$projectRoot.'] is not a directory.');
@@ -109,7 +119,7 @@ final class ProjectSnapshotService
             : $this->javascriptPackages($projectRoot, $javascriptLockfile, $this->npmDirectPackageNames($packageJson));
 
         return new ProjectSnapshotData(
-            phpVersion: $this->resolvePhpVersion(
+            phpVersion: $isRunningApplication ? $this->runningPhpVersion() : $this->resolvePhpVersion(
                 $parsedComposerJson['platformPhpVersion'],
                 $parsedComposerJson['phpConstraint'],
                 $parsedLock['platformPhpVersion'],
@@ -279,6 +289,16 @@ final class ProjectSnapshotService
         }
 
         return null;
+    }
+
+    /**
+     * The running PHP, normalized like the manifest versions (`8.5.1.0`).
+     * The constants leave out the `-dev` or distribution suffix that
+     * `PHP_VERSION` can carry.
+     */
+    private function runningPhpVersion(): ?string
+    {
+        return $this->normalizeExactVersion($this->runningPhpVersion ?? PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION.'.'.PHP_RELEASE_VERSION);
     }
 
     private function resolvePhpVersion(?string $platformPhpVersion, ?string $phpConstraint, ?string $lockPlatformPhpVersion): ?string

@@ -2113,17 +2113,19 @@ it('counts an agent failover and a failed run per attempt, without usage or the 
         ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
 });
 
-it('counts a failed tool call by agent and tool, and the run it fails, without its arguments or exception', function () {
+it('counts a failed tool call by agent and tool, and its run, without its arguments or exception', function () {
     bootAiRuntime($this->app);
     FakeAiAgent::fake([new ToolCall('call-1', ToolNameResolver::resolve(new FakeAiTool), ['query' => AI_MARKER, 'fail' => true]), 'done']);
 
-    // The SDK rethrows the tool's exception, so the run fails too.
-    expect(fn () => (new FakeAiAgent)->prompt(AI_MARKER))->toThrow(RuntimeException::class);
+    // laravel/ai 1.3 rethrows the tool's exception and fails the run; from
+    // 1.4 on the failure goes back to the model and the run carries on.
+    // Either way the run is counted once, failed only when it threw.
+    $runErrorCount = runFailureCount(fn () => (new FakeAiAgent)->prompt(AI_MARKER));
 
     $this->app->terminate();
 
     expect(bufferedOfType($this->app, 'aiTool')[0])->toMatchArray(['agent' => FakeAiAgent::class, 'tool' => FakeAiTool::class, 'count' => 1, 'errorCount' => 1])
-        ->and(bufferedOfType($this->app, 'ai')[0])->toMatchArray(['count' => 1, 'errorCount' => 1])
+        ->and(bufferedOfType($this->app, 'ai')[0])->toMatchArray(['count' => 1, 'errorCount' => $runErrorCount])
         ->and(rawBuffer($this->app))->not->toContain(AI_MARKER);
 });
 

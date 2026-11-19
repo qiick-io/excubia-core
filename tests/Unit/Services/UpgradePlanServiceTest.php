@@ -5,9 +5,12 @@ declare(strict_types=1);
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Data\ProjectSnapshotData;
+use Qiick\Excubia\Data\UpgradeStepData;
+use Qiick\Excubia\Data\UpgradeStepPackageData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
+use Qiick\Excubia\Enums\UpgradeStepKindEnum;
 use Qiick\Excubia\Services\UpgradePlanService;
 
 it('orders security, PHP, blockers, the next Laravel major, then replacements', function () {
@@ -237,6 +240,79 @@ it('does not change the exit code', function () {
     $report = new HealthReportData([], $steps);
 
     expect($report->exitCodeFor(SeverityEnum::High))->toBe(ExitCodeEnum::NoFindingsAtOrAboveFailOn);
+});
+
+it('builds every kind of step with its target major, packages and versions', function () {
+    $snapshot = new ProjectSnapshotData('8.1.0', 'v10.48.22', [], [], null);
+    $locked = static fn (string $checkId, FindingStatusEnum $status, string $package, string $fixHint, array $details = [], ?string $advisoryId = null, SeverityEnum $severity = SeverityEnum::High): FindingData => new FindingData(
+        checkId: $checkId,
+        severity: $severity,
+        status: $status,
+        subject: $package,
+        message: 'Message.',
+        fixHint: $fixHint,
+        evidenceUrl: null,
+        advisoryId: $advisoryId,
+        details: ['package' => $package, 'lockedVersion' => '1.0.0'] + $details,
+    );
+    $outdated = ['latestMinor' => null, 'latestMajor' => null, 'isMajorBehind' => false];
+
+    $steps = (new UpgradePlanService)->plan($snapshot, [
+        $locked('composer-advisories', FindingStatusEnum::Fail, 'vendor/vulnerable', 'Update vendor/vulnerable to ≥ fixed version (GHSA-1).', advisoryId: 'GHSA-1'),
+        $locked('npm-advisories', FindingStatusEnum::Fail, 'axios', 'Update axios to ≥ fixed version.', advisoryId: 'GHSA-a'),
+        $locked('npm-advisories', FindingStatusEnum::Fail, 'axios', 'Update axios to ≥ fixed version.', advisoryId: 'GHSA-b'),
+        planFinding('php-eol', FindingStatusEnum::Fail, 'Upgrade PHP to 8.4 (supported until 2028-12-31).', 'php'),
+        $locked('laravel-next-blocker', FindingStatusEnum::Warn, 'spatie/laravel-data', 'No release supports Laravel 11 yet; watch / replace / fork.', ['targetMajor' => 11]),
+        $locked('laravel-next-blocker', FindingStatusEnum::Warn, 'livewire/livewire', 'No release supports Laravel 11 yet; watch / replace / fork.', ['targetMajor' => 11]),
+        planFinding('laravel-eol', FindingStatusEnum::Fail, 'Upgrade to Laravel 11; security fixes for your version end 2025-02-04.', 'laravel/framework'),
+        $locked('composer-abandoned', FindingStatusEnum::Warn, 'swiftmailer/swiftmailer', 'Replace with symfony/mailer.', ['replacement' => 'symfony/mailer']),
+        $locked('composer-stale', FindingStatusEnum::Warn, 'vendor/stale', 'Consider a maintained alternative.'),
+        $locked('composer-outdated', FindingStatusEnum::Warn, 'vendor/patched', 'Update.', ['latestPatch' => '1.0.3'] + $outdated),
+        $locked('npm-outdated', FindingStatusEnum::Warn, 'vite', 'Update.', ['latestPatch' => '1.0.9'] + $outdated),
+        $locked('dependency-licenses', FindingStatusEnum::Fail, 'vendor/denied', 'Replace.', ['licenses' => ['GPL-3.0-only'], 'ecosystem' => 'composer']),
+        $locked('dependency-licenses', FindingStatusEnum::Warn, 'copyleft-js', 'Check.', ['licenses' => ['AGPL-3.0-only'], 'ecosystem' => 'npm'], severity: SeverityEnum::Medium),
+    ]);
+
+    $structured = array_map(static fn (UpgradeStepData $step): array => [
+        $step->stepNumber,
+        $step->kind,
+        $step->targetMajor,
+        array_map(static fn (UpgradeStepPackageData $package): string => $package->ecosystem.':'.$package->name.' '.($package->installed ?? 'null').' → '.($package->target ?? 'null'), $step->packages),
+        $step->message,
+    ], $steps);
+
+    expect($structured)->toBe([
+        [1, UpgradeStepKindEnum::ComposerAdvisory, null, ['composer:vendor/vulnerable 1.0.0 → null'], 'Update vendor/vulnerable to ≥ fixed version (GHSA-1).'],
+        [2, UpgradeStepKindEnum::NpmAdvisory, null, ['npm:axios 1.0.0 → null'], 'Update axios to ≥ fixed version (fixes 2 advisories).'],
+        [3, UpgradeStepKindEnum::PhpEol, null, ['composer:php 8.1.0 → null'], 'Upgrade PHP to 8.4 (supported until 2028-12-31).'],
+        [4, UpgradeStepKindEnum::NextMajorBlocked, 11, ['composer:spatie/laravel-data 1.0.0 → null', 'composer:livewire/livewire 1.0.0 → null'], 'Laravel 11 is blocked by spatie/laravel-data, livewire/livewire; no release supports it yet: watch, replace or fork.'],
+        [5, UpgradeStepKindEnum::LaravelEol, 11, ['composer:laravel/framework v10.48.22 → null'], 'Upgrade to Laravel 11; security fixes for your version end 2025-02-04.'],
+        [6, UpgradeStepKindEnum::ComposerAbandoned, null, ['composer:swiftmailer/swiftmailer 1.0.0 → null'], 'swiftmailer/swiftmailer is abandoned. Replace with symfony/mailer.'],
+        [7, UpgradeStepKindEnum::ComposerStale, null, ['composer:vendor/stale 1.0.0 → null'], 'Consider maintained alternatives to stale or archived packages: vendor/stale.'],
+        [8, UpgradeStepKindEnum::ComposerPatch, null, ['composer:vendor/patched 1.0.0 → 1.0.3'], 'Update to the latest patch: vendor/patched 1.0.3.'],
+        [9, UpgradeStepKindEnum::NpmPatch, null, ['npm:vite 1.0.0 → 1.0.9'], 'Update npm packages to the latest patch: vite 1.0.9.'],
+        [10, UpgradeStepKindEnum::LicenseReview, null, ['composer:vendor/denied 1.0.0 → null', 'npm:copyleft-js 1.0.0 → null'], 'Review dependency licenses: denied for vendor/denied; strong copyleft for copyleft-js. Replace the packages or clear the licenses after a legal review.'],
+    ])
+        ->and(array_map(static fn (UpgradeStepData $step): UpgradeStepKindEnum => $step->kind, $steps))->toBe(UpgradeStepKindEnum::cases());
+});
+
+it('names each package once and leaves versions null when the finding does not carry them', function () {
+    $steps = (new UpgradePlanService)->plan(new ProjectSnapshotData(null, null, [], [], null), [
+        planFinding('laravel-next-blocker', FindingStatusEnum::Warn, 'No release supports it yet.', 'vendor/blocker'),
+        planFinding('laravel-next-blocker', FindingStatusEnum::Fail, 'No release supports it yet.', 'vendor/blocker'),
+        planFinding('php-eol', FindingStatusEnum::Fail, 'Upgrade PHP.', 'php'),
+        planFinding('laravel-eol', FindingStatusEnum::Fail, 'Upgrade Laravel.', 'laravel/framework'),
+    ]);
+
+    expect($steps[0]->kind)->toBe(UpgradeStepKindEnum::PhpEol)
+        ->and($steps[0]->packages)->toEqual([new UpgradeStepPackageData('php', 'composer', null, null)])
+        ->and($steps[1]->kind)->toBe(UpgradeStepKindEnum::NextMajorBlocked)
+        ->and($steps[1]->targetMajor)->toBeNull()
+        ->and($steps[1]->packages)->toEqual([new UpgradeStepPackageData('vendor/blocker', 'composer', null, null)])
+        ->and($steps[1]->message)->toBe('The next Laravel major is blocked by vendor/blocker; no release supports it yet: watch, replace or fork.')
+        ->and($steps[2]->kind)->toBe(UpgradeStepKindEnum::LaravelEol)
+        ->and($steps[2]->targetMajor)->toBeNull()
+        ->and($steps[2]->packages)->toEqual([new UpgradeStepPackageData('laravel/framework', 'composer', null, null)]);
 });
 
 function planFinding(string $checkId, FindingStatusEnum $status, string $fixHint, string $subject = 'subject', ?string $advisoryId = null): FindingData

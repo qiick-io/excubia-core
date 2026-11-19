@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-11-19
+
+Second release candidate of 1.0. It carries one additive report change since rc.1 — structured upgrade plan steps (#276), optional schema fields with `schemaVersion` still 1 — which the 1.0.0 checklist requires a new pre-release for (#88), and one fix: in-app reports carry the running PHP version (#273).
+
+### Added
+
+- Structured upgrade plan steps in the JSON report (#276): each `upgradePlan` entry keeps `stepNumber` and `message` and adds `kind` (`composer-advisory`, `npm-advisory`, `php-eol`, `next-major-blocked`, `laravel-eol`, `composer-abandoned`, `composer-stale`, `composer-patch`, `npm-patch`, `license-review`), `targetMajor` (the Laravel major of a `next-major-blocked` or `laravel-eol` step, else null) and `packages` (`{name, ecosystem, installed, target}` in message order; `target` is the latest patch on the patch steps). The message is now built from the same values, and its text is unchanged; table, Markdown and SARIF output do not change. This is an additive report change (optional schema fields, `schemaVersion` stays 1), so it needs a new pre-release, `v1.0.0-rc.2`, before 1.0.0 (#88).
+
+### Fixed
+
+- Reports from inside the monitored app carry the PHP version that runs it, not the `composer.json` lower bound (#273). Under `php artisan excubia:check`, `excubia:push` and excubia-app's in-process system report, `project.php.version` and the `php-eol` cycle and support dates follow the running PHP (`PHP_MAJOR_VERSION.PHP_MINOR_VERSION.PHP_RELEASE_VERSION`), so an app on PHP 8.5 with `"php": "^8.4"` is no longer reported as 8.4.0. The standalone CLI, which may analyse another directory, keeps `config.platform.php`, then the lower bound of `require.php`, then `platform.php` in `composer.lock`. No contract change.
+
 ## [1.0.0-rc.1] - 2026-11-10
 
 First release candidate of 1.0. The feature freeze has held since 1.0.0-beta.4 (#233), so this release has fixes only. The contracts in [`docs/CONTRACTS.md`](./docs/CONTRACTS.md) are unchanged since 1.0.0-beta.4: no new check id, runtime type, config key or schema field. Schema and protocol versions stay `1`.
@@ -181,7 +193,8 @@ First beta of 1.0. Every 1.0 feature is in, and the public contracts listed in [
 
 - Initial `qiick/excubia-core` release: standalone `vendor/bin/excubia check` CLI, optional Artisan alias `excubia:check`, nine health checks, `table` / `json` / `markdown` formats, `excubia.json` config, and local response cache.
 
-[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.4...v1.0.0-rc.1
 [1.0.0-beta.4]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/qiick-io/excubia-core/compare/v1.0.0-beta.2...v1.0.0-beta.3

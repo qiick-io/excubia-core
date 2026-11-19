@@ -23,6 +23,7 @@ Each contract has a contract test. Most of them compare the code with the commit
 | SARIF rule ids, fingerprint key and report `fingerprint` | `src/Renderers/SarifRenderer.php`, `src/Data/FindingData.php` | SARIF `2.1.0`, key `excubiaFinding/v1` | stable | `PublicContractsTest` (`checkIds`, `sarif`), `tests/Feature/SarifReportTest.php` |
 | GitHub Action inputs, defaults and outputs | [`action.yml`](../action.yml) | the action ref (`@v1`) | stable | `PublicContractsTest` (`action`), `.github/workflows/action-test.yml`, `tests/Feature/ActionInstallLockTest.php` |
 | `skipReason` values | `src/Enums/SkipReasonEnum.php`, `docs/report-schema.json` | report `schemaVersion` | stable | `PublicContractsTest` (`skipReasons`), `ReportSchemaTest` |
+| Upgrade step `kind` values | `src/Enums/UpgradeStepKindEnum.php`, `docs/report-schema.json` | report `schemaVersion` | stable | `PublicContractsTest` (`upgradeStepKinds`), `UpgradePlanServiceTest` |
 
 ## Details
 
@@ -189,6 +190,10 @@ Inputs (default): `path` (`.`), `fail-on` (`critical`), `only` (empty), `skip` (
 ### `skipReason`
 
 `data-source-failure`, `offline`, `not-applicable`. Only `data-source-failure` can make strict mode exit `3`.
+
+### Upgrade step `kind`
+
+`composer-advisory`, `npm-advisory`, `php-eol`, `next-major-blocked`, `laravel-eol`, `composer-abandoned`, `composer-stale`, `composer-patch`, `npm-patch`, `license-review`. Optional, additive fields from #276 (versions stay `1`, pre-release `v1.0.0-rc.2` per #88): each `upgradePlan` step adds `kind`, `targetMajor` and `packages` (`{name, ecosystem, installed, target}`) next to `stepNumber` and `message`, whose text is unchanged. Meanings are in `docs/SPEC.md` section 4 and the schema `description`. New kinds are appended; a consumer must accept a value it does not know, and treat a step without `kind` (a report from an older core) as message only.
 
 ## Internal
 

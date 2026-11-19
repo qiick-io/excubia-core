@@ -531,7 +531,8 @@ it('never lets an AI prompt, attachment, response, reasoning, tool argument or r
     $agent->prompt('Prompt with '.$marker, [Document::fromString('Attachment with '.$marker, 'text/plain')], model: 'gpt-test');
     FakeAiAgent::fake([new ToolCall('call-2', $toolName, ['query' => $marker, 'fail' => true]), 'tool failed']);
 
-    expect(fn () => $agent->prompt('Tool failing with '.$marker, model: 'gpt-test'))->toThrow(RuntimeException::class);
+    // laravel/ai 1.3 fails the run on a tool exception, 1.4 returns it to the model.
+    runFailureCount(fn () => $agent->prompt('Tool failing with '.$marker, model: 'gpt-test'));
 
     FakeAiAgent::fake([new TextResponse('streamed '.$marker, new TextUsage(5, 5), new Meta('openai', 'gpt-test'))]);
 

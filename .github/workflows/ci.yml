@@ -11,12 +11,88 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # The event is part of the group: a push run and a pull-request run on the same SHA are
+  # different evidence and must never cancel each other (externa-core#805).
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # A `main` or `develop` run is the release evidence: let it finish.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
+# Gate policy (CI diet, as externa-core#381 / #438):
+# - The six required check NAMES never change and every one of them runs on every pull
+#   request. When the heavy work is skipped the job reports success from a stub step: a
+#   required check that is never queued stays pending forever and the pull request can never
+#   be merged, so workflow-level `paths:` is never used in this file.
+# - push → main/develop, pull_request → main, workflow_dispatch: everything runs (full mode).
+#   `changes` is skipped on those events, so the classification costs nothing there and the
+#   gates below default to full.
+# - pull_request → develop with code: the three `stable` legs run; the three `lowest` legs
+#   stub, because the lowest resolution only moves when the constraints move - and a change
+#   to composer.json / composer.lock puts the pull request into full mode. The Laravel
+#   integration matrix runs its two corners (Laravel 12 / PHP 8.3 and Laravel 13 / PHP 8.5).
+# - pull_request → develop with docs only: every heavy job stubs and the Laravel matrix is
+#   skipped entirely (it is not a required check).
 jobs:
+  changes:
+    # Only a pull request to `develop` is ever reduced. On every other event this job is
+    # skipped, `needs.changes.outputs.mode` is empty and the gates below read that as full.
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Detect change mode
+        id: mode
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          FILES=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+
+          # docs = top-level *.md, docs/, the .github templates and the readme assets.
+          # A nested *.md (tests/Fixtures/.../README.md) is code.
+          CODE=0
+          while IFS= read -r f; do
+            case "$f" in
+              docs/*|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md|.github/assets/*) ;;
+              */*) CODE=1; break ;;
+              *.md) ;;
+              *) CODE=1; break ;;
+            esac
+          done <<< "$FILES"
+
+          if [ "$CODE" -eq 0 ]; then
+            MODE=docs
+          else
+            MODE=lite
+          fi
+
+          # The constraints, the coverage gate and this file decide what the matrix proves:
+          # changing one of them runs the whole matrix before the merge, not after.
+          while IFS= read -r f; do
+            case "$f" in
+              composer.json|composer.lock|phpstan.neon|phpstan.neon.dist|pint.json|coverage-floor.txt|action.yml|.github/assert-coverage.php|.github/workflows/ci.yml)
+                MODE=full
+                echo "Full-mode trigger ($f)."
+                break
+                ;;
+            esac
+          done <<< "$FILES"
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "CI mode=$MODE"
+
   tests:
     name: PHP ${{ matrix.php }} ${{ matrix.dependency-version }}
+    needs: changes
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -30,10 +106,34 @@ jobs:
           - lowest
           - stable
     steps:
+      - name: Require the change classification to have succeeded
+        if: needs.changes.result == 'failure' || needs.changes.result == 'cancelled'
+        run: |
+          echo "::error::changes=${{ needs.changes.result }} - failing this required check instead of reporting a skipped (= passing) gate."
+          exit 1
+
+      - name: Resolve whether to run the suite
+        id: gate
+        env:
+          MODE: ${{ needs.changes.outputs.mode }}
+          DEPS: ${{ matrix.dependency-version }}
+        run: |
+          RUN=true
+          if [ "$MODE" = 'docs' ]; then RUN=false; fi
+          if [ "$MODE" = 'lite' ] && [ "$DEPS" != 'stable' ]; then RUN=false; fi
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          echo "mode=${MODE:-full} deps=$DEPS run=$RUN"
+
+      - name: Stub success (the CI gate skipped the heavy work)
+        if: steps.gate.outputs.run != 'true'
+        run: echo "Stub success for the required check PHP ${{ matrix.php }} ${{ matrix.dependency-version }} - mode=${{ needs.changes.outputs.mode }}."
+
       - name: Checkout
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Setup PHP
+        if: steps.gate.outputs.run == 'true'
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
         with:
           php-version: ${{ matrix.php }}
@@ -41,6 +141,7 @@ jobs:
           tools: composer:v2
 
       - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
         run: |
           if [ "${{ matrix.dependency-version }}" = "lowest" ]; then
             composer update --no-interaction --prefer-dist --prefer-lowest
@@ -49,26 +150,38 @@ jobs:
           fi
 
       - name: Pint
+        if: steps.gate.outputs.run == 'true'
         run: vendor/bin/pint --test
 
       - name: PHPStan
+        if: steps.gate.outputs.run == 'true'
         run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
 
       # Level max with no baseline: the ratchet fails if a baseline ever appears.
       - name: Larastan baseline only shrinks
+        if: steps.gate.outputs.run == 'true'
         run: node scripts/qiick-ratchet.mjs phpstan
 
       - name: Pest
+        if: steps.gate.outputs.run == 'true'
         run: vendor/bin/pest --parallel --coverage --coverage-clover=build/clover.xml
 
       - name: Coverage gate
+        if: steps.gate.outputs.run == 'true'
         run: php .github/assert-coverage.php build/clover.xml src/Checks=90 src=90
 
       - name: Dogfood
+        if: steps.gate.outputs.run == 'true'
         run: php bin/excubia check --fail-on=critical --no-banner
 
+  # Not a required status check, so a reduced run may simply skip legs: on a pull request to
+  # `develop` only the two corners of the matrix run (oldest supported Laravel on the oldest
+  # supported PHP, newest on newest); a docs-only pull request skips the job. Every other
+  # event, including the merge to `develop`, runs all six.
   laravel:
     name: Laravel ${{ matrix.laravel }} PHP ${{ matrix.php }}
+    needs: changes
+    if: always() && needs.changes.outputs.mode != 'docs'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -86,6 +199,13 @@ jobs:
             testbench: '10'
           - laravel: '13'
             testbench: '11'
+        # A lite pull request drops the four middle combinations and keeps the two corners.
+        # `exclude` runs before `include`, and neither `include` entry names a `php`, so they
+        # only attach `testbench` to the combinations that survive.
+        exclude: >-
+          ${{ needs.changes.outputs.mode == 'lite'
+          && fromJSON('[{"laravel":"12","php":"8.4"},{"laravel":"12","php":"8.5"},{"laravel":"13","php":"8.3"},{"laravel":"13","php":"8.4"}]')
+          || fromJSON('[]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -107,7 +227,7 @@ jobs:
 
   # The qiick standards pack (agent files, architecture test) must match app-ui.
   standards:
-    uses: qiick-io/app-ui/.github/workflows/drift-check.yml@develop
+    uses: qiick-io/app-ui/.github/workflows/drift-check.yml@v0.7.0
     with:
       standards: true
       registry: false

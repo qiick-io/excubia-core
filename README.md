@@ -8,6 +8,7 @@
 
 # Excubia
 
+[![Docs](https://img.shields.io/badge/docs-docs.qiick.io%2Fexcubia-1375a7)](https://docs.qiick.io/excubia)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/qiick-io/excubia-core/ci.yml?branch=main&label=CI)](https://github.com/qiick-io/excubia-core/actions/workflows/ci.yml)
 [![PHP](https://img.shields.io/badge/PHP-%5E8.2-777BB4?logo=php&logoColor=white)](./composer.json)
@@ -20,6 +21,7 @@ Optional, and off by default: push the report to your own self-hosted [`excubia-
 
 | | |
 | --- | --- |
+| **Docs** | [docs.qiick.io/excubia](https://docs.qiick.io/excubia) |
 | **Guides** | [Configuration](./docs/guides/configuration.md) · [CI](./docs/guides/ci.md) · [excubia-app push](./docs/guides/excubia-app.md) · [Runtime monitoring](./docs/guides/runtime-monitoring.md) · [Exception capture](./docs/guides/exception-capture.md) · [Health endpoint](./docs/guides/health-endpoint.md) · [Privacy](./docs/guides/privacy.md) · [Upgrading to 1.0](./docs/guides/upgrading.md) |
 | **Spec** | [`docs/SPEC.md`](./docs/SPEC.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) |
 | **Changes** | [CHANGELOG.md](./CHANGELOG.md) · [GitHub Releases](https://github.com/qiick-io/excubia-core/releases) |
@@ -123,7 +125,7 @@ vendor/bin/excubia --version
 - For `laravel-queue-workers` without Horizon, the service provider listens to the queue worker's `Looping` event and, at most once a minute per worker queue, stores the Unix time under the cache key `excubia:worker-heartbeat:<connection>:<queue>` in the default cache store. Restart your workers (`php artisan queue:restart`) after installing Excubia, and use a shared cache store when workers and `excubia:check` run on different machines. Horizon is not a dependency: when it is installed the check reads its status through Horizon's own repositories. Findings carry connection, queue and supervisor names (without the hostname prefix), never hostnames.
 - spatie/laravel-backup is not a dependency: when it is installed, `laravel-backups` lists the backups of each destination in `backup.monitor_backups` (or `backup.backup.destination.disks` when nothing is monitored) through its `BackupDestination` API, and only sizes the two newest. Findings carry the disk name, the age in hours, the size in MB and the count: never a disk root, bucket, path or credential.
 - `laravel-redis-memory` sends `INFO memory` on each Redis connection the default cache store, the default queue connection or the session use (or on `checks.laravel-redis-memory.connections` instead) and keeps only `used_memory`, `maxmemory` and `maxmemory_policy`. A connection that does not answer is left out; `laravel-cache` reports reachability. Findings carry the connection name, megabytes and the policy: never a host, port or password.
-- Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements, then one step with the latest patch of every outdated Composer package that has no advisory, the same for npm packages, and a license review step when `dependency-licenses` finds a denied license (naming the denied and strong copyleft packages). It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`.
+- Every report ends with an ordered upgrade plan (`upgrade-plan`): security fixes, runtime EOL, blockers, Laravel major, replacements, then one step with the latest patch of every outdated Composer package that has no advisory, the same for npm packages, and a license review step when `dependency-licenses` finds a denied license (naming the denied and strong copyleft packages). It is `info` only, never changes the exit code and cannot be selected with `--only` / `--skip`. In the JSON report every step also carries its `kind`, the Laravel `targetMajor` and the `packages` it names with their installed and target versions (`docs/report-schema.json`).
 - Thresholds (180 days, 24 months, 10 minutes, 24 hours, 80 / 90 %, 15 minutes, 1000 jobs, 5 minutes, 26 hours, 80 / 90 % of `maxmemory`) are configurable in [`excubia.json`](./docs/guides/configuration.md#checks). Full severity rules: [`docs/SPEC.md`](./docs/SPEC.md) section 3.
 
 ## Formats

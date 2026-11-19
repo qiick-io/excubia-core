@@ -1,6 +1,6 @@
 # Excubia — Roadmap
 
-Through v1.0.0, updated 2026-11-10. Sources of truth:
+Through v1.0.0, updated 2026-11-19. Sources of truth:
 - [`docs/SPEC.md`](SPEC.md): decisions D1–D20, push protocol in section 13.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
 - [`docs/CONTRACTS.md`](CONTRACTS.md): the public contracts frozen for 1.0.
@@ -29,6 +29,7 @@ After the beta, every change to the frozen contracts must be backwards compatibl
 | **v1.0.0-beta.3** | Done: #175 mail failures without exception capture, #188 `health` runtime type for minute-level alerts, #187 every check id listed in `docs/CONTRACTS.md`, #191 version labels | — |
 | **v1.0.0-beta.4** | Done: #198 Laravel AI SDK usage (`ai`, `aiTool`) and #201 classification, #203 app environment in reports, #204 license kind, #205 scheduler heartbeat key in CONTRACTS, #197 no banner with machine formats, #202 benchmark test, #199 official Laravel packages: #213 Octane, #215 Reverb, #217 Cashier, #219 Sanctum/Passport and `auth`, #221 Scout, #225 Pennant (Socialite #224 and Horizon #227 not planned) | AI usage and cost (excubia-app#129), cards for Octane, Reverb, billing, auth, Scout, Pennant (excubia-app#168, #175, #178, #180, #184, #189) |
 | **v1.0.0-rc.1** | Fixes only (feature freeze, #233), contracts unchanged since beta.4. Done: #249 split a push on 413 and 512 KB batches, #241 exception capture behind decorating handlers, #256 429 with a long `Retry-After`, #250 forward compatibility rules in CONTRACTS, #235 dist archive without dev files, #230 and #248 deterministic tests. Open: rc.1 release checklist #234 | Fixes only; dogfooding (excubia-app#197) |
+| **v1.0.0-rc.2** | One additive report change after rc.1, which #88 requires a pre-release for: #276 structured upgrade plan steps (optional `kind`, `targetMajor`, `packages`; `schemaVersion` stays 1). Fix: #273 in-app reports carry the running PHP version, not the `composer.json` lower bound | Dogfooding continues on rc.2 (excubia-app#197); the upgrade plan timeline (excubia-app#333) can render the new steps |
 | v1.0.0 — stable | #88 release checklist: no contract change since the beta, feedback triaged | Stable app |
 | v1.1.0 | Planned, additive: #243 sampled request traces (`trace`), #244 log entries (`logEntry`), #245 pseudonymous user counts (`users`), and opt-in personal data levels. Design (draft): [`docs/design/1.1-traces-logs-users.md`](design/1.1-traces-logs-users.md) | Traces viewer, log entries viewer, affected users (excubia-app#230, #231, #232) |
 

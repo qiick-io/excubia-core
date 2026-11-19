@@ -3,7 +3,7 @@
         "docs/report-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/report-schema.json",
             "x-excubia-version": 1,
-            "sha256": "2bc3aabeb4e14e009a1e5f0df1942957bad37f0c79b0ce88486dd5680b7f00cf"
+            "sha256": "f6fd139f88e945cc86ba6ffda705008e44f8718a5c7d89509c7febd7398e126e"
         },
         "docs/push-schema.json": {
             "$id": "https://raw.githubusercontent.com/qiick-io/excubia-core/main/docs/push-schema.json",
@@ -87,6 +87,18 @@
         "data-source-failure",
         "offline",
         "not-applicable"
+    ],
+    "upgradeStepKinds": [
+        "composer-advisory",
+        "npm-advisory",
+        "php-eol",
+        "next-major-blocked",
+        "laravel-eol",
+        "composer-abandoned",
+        "composer-stale",
+        "composer-patch",
+        "npm-patch",
+        "license-review"
     ],
     "cli": {
         "check": {

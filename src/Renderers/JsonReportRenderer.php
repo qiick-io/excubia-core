@@ -10,6 +10,7 @@ use Qiick\Excubia\Contracts\ReportRendererContract;
 use Qiick\Excubia\Data\EndOfLifeCycleData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Data\LicenseInventoryData;
+use Qiick\Excubia\Data\UpgradeStepPackageData;
 
 /**
  * JSON report for schema version 1.
@@ -19,7 +20,8 @@ use Qiick\Excubia\Data\LicenseInventoryData;
  * `javascriptLockfile` (#21) and `environment` (#203) when the report carries them, `licenses` when
  * `dependency-licenses` ran, `schedule` (#146) from the Artisan commands;
  * per finding `fingerprint` always, `advisoryId` when the finding names
- * one, `skipReason` on skipped rows and `details` when the check set any.
+ * one, `skipReason` on skipped rows and `details` when the check set any;
+ * per upgrade step `kind`, `targetMajor` and `packages` always (#276).
  */
 final class JsonReportRenderer implements ReportRendererContract
 {
@@ -85,6 +87,14 @@ final class JsonReportRenderer implements ReportRendererContract
             $upgradePlan[] = [
                 'stepNumber' => $upgradeStep->stepNumber,
                 'message' => $upgradeStep->message,
+                'kind' => $upgradeStep->kind->value,
+                'targetMajor' => $upgradeStep->targetMajor,
+                'packages' => array_map(static fn (UpgradeStepPackageData $package): array => [
+                    'name' => $package->name,
+                    'ecosystem' => $package->ecosystem,
+                    'installed' => $package->installed,
+                    'target' => $package->target,
+                ], $upgradeStep->packages),
             ];
         }
 

@@ -50,7 +50,17 @@
     "upgradePlan": [
         {
             "stepNumber": 1,
-            "message": "Upgrade PHP first."
+            "message": "Upgrade PHP first.",
+            "kind": "php-eol",
+            "targetMajor": null,
+            "packages": [
+                {
+                    "name": "php",
+                    "ecosystem": "composer",
+                    "installed": "8.1.0",
+                    "target": null
+                }
+            ]
         }
     ]
 }

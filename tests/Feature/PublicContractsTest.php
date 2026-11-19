@@ -14,6 +14,7 @@ use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\RuntimeTypeEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Enums\SkipReasonEnum;
+use Qiick\Excubia\Enums\UpgradeStepKindEnum;
 use Qiick\Excubia\Laravel\ExcubiaCheckCommand;
 use Qiick\Excubia\Laravel\ExcubiaHeartbeatCommand;
 use Qiick\Excubia\Laravel\ExcubiaPushCommand;
@@ -173,7 +174,7 @@ it('freezes the SARIF fingerprint key and the report fingerprint recipe', functi
         ->and($finding(null)->fingerprint())->toBe(hash('sha256', "composer-advisories\0laravel/framework\0"));
 });
 
-it('freezes the exit codes and the skipReason values', function (): void {
+it('freezes the exit codes, the skipReason values and the upgrade step kinds', function (): void {
     $exitCodes = [];
 
     foreach (ExitCodeEnum::cases() as $case) {
@@ -182,7 +183,9 @@ it('freezes the exit codes and the skipReason values', function (): void {
 
     expect($exitCodes)->toBe(contractSnapshot('exitCodes'), CONTRACT_CHANGE_MESSAGE)
         ->and(array_map(static fn (SkipReasonEnum $reason): string => $reason->value, SkipReasonEnum::cases()))
-        ->toBe(contractSnapshot('skipReasons'), CONTRACT_CHANGE_MESSAGE);
+        ->toBe(contractSnapshot('skipReasons'), CONTRACT_CHANGE_MESSAGE)
+        ->and(array_map(static fn (UpgradeStepKindEnum $kind): string => $kind->value, UpgradeStepKindEnum::cases()))
+        ->toBe(contractSnapshot('upgradeStepKinds'), CONTRACT_CHANGE_MESSAGE);
 });
 
 it('freezes the bin/excubia commands and their options', function (): void {

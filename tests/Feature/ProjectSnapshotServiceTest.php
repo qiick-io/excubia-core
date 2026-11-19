@@ -32,6 +32,25 @@ it('uses the require.php lower bound before the lock platform', function () {
         ->and($snapshot->laravelFrameworkVersion)->toBe('v10.48.22');
 });
 
+it('reports the running PHP for the app the core runs in (#273)', function () {
+    $snapshot = (new ProjectSnapshotService(runningPhpVersion: '8.5.1'))->snapshot(projectFixture('outdated-laravel-10'), ExcubiaConfigurationData::defaults(), isRunningApplication: true);
+
+    expect($snapshot->phpVersion)->toBe('8.5.1.0');
+});
+
+it('keeps the composer order for a project analysed from outside (#273)', function () {
+    $service = new ProjectSnapshotService(runningPhpVersion: '8.5.1');
+
+    expect($service->snapshot(projectFixture('outdated-laravel-10'), ExcubiaConfigurationData::defaults())->phpVersion)->toBe('8.1.0.0')
+        ->and($service->snapshot(projectFixture('healthy-laravel-13'), ExcubiaConfigurationData::defaults())->phpVersion)->toBe('8.4.1.0');
+});
+
+it('reads the running PHP from the PHP constants by default (#273)', function () {
+    $snapshot = (new ProjectSnapshotService)->snapshot(projectFixture('outdated-laravel-10'), ExcubiaConfigurationData::defaults(), isRunningApplication: true);
+
+    expect($snapshot->phpVersion)->toBe(PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION.'.'.PHP_RELEASE_VERSION.'.0');
+});
+
 it('marks direct and transitive composer packages', function () {
     $snapshot = (new ProjectSnapshotService)->snapshot(projectFixture('abandoned-archived'), ExcubiaConfigurationData::defaults());
     $byName = [];

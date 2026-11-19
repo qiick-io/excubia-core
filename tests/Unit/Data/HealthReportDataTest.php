@@ -7,10 +7,12 @@ use Qiick\Excubia\Data\ExcubiaConfigurationData;
 use Qiick\Excubia\Data\FindingData;
 use Qiick\Excubia\Data\HealthReportData;
 use Qiick\Excubia\Data\UpgradeStepData;
+use Qiick\Excubia\Data\UpgradeStepPackageData;
 use Qiick\Excubia\Enums\ExitCodeEnum;
 use Qiick\Excubia\Enums\FindingStatusEnum;
 use Qiick\Excubia\Enums\SeverityEnum;
 use Qiick\Excubia\Enums\SkipReasonEnum;
+use Qiick\Excubia\Enums\UpgradeStepKindEnum;
 
 function finding(
     FindingStatusEnum $status,
@@ -38,7 +40,7 @@ function reportWith(FindingData ...$findings): HealthReportData
             CheckResultData::fromFindings('php-eol', 'PHP end of life', array_values($findings)),
         ],
         upgradeSteps: [
-            new UpgradeStepData(1, 'Upgrade PHP first.'),
+            new UpgradeStepData(1, 'Upgrade PHP first.', UpgradeStepKindEnum::PhpEol, null, [new UpgradeStepPackageData('php', 'composer', '8.1.0', null)]),
         ],
     );
 }
