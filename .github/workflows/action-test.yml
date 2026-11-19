@@ -1,18 +1,36 @@
 name: Action test
 
+# None of the jobs below is a required status check (branch protection requires only the six
+# `PHP <version> <deps>` checks from ci.yml), so this workflow may be skipped by path filters
+# outright: a skipped workflow never reports, and a required check that never reports leaves a
+# pull request pending forever. If one of these ever becomes required, the `paths-ignore`
+# filters have to go and the gate has to move into the jobs, as in ci.yml.
 on:
   push:
     branches:
       - main
       - develop
+    paths-ignore:
+      - '**.md'
+      - docs/**
+      - .github/ISSUE_TEMPLATE/**
+      - .github/assets/**
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - docs/**
+      - .github/ISSUE_TEMPLATE/**
+      - .github/assets/**
 
 permissions:
   contents: read
 
 concurrency:
-  group: action-test-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # The event is part of the group: a push run and a pull-request run on the same SHA are
+  # different evidence and must never cancel each other (externa-core#805).
+  group: action-test-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # A `main` or `develop` run is the release evidence: let it finish.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 # Runs the composite action from this checkout. SARIF is never uploaded here,
 # so the workflow needs no security-events permission and is safe on forks.
