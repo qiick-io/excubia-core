@@ -187,10 +187,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: >-
+        laravel:
+          - '12'
+          - '13'
+        php:
+          - '8.3'
+          - '8.4'
+          - '8.5'
+        include:
+          - laravel: '12'
+            testbench: '10'
+          - laravel: '13'
+            testbench: '11'
+        # A lite pull request drops the four middle combinations and keeps the two corners.
+        # `exclude` runs before `include`, and neither `include` entry names a `php`, so they
+        # only attach `testbench` to the combinations that survive.
+        exclude: >-
           ${{ needs.changes.outputs.mode == 'lite'
-          && fromJSON('[{"laravel":"12","php":"8.3","testbench":"10"},{"laravel":"13","php":"8.5","testbench":"11"}]')
-          || fromJSON('[{"laravel":"12","php":"8.3","testbench":"10"},{"laravel":"12","php":"8.4","testbench":"10"},{"laravel":"12","php":"8.5","testbench":"10"},{"laravel":"13","php":"8.3","testbench":"11"},{"laravel":"13","php":"8.4","testbench":"11"},{"laravel":"13","php":"8.5","testbench":"11"}]') }}
+          && fromJSON('[{"laravel":"12","php":"8.4"},{"laravel":"12","php":"8.5"},{"laravel":"13","php":"8.3"},{"laravel":"13","php":"8.4"}]')
+          || fromJSON('[]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
