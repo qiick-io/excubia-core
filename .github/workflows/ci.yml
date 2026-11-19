@@ -78,7 +78,7 @@ jobs:
           # changing one of them runs the whole matrix before the merge, not after.
           while IFS= read -r f; do
             case "$f" in
-              composer.json|composer.lock|phpstan.neon|phpstan.neon.dist|pint.json|coverage-floor.txt|action.yml|.github/assert-coverage.php)
+              composer.json|composer.lock|phpstan.neon|phpstan.neon.dist|pint.json|coverage-floor.txt|action.yml|.github/assert-coverage.php|.github/workflows/ci.yml)
                 MODE=full
                 echo "Full-mode trigger ($f)."
                 break
