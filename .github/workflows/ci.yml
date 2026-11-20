@@ -227,7 +227,7 @@ jobs:
 
   # The qiick standards pack (agent files, architecture test) must match app-ui.
   standards:
-    uses: qiick-io/app-ui/.github/workflows/drift-check.yml@v0.7.0
+    uses: qiick-io/app-ui/.github/workflows/drift-check.yml@v0.11.0
     with:
       standards: true
       registry: false
