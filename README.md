@@ -8,6 +8,10 @@
 
 # Excubia
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/qiick-io/excubia-core/badge)](https://scorecard.dev/viewer/?uri=github.com/qiick-io/excubia-core)
+
+PHPStan at `max` and the existing CI checks cover PHP. CodeQL covers GitHub Actions and JavaScript/TypeScript.
+
 [![Docs](https://img.shields.io/badge/docs-docs.qiick.io%2Fexcubia-1375a7)](https://docs.qiick.io/excubia)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/qiick-io/excubia-core/ci.yml?branch=main&label=CI)](https://github.com/qiick-io/excubia-core/actions/workflows/ci.yml)
